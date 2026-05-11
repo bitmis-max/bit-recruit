@@ -17,7 +17,22 @@ type SendRequest = {
   from?: string;
   subject: string;
   html: string;
+  attachmentUrl?: string;
+  driveId?: string;
+  attachmentName?: string;
 };
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+function getFileNameFromUrl(url: string) {
+  try {
+    const pathname = new URL(url).pathname;
+    const name = pathname.split("/").filter(Boolean).pop();
+    return name || "attachment";
+  } catch {
+    return "attachment";
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -40,6 +55,12 @@ export async function POST(request: Request) {
     const from = (body.from ?? defaultFrom)?.trim();
     const subject = body.subject?.trim();
     const html = body.html ?? "";
+    const driveId = body.driveId?.trim();
+    const attachmentName = body.attachmentName?.trim();
+
+    const attachmentUrl =
+      body.attachmentUrl ??
+      (driveId ? `https://drive.google.com/uc?export=download&id=${driveId}` : "");
 
     if (!to || !from || !subject || !html) {
       debugLog("Invalid payload", { to, from, subject });
@@ -47,6 +68,43 @@ export async function POST(request: Request) {
         { ok: false, error: "Invalid payload" },
         { status: 400 }
       );
+    }
+
+    let attachment:
+      | { filename: string; content: Buffer; contentType?: string }
+      | undefined;
+
+    if (attachmentUrl) {
+      debugLog("Fetching attachment", { url: attachmentUrl });
+      const fileResponse = await fetch(attachmentUrl);
+      if (!fileResponse.ok) {
+        const errorText = await fileResponse.text();
+        debugLog("Attachment download failed", {
+          status: fileResponse.status,
+          errorText,
+        });
+        return Response.json(
+          { ok: false, error: "Attachment download failed" },
+          { status: 400 }
+        );
+      }
+
+      const arrayBuffer = await fileResponse.arrayBuffer();
+      if (arrayBuffer.byteLength > MAX_ATTACHMENT_BYTES) {
+        debugLog("Attachment too large", {
+          size: arrayBuffer.byteLength,
+        });
+        return Response.json(
+          { ok: false, error: "Attachment too large" },
+          { status: 400 }
+        );
+      }
+
+      attachment = {
+        filename: attachmentName || getFileNameFromUrl(attachmentUrl),
+        content: Buffer.from(arrayBuffer),
+        contentType: fileResponse.headers.get("content-type") ?? undefined,
+      };
     }
 
     debugLog("Sending via SMTP", { to, from, smtpHost, smtpPort });
@@ -66,6 +124,7 @@ export async function POST(request: Request) {
       to,
       subject,
       html,
+      attachments: attachment ? [attachment] : [],
     });
 
     debugLog("SMTP ok", { messageId: info.messageId });

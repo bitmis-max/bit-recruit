@@ -5,6 +5,9 @@ export type SendEmailPayload = {
   from?: string;
   subject: string;
   html: string;
+  attachmentUrl?: string;
+  driveId?: string;
+  attachmentName?: string;
   variables?: Record<string, string>;
   recipientId?: string;
   campaignId?: string;

@@ -18,6 +18,7 @@ const RATE_LIMIT_MS = 500;
 const MAX_RETRY = 2;
 
 const STORAGE_KEY = "mailmerge.templates";
+const DRAFT_KEY = "mailmerge.draft";
 
 type TemplateRecord = {
   id: string;
@@ -26,11 +27,17 @@ type TemplateRecord = {
   html: string;
 };
 
+type DraftState = {
+  subject: string;
+  html: string;
+  rows: RecipientRow[];
+  selectedId: string | null;
+  theme: "light" | "dark";
+};
+
 export function MailMergeApp() {
   const [subject, setSubject] = useState(DEFAULT_SUBJECT);
   const [html, setHtml] = useState(DEFAULT_HTML);
-  const [testEmail, setTestEmail] = useState("");
-  const [senderEmail, setSenderEmail] = useState("");
   const [rows, setRows] = useState<RecipientRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -63,6 +70,20 @@ export function MailMergeApp() {
       }
     }
 
+    const draft = localStorage.getItem(DRAFT_KEY);
+    if (draft) {
+      try {
+        const parsed = JSON.parse(draft) as DraftState;
+        setSubject(parsed.subject ?? DEFAULT_SUBJECT);
+        setHtml(parsed.html ?? DEFAULT_HTML);
+        setRows(parsed.rows ?? []);
+        setSelectedId(parsed.selectedId ?? null);
+        setTheme(parsed.theme ?? "light");
+      } catch {
+        // ignore corrupted drafts
+      }
+    }
+
     const storedTheme = localStorage.getItem("mailmerge.theme");
     if (storedTheme === "dark") {
       setTheme("dark");
@@ -74,6 +95,17 @@ export function MailMergeApp() {
     localStorage.setItem("mailmerge.theme", theme);
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+
+  useEffect(() => {
+    const draft: DraftState = {
+      subject,
+      html,
+      rows,
+      selectedId,
+      theme,
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  }, [html, rows, selectedId, subject, theme]);
 
   const handleDataParsed = useCallback((data: ParsedData, file?: File) => {
     setImportError(null);
@@ -113,19 +145,9 @@ export function MailMergeApp() {
     return interpolateTemplate(subject, selectedRecipient);
   }, [subject, selectedRecipient]);
 
-  const canSendTest = useMemo(
-    () =>
-      Boolean(
-        selectedRecipient &&
-          isValidEmail(testEmail) &&
-          isValidEmail(senderEmail)
-      ),
-    [selectedRecipient, senderEmail, testEmail]
-  );
-
   const canSendBulk = useMemo(
-    () => Boolean(rows.length && isValidEmail(senderEmail)),
-    [rows.length, senderEmail]
+    () => Boolean(rows.length),
+    [rows.length]
   );
 
   const variables = useMemo(() => {
@@ -152,6 +174,18 @@ export function MailMergeApp() {
           Object.entries(recipient).filter(([key]) => !key.startsWith("__"))
         ) as Record<string, string>;
 
+        const attachmentUrl =
+          cleanRecipient.attachment_url ??
+          cleanRecipient.file_url ??
+          cleanRecipient.document_url ??
+          "";
+        const driveId = cleanRecipient.drive_id ?? "";
+        const attachmentName =
+          cleanRecipient.attachment_name ??
+          cleanRecipient.file_name ??
+          cleanRecipient.filename ??
+          "";
+
         const emailValue = cleanRecipient.email ?? "";
         if (!isValidEmail(emailValue)) {
           updatedRows[index] = { ...updatedRows[index], __status: "failed" };
@@ -166,9 +200,11 @@ export function MailMergeApp() {
           try {
             await sendEmail({
               to: emailValue,
-              from: senderEmail,
               subject: interpolateTemplate(subject, cleanRecipient),
               html: interpolateTemplate(html, cleanRecipient),
+              attachmentUrl: attachmentUrl || undefined,
+              driveId: driveId || undefined,
+              attachmentName: attachmentName || undefined,
               variables: cleanRecipient,
             });
             success = true;
@@ -202,24 +238,8 @@ export function MailMergeApp() {
 
       setSending(false);
     },
-    [html, rows, senderEmail, subject]
+    [html, rows, subject]
   );
-
-  const handleSendTest = useCallback(() => {
-    if (
-      !selectedRecipient ||
-      !isValidEmail(testEmail) ||
-      !isValidEmail(senderEmail)
-    ) {
-      return;
-    }
-    void handleSend([
-      {
-        ...selectedRecipient,
-        email: testEmail,
-      },
-    ]);
-  }, [handleSend, selectedRecipient, senderEmail, testEmail]);
 
   const handleSendBulk = useCallback(() => {
     void handleSend(rows);
@@ -290,6 +310,9 @@ export function MailMergeApp() {
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   Soạn email HTML, chèn biến và preview.
                 </p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Đính kèm file: thêm cột attachment_url hoặc drive_id, kèm attachment_name nếu cần.
+                </p>
               </div>
             </div>
             <EmailEditor
@@ -307,17 +330,11 @@ export function MailMergeApp() {
           <SendControls
             subject={subject}
             onSubjectChange={setSubject}
-            senderEmail={senderEmail}
-            onSenderEmailChange={setSenderEmail}
-            testEmail={testEmail}
-            onTestEmailChange={setTestEmail}
             selectedRecipient={selectedRecipient}
-            canSendTest={canSendTest}
             canSendBulk={canSendBulk}
             progress={progress}
             sending={sending}
             errorMessage={lastError}
-            onSendTest={handleSendTest}
             onSendBulk={handleSendBulk}
             onSaveTemplate={handleSaveTemplate}
           />

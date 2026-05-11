@@ -5,17 +5,11 @@ import type { RecipientRow } from "../data/RecipientsTable";
 export type SendControlsProps = {
   subject: string;
   onSubjectChange: (value: string) => void;
-  senderEmail: string;
-  onSenderEmailChange: (value: string) => void;
-  testEmail: string;
-  onTestEmailChange: (value: string) => void;
   selectedRecipient?: RecipientRow | null;
-  canSendTest: boolean;
   canSendBulk: boolean;
   progress: number;
   sending: boolean;
   errorMessage?: string | null;
-  onSendTest: () => void;
   onSendBulk: () => void;
   onSaveTemplate: () => void;
 };
@@ -23,17 +17,11 @@ export type SendControlsProps = {
 export function SendControls({
   subject,
   onSubjectChange,
-  senderEmail,
-  onSenderEmailChange,
-  testEmail,
-  onTestEmailChange,
   selectedRecipient,
-  canSendTest,
   canSendBulk,
   progress,
   sending,
   errorMessage,
-  onSendTest,
   onSendBulk,
   onSaveTemplate,
 }: SendControlsProps) {
@@ -56,42 +44,14 @@ export function SendControls({
           placeholder="Ví dụ: Thư mời tham dự sự kiện"
         />
       </label>
-      <label className="flex flex-col gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-        Email người gửi
-        <input
-          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-indigo-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-          value={senderEmail}
-          onChange={(event) => onSenderEmailChange(event.target.value)}
-          placeholder="sender@company.com"
-        />
-      </label>
-      <label className="flex flex-col gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-        Email gửi thử
-        <input
-          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-indigo-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-          value={testEmail}
-          onChange={(event) => onTestEmailChange(event.target.value)}
-          placeholder="test@company.com"
-        />
-      </label>
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/40 dark:bg-indigo-500/20 dark:text-indigo-200"
-          onClick={onSendTest}
-          disabled={sending || !selectedRecipient || !canSendTest}
-        >
-          Gửi thử
-        </button>
-        <button
-          type="button"
-          className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={onSendBulk}
-          disabled={sending || !canSendBulk}
-        >
-          Gửi hàng loạt
-        </button>
-      </div>
+      <button
+        type="button"
+        className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={onSendBulk}
+        disabled={sending || !canSendBulk}
+      >
+        Gửi hàng loạt
+      </button>
       <button
         type="button"
         onClick={onSaveTemplate}
