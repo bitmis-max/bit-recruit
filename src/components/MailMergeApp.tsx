@@ -18,6 +18,7 @@ const RATE_LIMIT_MS = 500;
 const MAX_RETRY = 2;
 
 const STORAGE_KEY = "mailmerge.templates";
+const SELECTED_TEMPLATE_KEY = "mailmerge.selectedTemplate";
 const DRAFT_KEY = "mailmerge.draft";
 
 type TemplateRecord = {
@@ -25,6 +26,8 @@ type TemplateRecord = {
   name: string;
   subject: string;
   html: string;
+  rows: RecipientRow[];
+  selectedId: string | null;
 };
 
 type DraftState = {
@@ -61,26 +64,41 @@ export function MailMergeApp() {
   );
 
   useEffect(() => {
+    let storedTemplates: TemplateRecord[] = [];
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       try {
-        setTemplates(JSON.parse(stored) as TemplateRecord[]);
+        storedTemplates = JSON.parse(stored) as TemplateRecord[];
+        setTemplates(storedTemplates);
       } catch {
         setTemplates([]);
       }
     }
 
-    const draft = localStorage.getItem(DRAFT_KEY);
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft) as DraftState;
-        setSubject(parsed.subject ?? DEFAULT_SUBJECT);
-        setHtml(parsed.html ?? DEFAULT_HTML);
-        setRows(parsed.rows ?? []);
-        setSelectedId(parsed.selectedId ?? null);
-        setTheme(parsed.theme ?? "light");
-      } catch {
-        // ignore corrupted drafts
+    const storedSelected = localStorage.getItem(SELECTED_TEMPLATE_KEY);
+    const matchedTemplate = storedSelected
+      ? storedTemplates.find((template) => template.id === storedSelected)
+      : null;
+
+    if (matchedTemplate) {
+      setSelectedTemplate(matchedTemplate.id);
+      setSubject(matchedTemplate.subject ?? DEFAULT_SUBJECT);
+      setHtml(matchedTemplate.html ?? DEFAULT_HTML);
+      setRows(matchedTemplate.rows ?? []);
+      setSelectedId(matchedTemplate.selectedId ?? null);
+    } else {
+      const draft = localStorage.getItem(DRAFT_KEY);
+      if (draft) {
+        try {
+          const parsed = JSON.parse(draft) as DraftState;
+          setSubject(parsed.subject ?? DEFAULT_SUBJECT);
+          setHtml(parsed.html ?? DEFAULT_HTML);
+          setRows(parsed.rows ?? []);
+          setSelectedId(parsed.selectedId ?? null);
+          setTheme(parsed.theme ?? "light");
+        } catch {
+          // ignore corrupted drafts
+        }
       }
     }
 
@@ -106,6 +124,37 @@ export function MailMergeApp() {
     };
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
   }, [html, rows, selectedId, subject, theme]);
+
+  useEffect(() => {
+    if (!selectedTemplate) {
+      localStorage.removeItem(SELECTED_TEMPLATE_KEY);
+      return;
+    }
+
+    localStorage.setItem(SELECTED_TEMPLATE_KEY, selectedTemplate);
+  }, [selectedTemplate]);
+
+  useEffect(() => {
+    if (!selectedTemplate) return;
+
+    setTemplates((prev) => {
+      const index = prev.findIndex(
+        (template) => template.id === selectedTemplate
+      );
+      if (index === -1) return prev;
+      const updated = {
+        ...prev[index],
+        subject,
+        html,
+        rows,
+        selectedId,
+      };
+      const next = [...prev];
+      next[index] = updated;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, [html, rows, selectedId, selectedTemplate, subject]);
 
   const handleDataParsed = useCallback((data: ParsedData, file?: File) => {
     setImportError(null);
@@ -245,7 +294,7 @@ export function MailMergeApp() {
     void handleSend(rows);
   }, [handleSend, rows]);
 
-  const handleSaveTemplate = useCallback(() => {
+  const handleCreateTemplate = useCallback(() => {
     const name = window.prompt("Tên template?");
     if (!name) return;
     const next = [
@@ -254,12 +303,25 @@ export function MailMergeApp() {
         name,
         subject,
         html,
+        rows,
+        selectedId,
       },
       ...templates,
     ];
     setTemplates(next);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  }, [html, subject, templates]);
+    setSelectedTemplate(next[0]?.id ?? null);
+  }, [html, rows, selectedId, subject, templates]);
+
+  const handleDeleteTemplate = useCallback(() => {
+    if (!selectedTemplate) return;
+    const confirmed = window.confirm("Xóa template này?");
+    if (!confirmed) return;
+    const next = templates.filter((template) => template.id !== selectedTemplate);
+    setTemplates(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    setSelectedTemplate(null);
+  }, [selectedTemplate, templates]);
 
   const handleTemplateSelect = useCallback(
     (value: string) => {
@@ -268,6 +330,8 @@ export function MailMergeApp() {
       if (selected) {
         setSubject(selected.subject);
         setHtml(selected.html);
+        setRows(selected.rows ?? []);
+        setSelectedId(selected.selectedId ?? null);
       }
     },
     [templates]
@@ -292,6 +356,21 @@ export function MailMergeApp() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={handleCreateTemplate}
+            className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-indigo-500/20 dark:text-indigo-200"
+          >
+            Thêm template
+          </button>
+          <button
+            type="button"
+            onClick={handleDeleteTemplate}
+            disabled={!selectedTemplate}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+          >
+            Xóa template
+          </button>
           <button
             type="button"
             onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
@@ -336,7 +415,6 @@ export function MailMergeApp() {
             sending={sending}
             errorMessage={lastError}
             onSendBulk={handleSendBulk}
-            onSaveTemplate={handleSaveTemplate}
           />
           <RecipientsTable
             rows={rows}
