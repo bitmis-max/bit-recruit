@@ -24,3 +24,35 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.editor-content :where(p, ul, ol, h2) {
+  margin: 0 0 0.75rem;
+}
+
+.editor-content ul {
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.editor-content ol {
+  padding-left: 1.25rem;
+  list-style: decimal;
+}
+
+.editor-content a {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+
+.editor-content img {
+  max-width: 100%;
+  border-radius: 0.75rem;
+}
+
+.var-token {
+  background: rgba(79, 70, 229, 0.15);
+  color: #4338ca;
+  border-radius: 0.375rem;
+  padding: 0.05rem 0.25rem;
+  font-weight: 600;
+}
