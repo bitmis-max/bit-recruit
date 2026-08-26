@@ -11,6 +11,7 @@ export type SendEmailPayload = {
   variables?: Record<string, string>;
   recipientId?: string;
   campaignId?: string;
+  providerToken?: string;
 };
 
 const DEBUG = process.env.NEXT_PUBLIC_EMAIL_DEBUG === "true";
@@ -26,7 +27,6 @@ type SendStage =
 function debugLog(stage: SendStage, message: string, detail?: unknown) {
   if (!DEBUG) return;
   const payload = detail ? { detail } : undefined;
-  // eslint-disable-next-line no-console
   console.info(`[send-email][${stage}] ${message}`, payload ?? "");
 }
 

@@ -1,11 +1,9 @@
 "use client";
 
-import type { RecipientRow } from "../data/RecipientsTable";
 
 export type SendControlsProps = {
   subject: string;
   onSubjectChange: (value: string) => void;
-  selectedRecipient?: RecipientRow | null;
   canSendBulk: boolean;
   progress: number;
   sending: boolean;
@@ -16,7 +14,6 @@ export type SendControlsProps = {
 export function SendControls({
   subject,
   onSubjectChange,
-  selectedRecipient,
   canSendBulk,
   progress,
   sending,

@@ -8,7 +8,6 @@ const DEBUG =
 
 function debugLog(message: string, detail?: unknown) {
   if (!DEBUG) return;
-  // eslint-disable-next-line no-console
   console.info(`[api/send-email] ${message}`, detail ?? "");
 }
 
@@ -20,6 +19,7 @@ type SendRequest = {
   attachmentUrl?: string;
   driveId?: string;
   attachmentName?: string;
+  providerToken?: string;
 };
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -37,22 +37,18 @@ function getFileNameFromUrl(url: string) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as SendRequest;
-    const smtpUser = process.env.SMTP_USER ?? "";
-    const smtpPass = process.env.SMTP_PASS ?? "";
-    const smtpHost = process.env.SMTP_HOST ?? "smtp.gmail.com";
-    const smtpPort = Number(process.env.SMTP_PORT ?? 465);
-    const defaultFrom = process.env.SMTP_FROM ?? smtpUser;
+    const providerToken = body.providerToken?.trim();
 
-    if (!smtpUser || !smtpPass) {
-      debugLog("Missing SMTP_USER or SMTP_PASS");
+    if (!providerToken) {
+      debugLog("Missing Google providerToken");
       return Response.json(
-        { ok: false, error: "Missing SMTP_USER or SMTP_PASS" },
-        { status: 500 }
+        { ok: false, error: "Yêu cầu đăng nhập Google để thực hiện thao tác này." },
+        { status: 401 }
       );
     }
 
     const to = body.to?.trim();
-    const from = (body.from ?? defaultFrom)?.trim();
+    const from = body.from?.trim();
     const subject = body.subject?.trim();
     const html = body.html ?? "";
     const driveId = body.driveId?.trim();
@@ -107,15 +103,15 @@ export async function POST(request: Request) {
       };
     }
 
-    debugLog("Sending via SMTP", { to, from, smtpHost, smtpPort });
-
+    debugLog("Using Gmail OAuth2 SMTP for sender: " + from);
     const transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
       auth: {
-        user: smtpUser,
-        pass: smtpPass,
+        type: "OAuth2",
+        user: from,
+        accessToken: providerToken,
       },
     });
 
