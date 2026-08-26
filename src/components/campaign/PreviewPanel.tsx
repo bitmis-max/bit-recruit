@@ -23,7 +23,7 @@ export function PreviewPanel({ html, subject, recipient }: PreviewPanelProps) {
         <p className="font-semibold text-zinc-800 dark:text-zinc-100">{subject || "(Chưa có tiêu đề)"}</p>
       </div>
       <div
-        className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-800 shadow-inner dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+        className="preview-content rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-800 shadow-inner dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
         dangerouslySetInnerHTML={{ __html: html || "<p>Chưa có nội dung.</p>" }}
       />
     </section>

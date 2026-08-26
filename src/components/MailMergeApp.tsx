@@ -48,6 +48,7 @@ export function MailMergeApp() {
     sendingError,
     canSendBulk,
     handleSendBulk,
+    handleSendSelf,
   } = useSender({
     session,
     supabaseConfigured,
@@ -171,7 +172,7 @@ export function MailMergeApp() {
             value={selectedTemplate ?? ""}
             onChange={(event) => handleTemplateSelect(event.target.value)}
           >
-            <option value="">Template đã lưu</option>
+            <option value="">Chọn template</option>
             {templates.map((template) => (
               <option key={template.id} value={template.id}>
                 {template.name}
@@ -206,21 +207,38 @@ export function MailMergeApp() {
       <main className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
         <section className="flex flex-col gap-6">
           <div className="grid gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Soạn email HTML, chèn biến và preview.
-                </p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Đính kèm file: thêm cột attachment_url hoặc drive_id, kèm attachment_name nếu cần.
-                </p>
-              </div>
+            <div className="flex flex-col gap-1 border-b border-zinc-100 pb-4 dark:border-zinc-800">
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Soạn thảo thư
+              </h2>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Nhập tiêu đề, soạn nội dung email HTML, và chèn các biến động. Đính kèm file Excel.
+              </p>
             </div>
-            <EmailEditor
-              value={html}
-              onChange={setHtml}
-              onInsertVariableReady={handleInsertVariableReady}
-            />
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                Tiêu đề email
+              </label>
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Ví dụ: Thư mời tham dự sự kiện {{Name}}"
+                className="w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3.5 py-2 text-sm text-zinc-900 outline-none transition focus:border-indigo-500 focus:bg-white dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:bg-zinc-950"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                Nội dung thư
+              </label>
+              <EmailEditor
+                value={html}
+                onChange={setHtml}
+                onInsertVariableReady={handleInsertVariableReady}
+              />
+            </div>
           </div>
           <PreviewPanel html={previewHtml} subject={previewSubject} recipient={selectedRecipient} />
         </section>
@@ -230,13 +248,12 @@ export function MailMergeApp() {
           <ImportPanel onDataParsed={handleDataParsed} externalError={importError} />
 
           <SendControls
-            subject={subject}
-            onSubjectChange={setSubject}
             canSendBulk={canSendBulk}
             progress={progress}
             sending={sending}
             errorMessage={lastError}
             onSendBulk={handleSendBulk}
+            onSendSelf={() => handleSendSelf(selectedRecipient)}
           />
           <RecipientsTable
             rows={rows}

@@ -103,16 +103,11 @@ export async function POST(request: Request) {
       };
     }
 
-    debugLog("Using Gmail OAuth2 SMTP for sender: " + from);
+    debugLog("Compiling MIME message using nodemailer streamTransport");
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: {
-        type: "OAuth2",
-        user: from,
-        accessToken: providerToken,
-      },
+      streamTransport: true,
+      newline: "unix",
+      buffer: true,
     });
 
     const info = await transporter.sendMail({
@@ -123,8 +118,41 @@ export async function POST(request: Request) {
       attachments: attachment ? [attachment] : [],
     });
 
-    debugLog("SMTP ok", { messageId: info.messageId });
-    return Response.json({ ok: true, data: { messageId: info.messageId } });
+    const rawMessage = info.message.toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    debugLog("Sending via Gmail REST API for: " + from);
+    const gmailResponse = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${providerToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          raw: rawMessage,
+        }),
+      }
+    );
+
+    if (!gmailResponse.ok) {
+      const errorText = await gmailResponse.text();
+      debugLog("Gmail API send failed", {
+        status: gmailResponse.status,
+        errorText,
+      });
+      return Response.json(
+        { ok: false, error: `Gmail API error: ${errorText}` },
+        { status: gmailResponse.status }
+      );
+    }
+
+    const gmailData = (await gmailResponse.json()) as { id: string };
+    debugLog("Gmail API ok", { messageId: gmailData.id });
+    return Response.json({ ok: true, data: { messageId: gmailData.id } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     debugLog("Unhandled error", { message });

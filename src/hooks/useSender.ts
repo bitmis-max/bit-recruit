@@ -126,6 +126,55 @@ export function useSender({
     void handleSend(rows);
   }, [handleSend, rows]);
 
+  const handleSendSelf = useCallback(async (selectedRecipient: RecipientRow | null) => {
+    const targetEmail = session?.user?.email;
+    if (!targetEmail) {
+      setSendingError("Không tìm thấy email của bạn. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    setSending(true);
+    setSendingError(null);
+
+    const cleanRecipient = selectedRecipient
+      ? (Object.fromEntries(
+          Object.entries(selectedRecipient).filter(([key]) => !key.startsWith("__"))
+        ) as Record<string, string>)
+      : {};
+
+    const attachmentUrl =
+      cleanRecipient.attachment_url ??
+      cleanRecipient.file_url ??
+      cleanRecipient.document_url ??
+      "";
+    const driveId = cleanRecipient.drive_id ?? "";
+    const attachmentName =
+      cleanRecipient.attachment_name ??
+      cleanRecipient.file_name ??
+      cleanRecipient.filename ??
+      "";
+
+    try {
+      await sendEmail({
+        to: targetEmail,
+        from: session?.user?.email ?? undefined,
+        subject: "[TEST] " + interpolateTemplate(subject, cleanRecipient),
+        html: interpolateTemplate(html, cleanRecipient),
+        attachmentUrl: attachmentUrl || undefined,
+        driveId: driveId || undefined,
+        attachmentName: attachmentName || undefined,
+        variables: cleanRecipient,
+        providerToken: session?.provider_token ?? undefined,
+      });
+      alert("Đã gửi email test thành công đến: " + targetEmail);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Gửi email test thất bại";
+      setSendingError(message);
+    } finally {
+      setSending(false);
+    }
+  }, [html, subject, session]);
+
   return {
     sending,
     progress,
@@ -134,5 +183,6 @@ export function useSender({
     canSendBulk,
     handleSend,
     handleSendBulk,
+    handleSendSelf,
   };
 }
