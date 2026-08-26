@@ -15,14 +15,12 @@ import { useTemplates } from "../hooks/useTemplates";
 import { useSender } from "../hooks/useSender";
 
 import { SetupGuide } from "./auth/SetupGuide";
-import { LoginGate } from "./auth/LoginGate";
 
 export function MailMergeApp() {
   const {
     session,
     supabaseConfigured,
     lastError: authError,
-    handleLogin,
     handleLogout,
   } = useAuth();
 
@@ -123,8 +121,8 @@ export function MailMergeApp() {
     return <SetupGuide />;
   }
 
-  if (supabaseConfigured && !session) {
-    return <LoginGate onLogin={handleLogin} lastError={lastError} />;
+  if (!session) {
+    return null;
   }
 
   return (

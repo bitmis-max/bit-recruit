@@ -3,11 +3,12 @@ import { type Session } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../lib/supabase/client";
 
 export function useAuth() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [lastError, setLastError] = useState<string | null>(null);
-
   const supabase = useMemo(() => getSupabaseClient(), []);
   const supabaseConfigured = supabase !== null;
+
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(() => supabase !== null);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -16,12 +17,14 @@ export function useAuth() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      setLoading(false);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      setLoading(false);
     });
 
     return () => {
@@ -64,6 +67,7 @@ export function useAuth() {
 
   return {
     session,
+    loading,
     supabaseConfigured,
     lastError,
     setLastError,
