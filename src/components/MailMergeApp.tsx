@@ -194,13 +194,6 @@ export function MailMergeApp() {
           >
             Xóa template
           </button>
-          <button
-            type="button"
-            onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
-          >
-            {theme === "dark" ? "Light mode" : "Dark mode"}
-          </button>
         </div>
       </header>
 

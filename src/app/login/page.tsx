@@ -12,6 +12,8 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && session) {
+      // Clear URL parameters to hide sensitive tokens
+      window.history.replaceState({}, document.title, "/");
       router.push("/");
     }
   }, [session, loading, router]);

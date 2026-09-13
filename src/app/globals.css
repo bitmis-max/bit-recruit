@@ -25,6 +25,14 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+button {
+  cursor: pointer !important;
+}
+
+button:hover {
+  cursor: pointer !important;
+}
+
 .editor-content :where(p, ul, ol, h2),
 .preview-content :where(p, ul, ol, h2) {
   margin: 0 0 0.75rem;
