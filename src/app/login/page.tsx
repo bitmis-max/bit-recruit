@@ -13,8 +13,10 @@ export default function LoginPage() {
   useEffect(() => {
     if (!loading && session) {
       // Clear URL parameters to hide sensitive tokens
-      window.history.replaceState({}, document.title, "/");
-      router.push("/");
+      const requestedNext = new URLSearchParams(window.location.search).get("next");
+      const destination = requestedNext?.startsWith("/admin") && !requestedNext.startsWith("//") ? requestedNext : "/admin";
+      window.history.replaceState({}, document.title, destination);
+      router.replace(destination);
     }
   }, [session, loading, router]);
 

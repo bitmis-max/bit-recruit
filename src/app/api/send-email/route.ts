@@ -1,5 +1,6 @@
 import * as nodemailer from "nodemailer";
 import type { EmailAttachment } from "../../../lib/email/template";
+import { createSupabaseServerClient } from "../../../lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,7 @@ type SendRequest = {
   attachmentName?: string;
   imageAttachment?: EmailAttachment;
   providerToken?: string;
+  clubId?: string;
 };
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -39,6 +41,11 @@ function getFileNameFromUrl(url: string) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as SendRequest;
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
+    if (!supabase || !user || !body.clubId) return Response.json({ ok: false, error: "Cần đăng nhập và chọn CLB." }, { status: 401 });
+    const { data: membership } = await supabase.from("club_members").select("role").eq("user_id", user.id).eq("club_id", body.clubId).eq("is_active", true).limit(1).maybeSingle();
+    if (!membership || !["owner", "admin"].includes(membership.role)) return Response.json({ ok: false, error: "Bạn không có quyền gửi mail cho CLB này." }, { status: 403 });
     const providerToken = body.providerToken?.trim();
 
     if (!providerToken) {

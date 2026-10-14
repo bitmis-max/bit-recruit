@@ -32,21 +32,12 @@ export function useAuth() {
     };
   }, [supabase]);
 
-  const handleLogin = useCallback(async () => {
+  const handleLogin = useCallback(async (email: string, password: string) => {
     if (!supabase) return;
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          scopes: "email profile https://www.googleapis.com/auth/gmail.send",
-          redirectTo: window.location.origin,
-          queryParams: {
-            access_type: "offline",
-            prompt: "consent",
-          },
-        },
-      });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      setLastError(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Đăng nhập thất bại";
       setLastError(message);

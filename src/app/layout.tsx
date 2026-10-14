@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Mail Merge Studio",
-  description: "Bulk email sender with Supabase",
+  title: "Tuyển thành viên CLB BIT",
+  description: "Cổng thông tin tuyển thành viên Câu lạc bộ BIT",
 };
 
 export default function RootLayout({
@@ -24,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="vi"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

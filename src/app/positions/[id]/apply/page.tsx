@@ -1,0 +1,62 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import ApplyForm from "../../../../components/ApplyForm";
+import { createSupabaseServerClient } from "../../../../lib/supabase/server";
+import type { ApplicationForm, FormQuestion } from "../../../../lib/recruitment/types";
+
+export default async function ApplyPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) {
+    return <main className="mx-auto max-w-3xl p-8">Chưa cấu hình kết nối Supabase. Vui lòng thử lại sau.</main>;
+  }
+
+  const { data: position } = await supabase
+    .from("recruitment_positions")
+    .select("id,name,description,quantity,campaign_id,recruitment_campaigns!inner(status,start_date,end_date,club_id)")
+    .eq("id", id)
+    .eq("recruitment_campaigns.status", "open")
+    .maybeSingle();
+
+  if (!position) notFound();
+  const campaign = Array.isArray(position.recruitment_campaigns)
+    ? position.recruitment_campaigns[0]
+    : position.recruitment_campaigns;
+  const now = Date.now();
+  if ((campaign?.start_date && new Date(campaign.start_date).getTime() > now) ||
+      (campaign?.end_date && new Date(campaign.end_date).getTime() < now)) notFound();
+
+  let form: ApplicationForm | null = null;
+  let questions: FormQuestion[] = [];
+  const { data: formData } = await supabase.from("application_forms")
+    .select("id,name,description")
+    .eq("position_id", position.id)
+    .maybeSingle();
+  form = formData as ApplicationForm | null;
+  if (form) {
+    const { data: questionData } = await supabase.from("form_questions")
+      .select("id,text,type,options,is_required,order_index")
+      .eq("form_id", form.id)
+      .order("order_index");
+    questions = (questionData ?? []) as FormQuestion[];
+  }
+
+  return (
+    <main className="min-h-screen bg-[#f7f8f6] px-5 py-10 text-zinc-900 sm:px-8">
+      <div className="mx-auto max-w-3xl">
+        <Link href={`/clubs/${campaign?.club_id ?? ""}`} className="text-sm font-medium text-emerald-800 hover:underline">← Quay lại các ban đang tuyển</Link>
+        <div className="mb-8 mt-8 rounded-2xl border border-zinc-200 bg-white p-6 sm:p-8">
+          <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700">Đơn ứng tuyển</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{position.name}</h1>
+          {position.description && <p className="mt-4 whitespace-pre-wrap leading-7 text-zinc-600">{position.description}</p>}
+          {form?.description && <p className="mt-3 whitespace-pre-wrap text-zinc-600">{form.description}</p>}
+        </div>
+        {!form ? (
+          <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">Ban này chưa được liên kết với biểu mẫu ứng tuyển. Vui lòng liên hệ ban tuyển thành viên.</div>
+        ) : (
+          <ApplyForm position={{ id: position.id, name: position.name }} questions={questions} />
+        )}
+      </div>
+    </main>
+  );
+}

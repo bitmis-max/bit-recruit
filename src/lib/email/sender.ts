@@ -14,6 +14,7 @@ export type SendEmailPayload = {
   recipientId?: string;
   campaignId?: string;
   providerToken?: string;
+  clubId?: string;
 };
 
 const DEBUG = process.env.NEXT_PUBLIC_EMAIL_DEBUG === "true";
@@ -36,7 +37,8 @@ export async function sendEmail(payload: SendEmailPayload) {
   const supabase = getSupabaseClient();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  const useApiRoute = process.env.NEXT_PUBLIC_USE_API_ROUTE === "true";
+  // Admin mail writes must pass through the server role check in this route.
+  const useApiRoute = true;
 
   if (!url || !anonKey) {
     debugLog(
@@ -46,6 +48,7 @@ export async function sendEmail(payload: SendEmailPayload) {
   }
 
   if (useApiRoute) {
+    const clubId = payload.clubId ?? document.cookie.split("; ").map((part) => part.trim()).find((part) => part.startsWith("admin_club="))?.slice("admin_club=".length);
     debugLog("invoke-api-route", "Calling /api/send-email", {
       to: payload.to,
       from: payload.from,
@@ -55,7 +58,7 @@ export async function sendEmail(payload: SendEmailPayload) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, clubId: clubId ? decodeURIComponent(clubId) : undefined }),
     });
     const data = await response.json();
     if (!response.ok) {

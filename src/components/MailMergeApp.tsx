@@ -15,6 +15,7 @@ import { useTemplates } from "../hooks/useTemplates";
 import { useSender } from "../hooks/useSender";
 
 import { SetupGuide } from "./auth/SetupGuide";
+import { getSupabaseClient } from "../lib/supabase/client";
 
 export function MailMergeApp() {
   const {
@@ -170,6 +171,16 @@ export function MailMergeApp() {
           )}
 
           <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block" />
+
+          {!session.provider_token && <button type="button" onClick={async () => {
+            const supabase = getSupabaseClient();
+            const { error } = await supabase?.auth.linkIdentity({ provider: "google", options: {
+              scopes: "email profile https://www.googleapis.com/auth/gmail.send",
+              redirectTo: `${window.location.origin}/admin/mail`,
+              queryParams: { access_type: "offline", prompt: "consent" },
+            } }) ?? { error: new Error("Supabase chưa được cấu hình") };
+            if (error) alert(error.message);
+          }} className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold">Kết nối Google để gửi mail</button>}
 
           <select
             className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700 shadow-sm outline-none transition focus:border-indigo-400 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"

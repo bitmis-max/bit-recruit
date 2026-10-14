@@ -6,7 +6,7 @@ Nền tảng: **Supabase (PostgreSQL)**
 
 - **Ứng viên không cần tài khoản.** Thông tin cá nhân lưu thẳng trong `applications`.
 - **Thành viên CLB (`club_members`) không nhất thiết có tài khoản.** Họ chỉ được gán vào ca phỏng vấn để hỗ trợ.
-- **Chỉ ban quản trị mới đăng nhập.** Dùng `auth.users` của Supabase, bảng `profiles` để lưu thông tin thêm, bảng `club_staff` để phân quyền theo từng CLB.
+- **Chỉ ban quản trị mới đăng nhập.** Dùng `auth.users` của Supabase, bảng `profiles` để lưu thông tin thêm, cột `club_members.role` để phân quyền theo từng CLB.
 - **Không dùng bộ 4 bảng RBAC** (`roles`, `permissions`, `role_permissions`, `user_roles`). Vai trò là enum, quyền được kiểm soát bằng **RLS policy**.
 - **Đánh giá đơn giản:** điểm, nhận xét, kết quả nằm trực tiếp trong `interview_assignments`.
 - **Hỗ trợ nhiều CLB** dùng chung hệ thống (hầu hết bảng truy ngược được về `club_id`).
@@ -15,12 +15,10 @@ Nền tảng: **Supabase (PostgreSQL)**
 
 ```mermaid
 erDiagram
-    clubs ||--o{ club_staff : has
     clubs ||--o{ club_members : has
     clubs ||--o{ teams : has
     clubs ||--o{ recruitment_campaigns : runs
 
-    recruitment_campaigns ||--o{ application_forms : has
     recruitment_campaigns ||--o{ recruitment_positions : opens
     recruitment_campaigns ||--o{ applications : receives
     recruitment_campaigns ||--o{ interview_sessions : schedules
@@ -29,7 +27,7 @@ erDiagram
     teams ||--o{ interview_sessions : "may host"
 
     application_forms ||--o{ form_questions : contains
-    application_forms ||--o{ recruitment_positions : "used by"
+    recruitment_positions ||--o| application_forms : has
 
     recruitment_positions ||--o{ applications : "applied to"
     applications ||--o{ application_answers : has
@@ -46,13 +44,12 @@ erDiagram
 | Nhóm | Bảng | Mục đích |
 |---|---|---|
 | Tài khoản & quyền | `profiles` | Thông tin mở rộng của `auth.users` |
-| | `club_staff` | Người quản trị của từng CLB kèm vai trò |
 | CLB | `clubs` | Câu lạc bộ |
 | | `teams` | Các ban trong CLB |
 | | `club_members` | Danh sách thành viên (có thể không có tài khoản) |
 | Tuyển dụng | `recruitment_campaigns` | Đợt tuyển |
 | | `recruitment_positions` | Vị trí tuyển trong đợt |
-| | `application_forms` | Form đăng ký của đợt |
+| | `application_forms` | Form đăng ký riêng của từng ban tuyển |
 | | `form_questions` | Câu hỏi trong form |
 | | `applications` | Đơn ứng tuyển |
 | | `application_answers` | Câu trả lời của ứng viên |
@@ -102,14 +99,6 @@ create table clubs (
   created_at timestamptz not null default now()
 );
 
--- Người quản trị của từng CLB (thay cho roles/permissions/user_roles)
-create table club_staff (
-  user_id uuid not null references auth.users(id) on delete cascade,
-  club_id uuid not null references clubs(id) on delete cascade,
-  role club_role not null default 'organizer',
-  created_at timestamptz not null default now(),
-  primary key (user_id, club_id)
-);
 ```
 
 ### 4.3. CLB, ban, thành viên
@@ -127,6 +116,7 @@ create table club_members (
   id uuid primary key default gen_random_uuid(),
   club_id uuid not null references clubs(id) on delete cascade,
   user_id uuid references auth.users(id) on delete set null, -- không bắt buộc
+  role club_role not null default 'organizer',
   student_code text,
   full_name text not null,
   class_name text,
@@ -151,9 +141,20 @@ create table recruitment_campaigns (
   updated_at timestamptz not null default now()
 );
 
-create table application_forms (
+create table recruitment_positions (
   id uuid primary key default gen_random_uuid(),
   campaign_id uuid not null references recruitment_campaigns(id) on delete cascade,
+  team_id uuid references teams(id) on delete set null,
+  name text not null,
+  description text,
+  quantity int,                          -- chỉ tiêu tuyển
+  created_at timestamptz not null default now()
+);
+
+-- Mỗi ban tuyển có tối đa một form riêng.
+create table application_forms (
+  id uuid primary key default gen_random_uuid(),
+  position_id uuid not null unique references recruitment_positions(id) on delete cascade,
   name text not null,
   description text,
   created_at timestamptz not null default now()
@@ -162,22 +163,11 @@ create table application_forms (
 create table form_questions (
   id uuid primary key default gen_random_uuid(),
   form_id uuid not null references application_forms(id) on delete cascade,
-  text text not null,
-  type question_type not null default 'text',
+  question_text text not null,
+  question_type question_type not null default 'text',
   options jsonb,                         -- danh sách lựa chọn cho single/multi_choice
   is_required boolean not null default false,
   order_index int not null default 0,
-  created_at timestamptz not null default now()
-);
-
-create table recruitment_positions (
-  id uuid primary key default gen_random_uuid(),
-  campaign_id uuid not null references recruitment_campaigns(id) on delete cascade,
-  team_id uuid references teams(id) on delete set null,
-  form_id uuid references application_forms(id) on delete set null,
-  name text not null,
-  description text,
-  quantity int,                          -- chỉ tiêu tuyển
   created_at timestamptz not null default now()
 );
 
@@ -256,7 +246,6 @@ create table interview_session_members (
 ### 4.6. Index gợi ý
 
 ```sql
-create index on club_staff (club_id);
 create index on teams (club_id);
 create index on club_members (club_id);
 create index on recruitment_campaigns (club_id);
@@ -275,7 +264,6 @@ Bật RLS cho tất cả bảng:
 
 ```sql
 alter table clubs enable row level security;
-alter table club_staff enable row level security;
 alter table club_members enable row level security;
 alter table teams enable row level security;
 alter table recruitment_campaigns enable row level security;
@@ -293,7 +281,7 @@ alter table interview_session_members enable row level security;
 
 ```sql
 -- Người dùng hiện tại có thuộc ban quản trị của CLB này không?
-create or replace function is_club_staff(p_club_id uuid)
+create or replace function is_club_member(p_club_id uuid)
 returns boolean
 language sql
 security definer
@@ -301,8 +289,8 @@ stable
 set search_path = public
 as $$
   select exists (
-    select 1 from club_staff
-    where user_id = auth.uid() and club_id = p_club_id
+    select 1 from club_members
+    where user_id = auth.uid() and club_id = p_club_id and is_active
   );
 $$;
 
@@ -315,9 +303,10 @@ stable
 set search_path = public
 as $$
   select exists (
-    select 1 from club_staff
+    select 1 from club_members
     where user_id = auth.uid()
       and club_id = p_club_id
+      and is_active
       and role in ('owner', 'admin')
   );
 $$;
@@ -328,7 +317,7 @@ $$;
 ```sql
 -- Ban quản trị đọc/sửa campaign của CLB mình
 create policy "staff read campaigns" on recruitment_campaigns
-  for select using (is_club_staff(club_id));
+  for select using (is_club_member(club_id));
 
 create policy "admin write campaigns" on recruitment_campaigns
   for all using (is_club_admin(club_id)) with check (is_club_admin(club_id));
@@ -342,12 +331,65 @@ create policy "staff read applications" on applications
   for select using (
     exists (
       select 1 from recruitment_campaigns c
-      where c.id = applications.campaign_id and is_club_staff(c.club_id)
+      where c.id = applications.campaign_id and is_club_member(c.club_id)
     )
   );
 ```
 
-Làm tương tự cho các bảng còn lại: `teams`, `recruitment_positions`, `application_forms`, `form_questions` (cho `anon` đọc nếu campaign đang mở), `interview_sessions`, `interview_assignments`, `interview_session_members`.
+Các policy đọc form/câu hỏi công khai cần nối theo `application_forms.position_id -> recruitment_positions.campaign_id -> recruitment_campaigns.club_id` và chỉ cho đọc khi campaign đang mở, trong ngày tuyển. Ví dụ:
+
+```sql
+create policy "staff read application forms" on application_forms
+  for select to authenticated using (
+    exists (
+      select 1 from recruitment_positions p
+      join recruitment_campaigns c on c.id = p.campaign_id
+      where p.id = application_forms.position_id and is_club_member(c.club_id)
+    )
+  );
+
+create policy "admin write application forms" on application_forms
+  for all to authenticated using (
+    exists (
+      select 1 from recruitment_positions p
+      join recruitment_campaigns c on c.id = p.campaign_id
+      where p.id = application_forms.position_id and is_club_admin(c.club_id)
+    )
+  ) with check (
+    exists (
+      select 1 from recruitment_positions p
+      join recruitment_campaigns c on c.id = p.campaign_id
+      where p.id = application_forms.position_id and is_club_admin(c.club_id)
+    )
+  );
+
+create policy "public read open application forms" on application_forms
+  for select to anon, authenticated using (
+    exists (
+      select 1 from recruitment_positions p
+      join recruitment_campaigns c on c.id = p.campaign_id
+      where p.id = application_forms.position_id
+        and c.status = 'open'
+        and (c.start_date is null or c.start_date <= now())
+        and (c.end_date is null or c.end_date >= now())
+    )
+  );
+
+create policy "public read open form questions" on form_questions
+  for select to anon, authenticated using (
+    exists (
+      select 1 from application_forms f
+      join recruitment_positions p on p.id = f.position_id
+      join recruitment_campaigns c on c.id = p.campaign_id
+      where f.id = form_questions.form_id
+        and c.status = 'open'
+        and (c.start_date is null or c.start_date <= now())
+        and (c.end_date is null or c.end_date >= now())
+    )
+  );
+```
+
+Làm tương tự policy staff/admin cho `form_questions`, `teams`, `recruitment_positions`, `interview_sessions`, `interview_assignments`, `interview_session_members`.
 
 ### 5.3. Luồng của ứng viên (anon)
 
@@ -384,6 +426,20 @@ begin
 
   if v_campaign_id is null then
     raise exception 'Đợt tuyển không mở hoặc vị trí không tồn tại';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(p_answers) a
+    where not exists (
+      select 1
+      from application_forms f
+      join form_questions q on q.form_id = f.id
+      where f.position_id = p_position_id
+        and q.id = (a->>'question_id')::uuid
+    )
+  ) then
+    raise exception 'Câu trả lời không thuộc biểu mẫu của ban tuyển';
   end if;
 
   insert into applications (
@@ -445,7 +501,7 @@ grant execute on function get_application_by_token to anon;
 
 ## 6. Luồng nghiệp vụ
 
-1. **Quản trị** tạo `recruitment_campaigns`, `application_forms`, `form_questions`, `recruitment_positions`.
+1. **Quản trị** tạo `recruitment_campaigns`, `recruitment_positions`, form riêng trong `application_forms` cho từng ban, rồi tạo `form_questions`.
 2. Chuyển campaign sang `open`. Ứng viên truy cập trang đăng ký (không cần đăng nhập).
 3. Ứng viên gọi `submit_application` và nhận `tracking_token`.
 4. **Quản trị** lọc đơn, đổi `applications.status` sang `screening` hoặc `interview`.
@@ -454,3 +510,22 @@ grant execute on function get_application_by_token to anon;
 7. Sau phỏng vấn, cập nhật `status`, `score`, `comment`, `result` trong `interview_assignments`.
 8. Chốt kết quả: cập nhật `applications.status` thành `passed` hoặc `failed`.
 9. Ứng viên xem kết quả qua `get_application_by_token`.
+
+## Phụ lục: policy đọc CLB cho quản trị
+
+Đăng nhập cần đọc membership của chính tài khoản. Áp dụng các policy dưới đây sau khi bật RLS (không thay đổi schema):
+
+```sql
+create policy "users read own club memberships" on club_members
+  for select to authenticated using (user_id = auth.uid());
+
+create policy "members read their clubs" on clubs
+  for select to authenticated using (
+    exists (
+      select 1 from club_members m
+      where m.club_id = clubs.id and m.user_id = auth.uid() and m.is_active
+    )
+  );
+```
+
+Tài khoản quản trị cần có một dòng `club_members` với `user_id` trỏ tới `auth.users.id` và `is_active = true`. Vai trò theo từng CLB được lưu trực tiếp trong `club_members.role`; role `organizer` chỉ có quyền đọc.
