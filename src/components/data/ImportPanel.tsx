@@ -1,18 +1,58 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { parseFile, type ParsedData } from "../../lib/files/parse";
+import type { EmailImageAsset } from "../../lib/email/template";
 
 export type ImportPanelProps = {
   onDataParsed: (data: ParsedData, file: File) => void;
+  onImageParsed: (image: EmailImageAsset) => void;
   externalError?: string | null;
 };
 
-export function ImportPanel({ onDataParsed, externalError }: ImportPanelProps) {
+async function readImageFile(file: File): Promise<EmailImageAsset> {
+  const isSvg =
+    file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+
+  if (isSvg) {
+    const svgText = await file.text();
+    return {
+      name: file.name,
+      mimeType: file.type || "image/svg+xml",
+      source: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`,
+      svgText,
+      isSvg: true,
+    };
+  }
+
+  const source = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Không thể đọc file ảnh."));
+    reader.readAsDataURL(file);
+  });
+
+  return {
+    name: file.name,
+    mimeType: file.type,
+    source,
+    isSvg: false,
+  };
+}
+
+export function ImportPanel({
+  onDataParsed,
+  onImageParsed,
+  externalError,
+}: ImportPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [imageName, setImageName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const dataInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(
     async (files: FileList | null) => {
@@ -28,6 +68,22 @@ export function ImportPanel({ onDataParsed, externalError }: ImportPanelProps) {
       }
     },
     [onDataParsed]
+  );
+
+  const handleImageFiles = useCallback(
+    async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+      const file = files[0];
+      setImageError(null);
+      setImageName(file.name);
+      try {
+        const image = await readImageFile(file);
+        onImageParsed(image);
+      } catch (err) {
+        setImageError(err instanceof Error ? err.message : "Image parse error");
+      }
+    },
+    [onImageParsed]
   );
 
   const handleDownloadTemplate = () => {
@@ -59,6 +115,39 @@ export function ImportPanel({ onDataParsed, externalError }: ImportPanelProps) {
 
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Import hình ảnh
+            </h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Hỗ trợ PNG, JPG, WebP, SVG. SVG có thể dùng biến {"{"}var{"}"}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-zinc-100 hover:text-indigo-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-indigo-400 dark:hover:bg-zinc-800"
+          >
+            Chọn ảnh
+          </button>
+        </div>
+        <input
+          ref={imageInputRef}
+          type="file"
+          className="hidden"
+          accept="image/*,.svg"
+          onChange={(event) => void handleImageFiles(event.target.files)}
+        />
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          {imageName ? `Đã chọn: ${imageName}` : "Chưa có ảnh nào được chọn."}
+        </span>
+        {imageError ? <p className="text-xs text-rose-500">{imageError}</p> : null}
+      </div>
+
+      <div className="h-px bg-zinc-100 dark:bg-zinc-800" />
+
       <div className="flex items-start justify-between">
         <div>
           <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
@@ -110,6 +199,7 @@ export function ImportPanel({ onDataParsed, externalError }: ImportPanelProps) {
           type="file"
           className="hidden"
           accept=".csv,.xlsx,.xls"
+          ref={dataInputRef}
           onChange={(event) => void handleFiles(event.target.files)}
         />
         <span className="font-medium">

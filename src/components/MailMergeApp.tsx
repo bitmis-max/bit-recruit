@@ -7,7 +7,7 @@ import { ImportPanel } from "./data/ImportPanel";
 import { RecipientsTable } from "./data/RecipientsTable";
 import { SendControls } from "./campaign/SendControls";
 import { PreviewPanel } from "./campaign/PreviewPanel";
-import { interpolateTemplate } from "../lib/email/template";
+import { interpolateTemplate, type EmailImageAsset } from "../lib/email/template";
 import type { ParsedData } from "../lib/files/parse";
 
 import { useAuth } from "../hooks/useAuth";
@@ -35,12 +35,16 @@ export function MailMergeApp() {
     setSelectedId,
     templates,
     selectedTemplate,
-    theme,
-    setTheme,
     handleCreateTemplate,
     handleDeleteTemplate,
     handleTemplateSelect,
   } = useTemplates();
+
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importedImage, setImportedImage] = useState<EmailImageAsset | null>(null);
+  const [insertVariable, setInsertVariable] = useState<
+    (variable: string) => void
+  >(() => () => undefined);
 
   const {
     sending,
@@ -56,12 +60,8 @@ export function MailMergeApp() {
     setRows,
     subject,
     html,
+    importedImage,
   });
-
-  const [importError, setImportError] = useState<string | null>(null);
-  const [insertVariable, setInsertVariable] = useState<
-    (variable: string) => void
-  >(() => () => undefined);
 
   const lastError = authError || sendingError;
 
@@ -96,6 +96,10 @@ export function MailMergeApp() {
       void file;
     }
   }, [setRows, setSelectedId]);
+
+  const handleImageParsed = useCallback((image: EmailImageAsset) => {
+    setImportedImage(image);
+  }, []);
 
   const selectedRecipient = useMemo(
     () => rows.find((row) => row.__id === selectedId) ?? null,
@@ -233,12 +237,21 @@ export function MailMergeApp() {
               />
             </div>
           </div>
-          <PreviewPanel html={previewHtml} subject={previewSubject} recipient={selectedRecipient} />
+          <PreviewPanel
+            html={previewHtml}
+            subject={previewSubject}
+            recipient={selectedRecipient}
+            importedImage={importedImage}
+          />
         </section>
 
         <section className="flex flex-col gap-6">
           <VariableSidebar variables={variables} onInsert={insertVariable} />
-          <ImportPanel onDataParsed={handleDataParsed} externalError={importError} />
+          <ImportPanel
+            onDataParsed={handleDataParsed}
+            onImageParsed={handleImageParsed}
+            externalError={importError}
+          />
 
           <SendControls
             canSendBulk={canSendBulk}

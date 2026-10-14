@@ -1,4 +1,5 @@
 import * as nodemailer from "nodemailer";
+import type { EmailAttachment } from "../../../lib/email/template";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,7 @@ type SendRequest = {
   attachmentUrl?: string;
   driveId?: string;
   attachmentName?: string;
+  imageAttachment?: EmailAttachment;
   providerToken?: string;
 };
 
@@ -66,9 +68,9 @@ export async function POST(request: Request) {
       );
     }
 
-    let attachment:
-      | { filename: string; content: Buffer; contentType?: string }
-      | undefined;
+    const attachments:
+      Array<{ filename: string; content: Buffer | string; contentType?: string; encoding?: BufferEncoding }>
+      = [];
 
     if (attachmentUrl) {
       debugLog("Fetching attachment", { url: attachmentUrl });
@@ -96,11 +98,21 @@ export async function POST(request: Request) {
         );
       }
 
-      attachment = {
+      attachments.push({
         filename: attachmentName || getFileNameFromUrl(attachmentUrl),
         content: Buffer.from(arrayBuffer),
         contentType: fileResponse.headers.get("content-type") ?? undefined,
-      };
+      });
+    }
+
+    if (body.imageAttachment) {
+      const imageAttachment = body.imageAttachment;
+      attachments.push({
+        filename: imageAttachment.filename,
+        content: imageAttachment.content,
+        contentType: imageAttachment.contentType,
+        encoding: imageAttachment.encoding,
+      });
     }
 
     debugLog("Compiling MIME message using nodemailer streamTransport");
@@ -115,7 +127,7 @@ export async function POST(request: Request) {
       to,
       subject,
       html,
-      attachments: attachment ? [attachment] : [],
+      attachments,
     });
 
     const rawMessage = info.message.toString("base64")

@@ -3,7 +3,11 @@ import { type Session } from "@supabase/supabase-js";
 import { type RecipientRow } from "./useTemplates";
 import { sendEmail } from "../lib/email/sender";
 import { isValidEmail } from "../lib/email/validators";
-import { interpolateTemplate } from "../lib/email/template";
+import {
+  buildImageAttachment,
+  interpolateTemplate,
+  type EmailImageAsset,
+} from "../lib/email/template";
 
 const MAX_RETRY = 2;
 const RATE_LIMIT_MS = 600;
@@ -15,6 +19,7 @@ export function useSender({
   setRows,
   subject,
   html,
+  importedImage,
 }: {
   session: Session | null;
   supabaseConfigured: boolean;
@@ -22,6 +27,7 @@ export function useSender({
   setRows: (rows: RecipientRow[]) => void;
   subject: string;
   html: string;
+  importedImage: EmailImageAsset | null;
 }) {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -65,6 +71,9 @@ export function useSender({
           cleanRecipient.file_name ??
           cleanRecipient.filename ??
           "";
+        const imageAttachment = importedImage
+          ? buildImageAttachment(importedImage, cleanRecipient)
+          : undefined;
 
         const emailValue = cleanRecipient.email ?? "";
         if (!isValidEmail(emailValue)) {
@@ -86,6 +95,7 @@ export function useSender({
               attachmentUrl: attachmentUrl || undefined,
               driveId: driveId || undefined,
               attachmentName: attachmentName || undefined,
+              imageAttachment,
               variables: cleanRecipient,
               providerToken: session?.provider_token ?? undefined,
             });
@@ -119,7 +129,7 @@ export function useSender({
 
       setSending(false);
     },
-    [html, rows, subject, session, supabaseConfigured, setRows]
+    [html, importedImage, rows, subject, session, supabaseConfigured, setRows]
   );
 
   const handleSendBulk = useCallback(() => {
@@ -153,6 +163,9 @@ export function useSender({
       cleanRecipient.file_name ??
       cleanRecipient.filename ??
       "";
+    const imageAttachment = importedImage
+      ? buildImageAttachment(importedImage, cleanRecipient)
+      : undefined;
 
     try {
       await sendEmail({
@@ -163,6 +176,7 @@ export function useSender({
         attachmentUrl: attachmentUrl || undefined,
         driveId: driveId || undefined,
         attachmentName: attachmentName || undefined,
+        imageAttachment,
         variables: cleanRecipient,
         providerToken: session?.provider_token ?? undefined,
       });
@@ -173,7 +187,7 @@ export function useSender({
     } finally {
       setSending(false);
     }
-  }, [html, subject, session]);
+  }, [html, importedImage, subject, session]);
 
   return {
     sending,

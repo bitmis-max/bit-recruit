@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "../supabase/client";
+import type { EmailAttachment } from "./template";
 
 export type SendEmailPayload = {
   to: string;
@@ -8,6 +9,7 @@ export type SendEmailPayload = {
   attachmentUrl?: string;
   driveId?: string;
   attachmentName?: string;
+  imageAttachment?: EmailAttachment;
   variables?: Record<string, string>;
   recipientId?: string;
   campaignId?: string;
