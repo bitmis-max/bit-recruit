@@ -47,7 +47,7 @@ erDiagram
 | CLB | `clubs` | Câu lạc bộ |
 | | `teams` | Các ban trong CLB |
 | | `club_members` | Danh sách thành viên (có thể không có tài khoản) |
-| Tuyển dụng | `recruitment_campaigns` | Đợt tuyển |
+| tuyển gen | `recruitment_campaigns` | Đợt tuyển |
 | | `recruitment_positions` | Vị trí tuyển trong đợt |
 | | `application_forms` | Form đăng ký riêng của từng ban tuyển |
 | | `form_questions` | Câu hỏi trong form |
@@ -126,7 +126,7 @@ create table club_members (
 );
 ```
 
-### 4.4. Tuyển dụng
+### 4.4. tuyển gen
 
 ```sql
 create table recruitment_campaigns (
@@ -147,7 +147,6 @@ create table recruitment_positions (
   team_id uuid references teams(id) on delete set null,
   name text not null,
   description text,
-  quantity int,                          -- chỉ tiêu tuyển
   created_at timestamptz not null default now()
 );
 

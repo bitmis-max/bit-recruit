@@ -20,5 +20,5 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
   const requested = cookieStore.get("admin_club")?.value;
   const selected = adminClubs.find((club) => club.id === requested) ?? adminClubs[0] ?? null;
 
-  return <AdminShell clubs={adminClubs} selectedClubId={selected?.id ?? ""} email={user.email ?? ""}>{children}</AdminShell>;
+  return <AdminShell key={selected?.id ?? "none"} clubs={adminClubs} selectedClubId={selected?.id ?? ""} email={user.email ?? ""}>{children}</AdminShell>;
 }

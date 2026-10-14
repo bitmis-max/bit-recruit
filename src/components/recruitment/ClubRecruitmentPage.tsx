@@ -6,7 +6,6 @@ type RecruitmentItem = {
   id: string;
   name: string;
   description: string | null;
-  quantity: number | null;
   campaign_id: string;
   team_id: string | null;
   teams: { id: string; name: string; description: string | null } | null;
@@ -40,7 +39,7 @@ export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
 
   if (campaigns?.length) {
     const { data, error } = await supabase.from("recruitment_positions")
-      .select("id,name,description,quantity,campaign_id,team_id,teams(id,name,description)")
+      .select("id,name,description,campaign_id,team_id,teams(id,name,description)")
       .in("campaign_id", campaigns.map((campaign) => campaign.id))
       .order("name");
     items = (data ?? []) as RecruitmentItem[];
@@ -84,7 +83,6 @@ export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
                     <div>
                       <h3 className="font-semibold">{opening.name}</h3>
                       {opening.description && <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-zinc-600">{opening.description}</p>}
-                      {opening.quantity != null && <p className="mt-2 text-sm text-zinc-500">Chỉ tiêu: {opening.quantity}</p>}
                     </div>
                     <Link href={`/positions/${opening.id}/apply`} className="inline-flex w-fit shrink-0 items-center rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
                       Ứng tuyển <span aria-hidden="true" className="ml-2">→</span>

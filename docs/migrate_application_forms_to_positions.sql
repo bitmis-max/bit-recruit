@@ -110,14 +110,14 @@ declare
   cloned_question_id uuid;
 begin
   for question_row in
-    select m.new_form_id, q.id as old_question_id, q.text, q.type, q.options,
+    select m.new_form_id, q.id as old_question_id, q.question_text, q.question_type, q.options,
            q.is_required, q.order_index, q.created_at
     from _application_form_position_map m
     join form_questions q on q.form_id = m.old_form_id
     where m.new_form_id <> m.old_form_id
   loop
-    insert into form_questions (form_id, text, type, options, is_required, order_index, created_at)
-    values (question_row.new_form_id, question_row.text, question_row.type,
+    insert into form_questions (form_id, question_text, question_type, options, is_required, order_index, created_at)
+    values (question_row.new_form_id, question_row.question_text, question_row.question_type,
             question_row.options, question_row.is_required, question_row.order_index,
             question_row.created_at)
     returning id into cloned_question_id;

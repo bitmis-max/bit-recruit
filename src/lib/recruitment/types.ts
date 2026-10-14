@@ -8,8 +8,8 @@ export type QuestionType =
 
 export type FormQuestion = {
   id: string;
-  text: string;
-  type: QuestionType;
+  question_text: string;
+  question_type: QuestionType;
   options: string[] | null;
   is_required: boolean;
   order_index: number;
@@ -19,7 +19,6 @@ export type RecruitmentPosition = {
   id: string;
   name: string;
   description: string | null;
-  quantity: number | null;
   campaign_id: string;
 };
 

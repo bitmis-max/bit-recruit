@@ -14,7 +14,7 @@ const requiredText = (label: string) => z.string().trim().min(1, `${label} là b
 export default function ApplyForm({ position, questions }: Props) {
   const [applicant, setApplicant] = useState<Applicant>({ full_name: "", email: "", phone: "", student_code: "", class_name: "" });
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(
-    () => Object.fromEntries(questions.map((q) => [q.id, q.type === "multi_choice" ? [] : ""])),
+    () => Object.fromEntries(questions.map((q) => [q.id, q.question_type === "multi_choice" ? [] : ""])),
   );
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -25,7 +25,7 @@ export default function ApplyForm({ position, questions }: Props) {
     const answerShape: Record<string, z.ZodType> = {};
     for (const question of questions) {
       const required = question.is_required;
-      switch (question.type) {
+      switch (question.question_type) {
         case "number": {
           const numberSchema = z.preprocess(
             (value) => value === "" || value == null ? undefined : Number(value),
@@ -44,7 +44,7 @@ export default function ApplyForm({ position, questions }: Props) {
         default: {
           let textSchema = z.string();
           if (required) textSchema = textSchema.trim().min(1, "Câu trả lời này là bắt buộc");
-          if (question.type === "date") {
+          if (question.question_type === "date") {
             textSchema = textSchema.refine((value) => {
               if (!value) return true;
               if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -52,7 +52,7 @@ export default function ApplyForm({ position, questions }: Props) {
               return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
             }, "Ngày không hợp lệ");
           }
-          if (question.type === "single_choice" && question.options?.length) {
+          if (question.question_type === "single_choice" && question.options?.length) {
             textSchema = textSchema.refine((value) => !value || question.options!.includes(value), "Vui lòng chọn phương án hợp lệ");
           }
           answerShape[question.id] = textSchema;
@@ -107,7 +107,7 @@ export default function ApplyForm({ position, questions }: Props) {
 
     const p_answers = questions.map((question) => {
       const value = result.data.answers[question.id];
-      if (question.type === "multi_choice") {
+      if (question.question_type === "multi_choice") {
         return { question_id: question.id, text: null, json: value ?? [] };
       }
       return { question_id: question.id, text: value == null || value === "" ? null : String(value), json: null };
@@ -163,13 +163,13 @@ export default function ApplyForm({ position, questions }: Props) {
         {questions.map((question) => (
           <div key={question.id}>
             <label htmlFor={`q-${question.id}`} className="text-sm font-medium leading-6">
-              {question.text}{question.is_required && <span className="ml-1 text-red-600">*</span>}
+              {question.question_text}{question.is_required && <span className="ml-1 text-red-600">*</span>}
             </label>
-            {question.type === "long_text" ? (
+            {question.question_type === "long_text" ? (
               <textarea id={`q-${question.id}`} rows={4} className={inputClass} value={String(answers[question.id] ?? "")} onChange={(event) => updateAnswer(question.id, event.target.value)} aria-invalid={!!fieldErrors[question.id]} />
-            ) : question.type === "single_choice" ? (
+            ) : question.question_type === "single_choice" ? (
               <fieldset className="mt-3 space-y-2">
-                <legend className="sr-only">{question.text}</legend>
+                <legend className="sr-only">{question.question_text}</legend>
                 {(question.options ?? []).map((option) => (
                   <label key={option} className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2.5 hover:bg-zinc-50">
                     <input type="radio" name={`q-${question.id}`} value={option} checked={answers[question.id] === option} onChange={() => updateAnswer(question.id, option)} className="accent-emerald-700" />
@@ -177,9 +177,9 @@ export default function ApplyForm({ position, questions }: Props) {
                   </label>
                 ))}
               </fieldset>
-            ) : question.type === "multi_choice" ? (
+            ) : question.question_type === "multi_choice" ? (
               <fieldset className="mt-3 space-y-2">
-                <legend className="sr-only">{question.text}</legend>
+                <legend className="sr-only">{question.question_text}</legend>
                 {(question.options ?? []).map((option) => {
                   const selected = Array.isArray(answers[question.id]) ? answers[question.id] as string[] : [];
                   return (
@@ -191,7 +191,7 @@ export default function ApplyForm({ position, questions }: Props) {
                 })}
               </fieldset>
             ) : (
-              <input id={`q-${question.id}`} type={question.type === "number" ? "number" : question.type === "date" ? "date" : "text"} step={question.type === "number" ? "any" : undefined} className={inputClass} value={String(answers[question.id] ?? "")} onChange={(event) => updateAnswer(question.id, event.target.value)} aria-invalid={!!fieldErrors[question.id]} />
+              <input id={`q-${question.id}`} type={question.question_type === "number" ? "number" : question.question_type === "date" ? "date" : "text"} step={question.question_type === "number" ? "any" : undefined} className={inputClass} value={String(answers[question.id] ?? "")} onChange={(event) => updateAnswer(question.id, event.target.value)} aria-invalid={!!fieldErrors[question.id]} />
             )}
             <FieldError id={`error-${question.id}`} message={fieldErrors[question.id]} />
           </div>

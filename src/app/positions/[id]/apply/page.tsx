@@ -13,7 +13,7 @@ export default async function ApplyPage({ params }: { params: Promise<{ id: stri
 
   const { data: position } = await supabase
     .from("recruitment_positions")
-    .select("id,name,description,quantity,campaign_id,recruitment_campaigns!inner(status,start_date,end_date,club_id)")
+    .select("id,name,description,campaign_id,recruitment_campaigns!inner(status,start_date,end_date,club_id)")
     .eq("id", id)
     .eq("recruitment_campaigns.status", "open")
     .maybeSingle();
@@ -35,7 +35,7 @@ export default async function ApplyPage({ params }: { params: Promise<{ id: stri
   form = formData as ApplicationForm | null;
   if (form) {
     const { data: questionData } = await supabase.from("form_questions")
-      .select("id,text,type,options,is_required,order_index")
+      .select("id,question_text,question_type,options,is_required,order_index")
       .eq("form_id", form.id)
       .order("order_index");
     questions = (questionData ?? []) as FormQuestion[];
