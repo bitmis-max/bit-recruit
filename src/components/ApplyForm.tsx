@@ -4,17 +4,31 @@ import { useMemo, useState, type FormEvent } from "react";
 import { z } from "zod";
 import { getSupabaseClient } from "../lib/supabase/client";
 import type { FormQuestion } from "../lib/recruitment/types";
+import { formatInterviewRange } from "../lib/recruitment/interview-time";
 
-type Props = { position: { id: string; name: string }; questions: FormQuestion[] };
+type InterviewSession = { id: string; start_time: string; end_time: string };
+type Props = { position: { id: string; name: string }; questions: FormQuestion[]; interviewSessions: InterviewSession[] };
 type Applicant = { full_name: string; email: string; phone: string; student_code: string; class_name: string };
 type AnswerValue = string | string[];
+const interviewAvailabilityQuestion = "Thời gian có thể tham gia phỏng vấn";
+const normalizeQuestionText = (text: string) => text.trim().replace(/\s+/g, " ").toLocaleLowerCase("vi");
+const isInterviewAvailabilityQuestion = (text: string) => normalizeQuestionText(text) === normalizeQuestionText(interviewAvailabilityQuestion);
 
 const requiredText = (label: string) => z.string().trim().min(1, `${label} là bắt buộc`);
 
-export default function ApplyForm({ position, questions }: Props) {
+export default function ApplyForm({ position, questions, interviewSessions }: Props) {
+  const activeQuestions = useMemo(() => {
+    let availabilityIncluded = false;
+    return questions.filter((question) => {
+      if (!isInterviewAvailabilityQuestion(question.question_text)) return true;
+      if (!interviewSessions.length || availabilityIncluded) return false;
+      availabilityIncluded = true;
+      return true;
+    });
+  }, [questions, interviewSessions]);
   const [applicant, setApplicant] = useState<Applicant>({ full_name: "", email: "", phone: "", student_code: "", class_name: "" });
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(
-    () => Object.fromEntries(questions.map((q) => [q.id, q.question_type === "multi_choice" ? [] : ""])),
+    () => Object.fromEntries(activeQuestions.map((q) => [q.id, q.question_type === "multi_choice" ? [] : ""])),
   );
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -23,8 +37,12 @@ export default function ApplyForm({ position, questions }: Props) {
 
   const schema = useMemo(() => {
     const answerShape: Record<string, z.ZodType> = {};
-    for (const question of questions) {
+    for (const question of activeQuestions) {
       const required = question.is_required;
+      if (isInterviewAvailabilityQuestion(question.question_text)) {
+        answerShape[question.id] = z.string().min(1, "Vui lòng chọn ca phỏng vấn").refine((value) => interviewSessions.some((session) => session.id === value), "Ca phỏng vấn không hợp lệ");
+        continue;
+      }
       switch (question.question_type) {
         case "number": {
           const numberSchema = z.preprocess(
@@ -68,7 +86,7 @@ export default function ApplyForm({ position, questions }: Props) {
       class_name: z.string(),
       answers: z.object(answerShape),
     });
-  }, [questions]);
+  }, [activeQuestions, interviewSessions]);
 
   const updateApplicant = (key: keyof Applicant, value: string) => {
     setApplicant((current) => ({ ...current, [key]: value }));
@@ -105,8 +123,12 @@ export default function ApplyForm({ position, questions }: Props) {
       return;
     }
 
-    const p_answers = questions.map((question) => {
+    const p_answers = activeQuestions.map((question) => {
       const value = result.data.answers[question.id];
+      if (isInterviewAvailabilityQuestion(question.question_text)) {
+        const selectedSession = interviewSessions.find((session) => session.id === value);
+        return { question_id: question.id, text: selectedSession ? formatInterviewRange(selectedSession.start_time, selectedSession.end_time) : null, json: selectedSession ? [selectedSession.id] : [] };
+      }
       if (question.question_type === "multi_choice") {
         return { question_id: question.id, text: null, json: value ?? [] };
       }
@@ -158,14 +180,25 @@ export default function ApplyForm({ position, questions }: Props) {
         <TextField label="Lớp" id="class_name" value={applicant.class_name} onChange={(value) => updateApplicant("class_name", value)} className={inputClass} />
       </section>
 
-      {questions.length > 0 && <hr className="border-zinc-200" />}
+      {activeQuestions.length > 0 && <hr className="border-zinc-200" />}
       <section className="space-y-6">
-        {questions.map((question) => (
+        {questions.some((question) => isInterviewAvailabilityQuestion(question.question_text)) && interviewSessions.length === 0 && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Hiện chưa có ca phỏng vấn để chọn. Ban tuyển sẽ liên hệ lịch với bạn sau.</p>}
+        {activeQuestions.map((question) => (
           <div key={question.id}>
             <label htmlFor={`q-${question.id}`} className="text-sm font-medium leading-6">
               {question.question_text}{question.is_required && <span className="ml-1 text-red-600">*</span>}
             </label>
-            {question.question_type === "long_text" ? (
+            {isInterviewAvailabilityQuestion(question.question_text) ? (
+              <fieldset className="mt-3 space-y-2">
+                <legend className="sr-only">Chọn ca phỏng vấn</legend>
+                {Array.from(new Map(interviewSessions.map((session) => [`${session.start_time}|${session.end_time}`, session])).values()).map((session) => (
+                  <label key={session.id} htmlFor={`q-${question.id}-${session.id}`} className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-3 transition hover:border-emerald-300 hover:bg-emerald-50/50">
+                    <input id={`q-${question.id}-${session.id}`} type="radio" name={`q-${question.id}`} value={session.id} checked={answers[question.id] === session.id} onChange={() => updateAnswer(question.id, session.id)} className="size-4 accent-emerald-700" />
+                    <span className="text-sm font-medium text-zinc-800">{formatInterviewRange(session.start_time, session.end_time)}</span>
+                  </label>
+                ))}
+              </fieldset>
+            ) : question.question_type === "long_text" ? (
               <textarea id={`q-${question.id}`} rows={4} className={inputClass} value={String(answers[question.id] ?? "")} onChange={(event) => updateAnswer(question.id, event.target.value)} aria-invalid={!!fieldErrors[question.id]} />
             ) : question.question_type === "single_choice" ? (
               <fieldset className="mt-3 space-y-2">

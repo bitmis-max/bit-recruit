@@ -8,7 +8,7 @@ type RecruitmentItem = {
   description: string | null;
   campaign_id: string;
   team_id: string | null;
-  teams: { id: string; name: string; description: string | null } | null;
+  teams: { id: string; name: string; description: string | null }[] | { id: string; name: string; description: string | null } | null;
 };
 
 export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
@@ -48,10 +48,11 @@ export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
 
   const grouped = new Map<string, { teamName: string; teamDescription: string | null; openings: RecruitmentItem[] }>();
   for (const item of items) {
+    const team = Array.isArray(item.teams) ? item.teams[0] ?? null : item.teams;
     const key = item.team_id ?? `opening:${item.id}`;
     const group = grouped.get(key) ?? {
-      teamName: item.teams?.name ?? item.name,
-      teamDescription: item.teams?.description ?? null,
+      teamName: team?.name ?? item.name,
+      teamDescription: team?.description ?? null,
       openings: [],
     };
     group.openings.push(item);

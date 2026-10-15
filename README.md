@@ -16,6 +16,10 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Admin account and member management
+
+Copy the variables from `.env.example` into `.env.local`. Set `SUPABASE_SERVICE_ROLE_KEY` to the project's server-side service role key to enable the account and club member management screens. Keep this key private and never expose it through a `NEXT_PUBLIC_` variable.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

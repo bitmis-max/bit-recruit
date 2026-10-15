@@ -1,0 +1,84 @@
+"use client";
+
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCurrentAdminClub } from "./AdminShell";
+
+type Member = { id: string; full_name: string; student_code: string | null; class_name: string | null; team_id: string | null; role: string; is_active: boolean; user_id: string | null };
+type Team = { id: string; name: string };
+type Draft = { id?: string; full_name: string; student_code: string; class_name: string; team_id: string; role: string; is_active: boolean };
+const emptyDraft: Draft = { full_name: "", student_code: "", class_name: "", team_id: "", role: "organizer", is_active: true };
+const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
+
+export function ClubMembersManager() {
+  const { id: clubId, role } = useCurrentAdminClub();
+  const canWrite = role === "owner" || role === "admin";
+  const [members, setMembers] = useState<Member[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const response = await fetch(`/api/admin/club-members?clubId=${encodeURIComponent(clubId)}`);
+    const result = await response.json();
+    if (!response.ok) setError(result.error ?? "Không tải được thành viên.");
+    else { setMembers(result.members ?? []); setTeams(result.teams ?? []); setError(""); }
+    setLoading(false);
+  }, [clubId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true); setError(""); setNotice("");
+    const response = await fetch("/api/admin/club-members", {
+      method: draft.id ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clubId, ...draft }),
+    });
+    const result = await response.json();
+    setBusy(false);
+    if (!response.ok) { setError(result.error ?? "Không lưu được thành viên."); return; }
+    setDraft(emptyDraft);
+    setNotice(draft.id ? "Đã cập nhật thành viên." : "Đã thêm thành viên vào CLB.");
+    await load();
+  }
+
+  async function remove(member: Member) {
+    if (!confirm(`Xóa ${member.full_name} khỏi CLB này? Nếu còn được gán hỗ trợ phỏng vấn, hãy tạm ngừng hoạt động thay vì xóa. Tài khoản đăng nhập (nếu có) sẽ được giữ lại.`)) return;
+    const response = await fetch(`/api/admin/club-members?clubId=${encodeURIComponent(clubId)}&id=${encodeURIComponent(member.id)}`, { method: "DELETE" });
+    const result = await response.json();
+    if (!response.ok) setError(result.error ?? "Không xóa được thành viên.");
+    else { setNotice("Đã xóa thành viên khỏi CLB."); await load(); }
+  }
+
+  return <section className="mx-auto max-w-6xl p-5 sm:p-8">
+    <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Không gian CLB</p><h1 className="mt-1 text-3xl font-bold">Quản lý thành viên</h1><p className="mt-2 text-sm text-zinc-600">Danh sách chỉ bao gồm thành viên thuộc CLB đang chọn.</p></header>
+    {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+    {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
+    <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+      <form onSubmit={save} className="space-y-4 rounded-xl border bg-white p-5">
+        <div><h2 className="font-semibold">{draft.id ? "Cập nhật thành viên" : "Thêm thành viên"}</h2><p className="mt-1 text-xs text-zinc-500">Vai trò tài khoản đăng nhập được quản lý riêng ở tab Quản lý tài khoản.</p></div>
+        <label className="block text-sm">Họ và tên<input required value={draft.full_name} onChange={(event) => setDraft({ ...draft, full_name: event.target.value })} className={inputClass} /></label>
+        <label className="block text-sm">Mã sinh viên<input value={draft.student_code} onChange={(event) => setDraft({ ...draft, student_code: event.target.value })} className={inputClass} /></label>
+        <label className="block text-sm">Lớp<input value={draft.class_name} onChange={(event) => setDraft({ ...draft, class_name: event.target.value })} className={inputClass} /></label>
+        <label className="block text-sm">Ban<select value={draft.team_id} onChange={(event) => setDraft({ ...draft, team_id: event.target.value })} className={inputClass}><option value="">Chưa gán ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+        <label className="block text-sm">Vai trò trong CLB<select value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value })} className={inputClass}><option value="owner">Owner</option><option value="admin">Admin</option><option value="organizer">Organizer</option></select></label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.is_active} onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })} /> Thành viên đang hoạt động</label>
+        <div className="flex gap-2"><button disabled={!canWrite || busy} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang lưu…" : draft.id ? "Lưu thay đổi" : "Thêm thành viên"}</button>{draft.id && <button type="button" onClick={() => setDraft(emptyDraft)} className="rounded-lg border px-4 py-2 text-sm">Hủy</button>}</div>
+        {!canWrite && <p className="text-xs text-amber-800">Vai trò hiện tại chỉ có quyền xem.</p>}
+      </form>
+
+      <div className="overflow-hidden rounded-xl border bg-white">
+        <div className="flex items-center justify-between border-b p-4"><h2 className="font-semibold">Thành viên ({members.length})</h2><button onClick={() => void load()} className="text-sm font-medium text-emerald-800">Làm mới</button></div>
+        {loading ? <p className="p-6 text-sm text-zinc-500">Đang tải thành viên…</p> : members.length ? <ul className="divide-y divide-zinc-100">{members.map((member) => <li key={member.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0"><p className="truncate font-medium">{member.full_name}</p><p className="mt-1 text-xs text-zinc-500">{[member.student_code, member.class_name, teams.find((team) => team.id === member.team_id)?.name, member.role].filter(Boolean).join(" · ")}</p><p className="mt-1 text-xs">{member.user_id ? <span className="text-emerald-700">Đã gán tài khoản</span> : <span className="text-zinc-400">Chưa gán tài khoản</span>} · {member.is_active ? "Đang hoạt động" : "Đã tạm khóa"}</p></div>
+          {canWrite && <div className="flex shrink-0 gap-3"><button onClick={() => setDraft({ id: member.id, full_name: member.full_name, student_code: member.student_code ?? "", class_name: member.class_name ?? "", team_id: member.team_id ?? "", role: member.role, is_active: member.is_active })} className="text-sm font-medium text-emerald-800">Sửa</button><button onClick={() => void remove(member)} className="text-sm font-medium text-rose-700">Xóa</button></div>}
+        </li>)}</ul> : <p className="p-6 text-sm text-zinc-500">CLB chưa có thành viên.</p>}
+      </div>
+    </div>
+  </section>;
+}

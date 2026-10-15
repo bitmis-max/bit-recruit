@@ -7,8 +7,14 @@ import { LoginGate } from "../../components/auth/LoginGate";
 import { SetupGuide } from "../../components/auth/SetupGuide";
 
 export default function LoginPage() {
-  const { session, loading, supabaseConfigured, handleLogin, lastError } = useAuth();
+  const { session, loading, supabaseConfigured, handleLogin, lastError, setLastError } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("error") === "oauth") {
+      setLastError("Đăng nhập Google chưa thành công. Vui lòng thử lại.");
+    }
+  }, [setLastError]);
 
   useEffect(() => {
     if (!loading && session) {

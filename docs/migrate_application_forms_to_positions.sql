@@ -245,10 +245,13 @@ set search_path = public
 as $$
 declare
   v_campaign_id uuid;
+  v_team_id uuid;
   v_app_id uuid;
   v_token text;
+  v_availability_question_id uuid;
+  v_session_id uuid;
 begin
-  select p.campaign_id into v_campaign_id
+  select p.campaign_id, p.team_id into v_campaign_id, v_team_id
   from recruitment_positions p
   join recruitment_campaigns c on c.id = p.campaign_id
   where p.id = p_position_id
@@ -289,6 +292,37 @@ begin
          a->>'text',
          a->'json'
   from jsonb_array_elements(p_answers) a;
+
+  select q.id into v_availability_question_id
+  from application_forms f
+  join form_questions q on q.form_id = f.id
+  where f.position_id = p_position_id
+    and lower(btrim(q.question_text)) = lower('Thời gian có thể tham gia phỏng vấn')
+  order by q.order_index, q.id
+  limit 1;
+
+  if v_availability_question_id is not null then
+    select (a->'json'->>0)::uuid into v_session_id
+    from jsonb_array_elements(p_answers) a
+    where (a->>'question_id')::uuid = v_availability_question_id
+      and jsonb_typeof(a->'json') = 'array'
+      and jsonb_array_length(a->'json') = 1;
+
+    if v_session_id is null or not exists (
+      select 1
+      from interview_sessions s
+      where s.id = v_session_id
+        and s.campaign_id = v_campaign_id
+        and s.team_id is not distinct from v_team_id
+        and s.end_time >= now()
+    ) then
+      raise exception 'Ca phỏng vấn đã chọn không hợp lệ';
+    end if;
+
+    insert into interview_assignments (application_id, session_id)
+    values (v_app_id, v_session_id)
+    on conflict (application_id, session_id) do nothing;
+  end if;
 
   return v_token;
 end;

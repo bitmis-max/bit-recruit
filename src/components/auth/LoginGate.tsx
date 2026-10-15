@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { GoogleAuthButton } from "./GoogleAuthButton";
 
 export function LoginGate({ onLogin, lastError }: { onLogin: (email: string, password: string) => Promise<void>; lastError: string | null }) {
   const [email, setEmail] = useState("");
@@ -16,5 +17,7 @@ export function LoginGate({ onLogin, lastError }: { onLogin: (email: string, pas
     <label className="block text-sm font-medium">Mật khẩu<input required type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" /></label>
     {lastError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{lastError}</p>}
     <button disabled={submitting} className="w-full rounded-lg bg-emerald-700 px-4 py-2.5 font-semibold text-white disabled:opacity-60">{submitting ? "Đang đăng nhập…" : "Đăng nhập"}</button>
+    <div className="relative py-1"><div className="absolute inset-0 flex items-center"><span className="w-full border-t border-zinc-200" /></div><div className="relative flex justify-center"><span className="bg-white px-3 text-xs font-medium text-zinc-500">hoặc</span></div></div>
+    <GoogleAuthButton next="/" />
   </form></main>;
 }

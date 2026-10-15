@@ -17,6 +17,7 @@ Nền tảng: **Supabase (PostgreSQL)**
 erDiagram
     clubs ||--o{ club_members : has
     clubs ||--o{ teams : has
+    teams ||--o{ club_members : groups
     clubs ||--o{ recruitment_campaigns : runs
 
     recruitment_campaigns ||--o{ recruitment_positions : opens
@@ -115,6 +116,7 @@ create table teams (
 create table club_members (
   id uuid primary key default gen_random_uuid(),
   club_id uuid not null references clubs(id) on delete cascade,
+  team_id uuid references teams(id) on delete set null,
   user_id uuid references auth.users(id) on delete set null, -- không bắt buộc
   role club_role not null default 'organizer',
   student_code text,
@@ -505,7 +507,7 @@ grant execute on function get_application_by_token to anon;
 3. Ứng viên gọi `submit_application` và nhận `tracking_token`.
 4. **Quản trị** lọc đơn, đổi `applications.status` sang `screening` hoặc `interview`.
 5. **Quản trị** tạo `interview_sessions`, gán thành viên hỗ trợ qua `interview_session_members`.
-6. **Quản trị** xếp ứng viên vào ca qua `interview_assignments`.
+6. `submit_application` tự xếp ứng viên vào ca đã chọn qua `interview_assignments`.
 7. Sau phỏng vấn, cập nhật `status`, `score`, `comment`, `result` trong `interview_assignments`.
 8. Chốt kết quả: cập nhật `applications.status` thành `passed` hoặc `failed`.
 9. Ứng viên xem kết quả qua `get_application_by_token`.
