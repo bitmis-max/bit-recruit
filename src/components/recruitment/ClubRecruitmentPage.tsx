@@ -60,7 +60,7 @@ export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
 
   return (
     <PageShell>
-      <Link href="/" className="text-sm font-medium text-emerald-800 hover:underline">← Danh sách CLB</Link>
+      <Link href="/clubs" className="text-sm font-medium text-emerald-800 hover:underline">← Giới thiệu CLB BIT</Link>
       <section className="mb-10 mt-8 max-w-2xl">
         <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">Cơ hội tham gia</p>
         <h1 className="text-4xl font-semibold tracking-tight">{club.name}</h1>
@@ -102,10 +102,6 @@ function PageShell({ children }: { children: React.ReactNode }) {
   return (
     <main className="min-h-screen bg-[#f7f8f6] px-5 py-12 text-zinc-900 sm:px-8">
       <div className="mx-auto max-w-5xl">
-        <header className="mb-12 flex items-center justify-between">
-          <Link href="/" className="text-lg font-bold tracking-tight">BIT · Tuyển thành viên</Link>
-          <Link href="/admin/mail" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">Quản trị CLB</Link>
-        </header>
         {children}
       </div>
     </main>

@@ -33,6 +33,41 @@ button:hover {
   cursor: pointer !important;
 }
 
+.site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid #e8ebe7;
+  background: rgb(255 255 255 / 94%);
+  backdrop-filter: blur(14px);
+}
+.site-nav-inner { position: relative; display: flex; min-height: 72px; max-width: 1200px; align-items: center; justify-content: space-between; gap: 24px; margin: 0 auto; padding: 0 28px; }
+.site-brand { display: inline-flex; align-items: center; gap: 10px; color: #102c24; font-size: 20px; font-weight: 800; letter-spacing: -.05em; }
+.site-brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: #087b55; color: white; font-size: 17px; letter-spacing: 0; }
+.site-brand-dot { color: #0a9b69; }
+.site-nav-links, .site-nav-account { display: flex; align-items: center; gap: 27px; }
+.site-nav-links a, .login-link { color: #53625d; font-size: 14px; font-weight: 600; transition: color .15s ease; }
+.site-nav-links a:hover, .site-nav-links a.active, .login-link:hover { color: #087b55; }
+.register-link { border-radius: 10px; background: #087b55; padding: 10px 16px; color: white; font-size: 14px; font-weight: 700; transition: background .15s ease; }
+.register-link:hover { background: #056744; }
+.account-wrap { position: relative; }
+.account-trigger { display: flex; align-items: center; gap: 9px; border: 0; background: transparent; color: #243b33; font-size: 14px; font-weight: 650; }
+.account-avatar { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+.account-avatar-fallback { display: grid; place-items: center; background: #dff3e9; color: #087b55; font-weight: 800; }
+.account-chevron { color: #82918a; }
+.account-menu { position: absolute; top: calc(100% + 12px); right: 0; min-width: 190px; overflow: hidden; border: 1px solid #e5e9e6; border-radius: 13px; background: white; padding: 6px; box-shadow: 0 14px 35px rgb(16 44 36 / 13%); }
+.account-menu-section + button { margin-top: 4px; border-top: 1px solid #edf0ed; }
+.account-menu-label { display: block; padding: 8px 11px 4px; color: #89968f; font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.account-menu a, .account-menu button, .mobile-nav-menu a, .mobile-nav-menu button { display: flex; width: 100%; align-items: center; justify-content: space-between; border: 0; border-radius: 8px; background: transparent; padding: 10px 11px; color: #34443d; text-align: left; font-size: 14px; font-weight: 550; }
+.account-menu a:hover, .account-menu button:hover, .mobile-nav-menu a:hover, .mobile-nav-menu button:hover { background: #f0f8f4; color: #087b55; }
+.mobile-menu-button, .mobile-nav-menu { display: none; }
+@media (max-width: 760px) {
+  .site-nav-inner { min-height: 64px; padding: 0 18px; }
+  .site-nav-links, .site-nav-account { display: none; }
+  .mobile-menu-button { display: block; border: 0; background: transparent; color: #17392e; font-size: 23px; }
+  .mobile-nav-menu { position: absolute; top: calc(100% + 1px); right: 12px; left: 12px; display: block; border: 1px solid #e5e9e6; border-radius: 14px; background: white; padding: 8px; box-shadow: 0 14px 35px rgb(16 44 36 / 13%); }
+}
+
 .editor-content :where(p, ul, ol, h2),
 .preview-content :where(p, ul, ol, h2) {
   margin: 0 0 0.75rem;
