@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { PhotoCarousel } from "../components/home/PhotoCarousel";
+import { FlipClockCountdown } from "../components/home/FlipClockCountdown";
+import { createSupabaseServerClient } from "../lib/supabase/server";
 
 const heroPhotos = [
   { src: "/hero/1.jpg", alt: "Thành viên CLB BIT trong buổi gặp mặt" },
@@ -20,7 +22,36 @@ const recruitmentPhotos = [
   { src: "/hero/4.png", alt: "Đội tuyển BIT tại giải esports" },
 ];
 
-export default function HomePage() {
+async function getRecruitmentDeadline(now: Date) {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return null;
+
+  const { data: club } = await supabase.from("clubs")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!club) return null;
+
+  const nowIso = now.toISOString();
+  const { data: campaign } = await supabase.from("recruitment_campaigns")
+    .select("end_date")
+    .eq("club_id", club.id)
+    .eq("status", "open")
+    .or(`start_date.is.null,start_date.lte.${nowIso}`)
+    .gte("end_date", nowIso)
+    .not("end_date", "is", null)
+    .order("start_date", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+
+  return campaign?.end_date ?? null;
+}
+
+export default async function HomePage() {
+  const now = new Date();
+  const deadline = await getRecruitmentDeadline(now);
+
   return (
     <main className="about-page">
       <section className="about-hero" aria-label="Hình ảnh CLB BIT">
@@ -31,10 +62,9 @@ export default function HomePage() {
           <h1>CLB Tin học Ngân hàng BIT - BAV</h1>
           <p>Cùng học hỏi, sáng tạo và trưởng thành qua công nghệ.</p>
           <div className="about-hero-actions">
-            <Link href="/clubs" className="about-button about-button-primary">Khám phá CLB <span aria-hidden="true">↗</span></Link>
+            <Link href="/clubs" className="about-button about-button-primary">Giới thiệu <span aria-hidden="true">↗</span></Link>
           </div>
         </div>
-        <a className="hero-scroll" href="#gioi-thieu">Khám phá thêm <span aria-hidden="true">↓</span></a>
       </section>
 
       <section id="gioi-thieu" className="about-section about-introduction">
@@ -91,8 +121,8 @@ export default function HomePage() {
       </section>
 
       <section className="about-cta">
-        <div><p className="about-eyebrow">Bạn đã sẵn sàng?</p><h2>Hẹn gặp bạn tại BIT.</h2></div>
-        <Link href="/clubs" className="about-button about-button-primary">Khám phá các câu lạc bộ <span aria-hidden="true">↗</span></Link>
+        <div className="about-cta-heading"><p className="about-eyebrow">Bạn đã sẵn sàng?</p><h2>Hẹn gặp bạn tại BIT.</h2></div>
+        <FlipClockCountdown deadline={deadline} />
       </section>
     </main>
   );

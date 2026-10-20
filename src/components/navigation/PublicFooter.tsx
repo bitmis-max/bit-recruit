@@ -1,20 +1,24 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const links = [
-  { href: "/clubs", label: "Danh sách CLB" },
-  { href: "/positions", label: "Đợt tuyển thành viên" },
-  { href: "/guide", label: "Tra cứu và hướng dẫn" },
+const socialLinks = [
+  { name: "Facebook", url: "https://www.facebook.com/BIT.BAV", icon: "f", className: "bg-[#1877f2]" },
+  { name: "Instagram", url: "https://www.instagram.com/bit.bav.official", icon: "◎", className: "bg-[#e1306c]" },
+  { name: "TikTok", url: "https://www.tiktok.com/@humansofbitbav", icon: "♪", className: "bg-[#111827]" },
 ];
 
-const socialLinks = [
-  { name: "Facebook", icon: "f" },
-  { name: "Instagram", icon: "◎" },
-  { name: "YouTube", icon: "▶" },
-  { name: "TikTok", icon: "♪" },
-];
+function ContactIcon({ type }: { type: "email" | "location" | "phone" }) {
+  const paths = {
+    email: <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m3 6 9 7 9-7" /></>,
+    location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
+    phone: <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.4 19.4 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.9a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.2-1.3a2 2 0 0 1 2.1-.5c.9.3 1.9.6 2.9.7a2 2 0 0 1 1.8 2.1Z" />,
+  };
+
+  return <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[17px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[type]}</svg>;
+}
 
 export function PublicFooter() {
   const pathname = usePathname();
@@ -22,51 +26,35 @@ export function PublicFooter() {
 
   return (
     <footer className="mt-auto w-full bg-[#0c304d] text-slate-100">
-      <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8 sm:py-9">
-        <div className="grid gap-8 pb-6 md:grid-cols-2">
-          <div>
-            <Link href="/" className="inline-flex items-center gap-2 font-semibold tracking-tight text-white">
-              <span className="grid size-9 place-items-center rounded-md bg-white text-[#0c304d]" aria-hidden="true">
-                <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3.5 19v-1.5A4.5 4.5 0 0 1 8 13h2a4.5 4.5 0 0 1 4.5 4.5V19M15 14h1a4 4 0 0 1 4 4v1" /></svg>
-              </span>
-              BIT
-            </Link>
-            <p className="mt-2 text-sm leading-6 text-slate-200">Khám phá. Kết nối đam mê. Phát triển bản thân.</p>
-          </div>
+      <div className="mx-auto max-w-7xl px-5 py-5 sm:px-8 sm:py-6">
+        <Link href="/" className="mx-auto flex max-w-3xl items-center justify-center gap-4 sm:gap-6">
+          <Image src="/logo.png" alt="Logo CLB Tin học Ngân hàng BIT" width={64} height={64} className="size-14 shrink-0 object-contain sm:size-16" />
+          <span className="border-l border-white/40 pl-4 text-[17px] font-bold uppercase leading-snug tracking-wide text-white sm:pl-6 sm:text-xl">
+            CLB Tin học Ngân hàng BIT - BAV<br />Học viện Ngân hàng
+          </span>
+        </Link>
 
-          <div className="md:justify-self-end">
-            <h2 className="font-semibold text-white">Theo dõi chúng tôi</h2>
-            <p className="mt-2 max-w-md text-sm leading-5 text-slate-200">Cập nhật thông tin tuyển thành viên và hoạt động cộng đồng.</p>
-            <div className="mt-2 flex flex-wrap gap-2" aria-label="Các kênh mạng xã hội">
+        <div className="mt-7 grid gap-7 sm:grid-cols-2 sm:gap-10">
+          <section aria-labelledby="footer-contact-title">
+            <h2 id="footer-contact-title" className="mb-2 text-base font-medium text-white">Contact:</h2>
+            <ul className="space-y-2.5 text-[13px] leading-6 text-slate-100">
+              <li className="flex items-start gap-3"><ContactIcon type="email" /><a className="hover:underline" href="mailto:bit.mis@bav.edu.vn">Gmail: bit.mis@bav.edu.vn</a></li>
+              <li className="flex items-start gap-3"><ContactIcon type="location" /><span>Địa chỉ: Số 12 Phố Chùa Bộc, Quang Trung, Đống Đa, Hà Nội</span></li>
+              <li className="flex items-start gap-3"><ContactIcon type="phone" /><a className="hover:underline" href="tel:0325302188">Hotline: 0325302188 (Miss.Nhu)</a></li>
+            </ul>
+          </section>
+
+          <section aria-labelledby="footer-social-title">
+            <h2 id="footer-social-title" className="mb-2 text-base font-medium text-white">Follow us:</h2>
+            <ul className="space-y-2.5 text-[13px] leading-6 text-slate-100">
               {socialLinks.map((social) => (
-                <div key={social.name} className="flex min-w-[68px] flex-col items-center justify-center gap-1 rounded-md border border-slate-500/70 px-2 py-2 text-xs text-white">
-                  <span className="h-4 text-base font-semibold leading-4" aria-hidden="true">{social.icon}</span>
-                  {social.name}
-                </div>
+                <li key={social.name} className="flex items-start gap-3">
+                  <span className={`grid size-5 shrink-0 place-items-center rounded-sm ${social.className} text-sm font-bold leading-none text-white`} aria-hidden="true">{social.icon}</span>
+                  <a href={social.url} target="_blank" rel="noreferrer" className="break-all hover:underline">{social.name}: {social.url}</a>
+                </li>
               ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-7 border-t border-slate-500/50 py-6 sm:grid-cols-2">
-          <nav aria-label="Khám phá">
-            <h2 className="font-semibold text-white">Khám phá</h2>
-            <ul className="mt-2 space-y-1.5 text-sm text-slate-200">
-              {links.map((link) => <li key={link.href}><Link href={link.href} className="transition hover:text-white">{link.label}</Link></li>)}
             </ul>
-          </nav>
-          <nav aria-label="Hỗ trợ">
-            <h2 className="font-semibold text-white">Hỗ trợ</h2>
-            <ul className="mt-2 space-y-1.5 text-sm text-slate-200">
-              <li><Link href="/guide" className="transition hover:text-white">Câu hỏi thường gặp</Link></li>
-              <li><Link href="/guide" className="transition hover:text-white">Liên hệ và hỗ trợ</Link></li>
-              <li><Link href="/guide" className="transition hover:text-white">Chính sách bảo mật</Link></li>
-            </ul>
-          </nav>
-        </div>
-
-        <div className="flex flex-col gap-2 border-t border-slate-500/50 pt-5 text-xs text-slate-200 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} BIT. All rights reserved.</p>
+          </section>
         </div>
       </div>
     </footer>

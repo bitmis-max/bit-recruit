@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import "@leenguyen/react-flip-clock-countdown/dist/index.css";
 import "./globals.css";
 import { PublicNavbar } from "../components/navigation/PublicNavbar";
 import { PublicFooter } from "../components/navigation/PublicFooter";

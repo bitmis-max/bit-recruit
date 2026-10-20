@@ -1,6 +1,8 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createSupabaseServerClient } from "../../lib/supabase/server";
+import { RecruitmentHero } from "./RecruitmentHero";
 
 type RecruitmentItem = {
   id: string;
@@ -20,7 +22,7 @@ export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
   const { data: club, error: clubError } = await supabase.from("clubs")
     .select("id,name,description").eq("id", clubId).maybeSingle();
   if (clubError) {
-    return <PageShell><Alert>Không tải được CLB này. Hãy kiểm tra policy RLS cho phép đọc công khai các CLB.</Alert></PageShell>;
+    return <PageShell><div className="recruitment-content"><Alert>Không tải được CLB này. Hãy kiểm tra policy RLS cho phép đọc công khai các CLB.</Alert></div></PageShell>;
   }
   if (!club) notFound();
 
@@ -61,32 +63,36 @@ export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
 
   return (
     <PageShell>
-      <Link href="/clubs" className="text-sm font-medium text-emerald-800 hover:underline">← Giới thiệu CLB BIT</Link>
-      <section className="mb-10 mt-8 max-w-2xl">
-        <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">Cơ hội tham gia</p>
-        <h1 className="text-4xl font-semibold tracking-tight">{club.name}</h1>
-        {club.description && <p className="mt-4 whitespace-pre-wrap text-lg leading-8 text-zinc-600">{club.description}</p>}
-        <p className="mt-4 text-zinc-600">Các ban đang tuyển thành viên trong CLB.</p>
-      </section>
+      <RecruitmentHero title="Cơ hội tham gia BIT" subtitle="Tìm ban phù hợp và cùng chúng mình tạo nên những trải nghiệm đáng nhớ." />
+      <div className="recruitment-content">
+        <Link href="/clubs" className="recruitment-back-link">← Giới thiệu CLB BIT</Link>
+
       {errorMessage ? (
         <Alert>{errorMessage}</Alert>
       ) : grouped.size === 0 ? (
-        <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-zinc-600">CLB hiện chưa có ban nào mở tuyển.</div>
+        <div className="recruitment-empty">CLB hiện chưa có ban nào mở tuyển.</div>
       ) : (
-        <ul className="space-y-5">
+        <ul className="recruitment-team-list">
           {[...grouped.entries()].map(([key, team]) => (
-            <li key={key} className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-7">
-              <h2 className="text-2xl font-semibold">{team.teamName}</h2>
-              {team.teamDescription && <p className="mt-2 leading-7 text-zinc-600">{team.teamDescription}</p>}
-              <ul className="mt-5 divide-y divide-zinc-100">
+            <li key={key} className="recruitment-team-card">
+              <div className="recruitment-team-heading">
+                <span className="recruitment-team-mark" aria-hidden="true">
+                  <Image src="/logo.png" alt="" width={48} height={48} className="recruitment-team-logo" unoptimized />
+                </span>
+                <div>
+                  <p className="recruitment-eyebrow">BAN ĐANG TUYỂN</p>
+                  <h2>{team.teamName}</h2>
+                </div>
+              </div>
+              <ul className="recruitment-opening-list">
                 {team.openings.map((opening) => (
-                  <li key={opening.id} className="flex flex-col justify-between gap-4 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-center">
+                  <li key={opening.id} className="recruitment-opening">
                     <div>
-                      <h3 className="font-semibold">{opening.name}</h3>
-                      {opening.description && <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-zinc-600">{opening.description}</p>}
+                      <h3>{opening.name}</h3>
+                      {opening.description && <p>{opening.description}</p>}
                     </div>
-                    <Link href={`/positions/${opening.id}/apply`} className="inline-flex w-fit shrink-0 items-center rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
-                      Ứng tuyển <span aria-hidden="true" className="ml-2">→</span>
+                    <Link href={`/positions/${opening.id}/apply`} className="recruitment-apply-link">
+                      Ứng tuyển <span aria-hidden="true">→</span>
                     </Link>
                   </li>
                 ))}
@@ -95,20 +101,17 @@ export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
           ))}
         </ul>
       )}
+      </div>
     </PageShell>
   );
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen bg-[#f7f8f6] px-5 py-12 text-zinc-900 sm:px-8">
-      <div className="mx-auto max-w-5xl">
-        {children}
-      </div>
-    </main>
+    <main className="recruitment-page">{children}</main>
   );
 }
 
 function Alert({ children }: { children: React.ReactNode }) {
-  return <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-800">{children}</div>;
+  return <div role="alert" className="recruitment-alert">{children}</div>;
 }

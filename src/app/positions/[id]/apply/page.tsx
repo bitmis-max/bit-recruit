@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import ApplyForm from "../../../../components/ApplyForm";
+import { RecruitmentHero } from "../../../../components/recruitment/RecruitmentHero";
 import { createSupabaseServerClient } from "../../../../lib/supabase/server";
 import type { ApplicationForm, FormQuestion } from "../../../../lib/recruitment/types";
 
@@ -67,17 +68,18 @@ export default async function ApplyPage({ params }: { params: Promise<{ id: stri
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f8f6] px-5 py-10 text-zinc-900 sm:px-8">
-      <div className="mx-auto max-w-3xl">
-        <Link href={`/clubs/${campaign?.club_id ?? ""}`} className="text-sm font-medium text-emerald-800 hover:underline">← Quay lại các ban đang tuyển</Link>
-        <div className="mb-8 mt-8 rounded-2xl border border-zinc-200 bg-white p-6 sm:p-8">
-          <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700">Đơn ứng tuyển</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{position.name}</h1>
-          {position.description && <p className="mt-4 whitespace-pre-wrap leading-7 text-zinc-600">{position.description}</p>}
-          {form?.description && <p className="mt-3 whitespace-pre-wrap text-zinc-600">{form.description}</p>}
+    <main className="recruitment-page">
+      <RecruitmentHero title="Đơn ứng tuyển" subtitle="Hãy cho chúng mình biết thêm về bạn qua biểu mẫu bên dưới nhé." />
+      <div className="recruitment-form-content">
+        <Link href={`/clubs/${campaign?.club_id ?? ""}`} className="recruitment-back-link">← Quay lại các ban đang tuyển</Link>
+        <div className="recruitment-form-heading">
+          <p className="recruitment-eyebrow">VỊ TRÍ ỨNG TUYỂN</p>
+          <h2>{position.name}</h2>
+          {position.description && <p>{position.description}</p>}
+          {form?.description && <p>{form.description}</p>}
         </div>
         {!form ? (
-          <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">Ban này chưa được liên kết với biểu mẫu ứng tuyển. Vui lòng liên hệ ban tuyển thành viên.</div>
+          <div role="alert" className="recruitment-alert recruitment-alert-warm">Ban này chưa được liên kết với biểu mẫu ứng tuyển. Vui lòng liên hệ ban tuyển thành viên.</div>
         ) : (
           <ApplyForm position={{ id: position.id, name: position.name }} questions={questions} interviewSessions={interviewSessions} />
         )}

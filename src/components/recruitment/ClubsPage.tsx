@@ -1,33 +1,65 @@
-import Link from "next/link";
+import Image from "next/image";
+import { createSupabaseServerClient } from "../../lib/supabase/server";
+import { FlipClockCountdown } from "../home/FlipClockCountdown";
+import { ClubStructureTabs } from "./ClubStructureTabs";
 
-export function ClubsPage() {
+type Team = { id: string; name: string; description: string | null };
+
+export async function ClubsPage() {
+  const supabase = await createSupabaseServerClient();
+  let teams: Team[] = [];
+  let loadError = false;
+  let deadline: string | null = null;
+
+  if (supabase) {
+    const { data: club, error: clubError } = await supabase.from("clubs")
+      .select("id")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (clubError) {
+      loadError = true;
+    } else if (club) {
+      const now = new Date().toISOString();
+      const [teamResult, campaignResult] = await Promise.all([
+        supabase.from("teams").select("id,name,description").eq("club_id", club.id).order("name"),
+        supabase.from("recruitment_campaigns").select("end_date").eq("club_id", club.id).eq("status", "open")
+          .or(`start_date.is.null,start_date.lte.${now}`).gte("end_date", now).not("end_date", "is", null)
+          .order("start_date", { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
+      ]);
+      teams = (teamResult.data ?? []) as Team[];
+      loadError = Boolean(teamResult.error);
+      deadline = campaignResult.data?.end_date ?? null;
+    } else {
+      loadError = true;
+    }
+  } else {
+    loadError = true;
+  }
+
   return (
-    <main className="min-h-screen bg-[#f7f8f6] text-zinc-900">
-      <section className="bg-emerald-950 px-5 py-16 text-white sm:px-8 sm:py-24">
-        <div className="mx-auto max-w-5xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-300">Khám phá câu lạc bộ</p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">CLB Công nghệ ngân hàng BIT</h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-emerald-100">Câu lạc bộ dành cho sinh viên yêu thích công nghệ và lập trình.</p>
-        </div>
+    <main className="clubs-page">
+      <section className="clubs-hero" aria-labelledby="clubs-title">
+        <Image src="/hero/1.jpg" alt="Các thành viên CLB Tin học Ngân hàng BIT" fill priority sizes="100vw" className="clubs-hero-image" />
+        <div className="clubs-hero-overlay" />
+        <h1 id="clubs-title">ABOUT BIT&apos;S STRUCTURE</h1>
       </section>
 
-      <section className="mx-auto max-w-5xl px-5 py-14 sm:px-8 sm:py-16">
-        <div className="grid gap-10 md:grid-cols-[1.1fr_0.9fr] md:items-center">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Về CLB BIT</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight">Cùng học hỏi, cùng tạo ra sản phẩm</h2>
-            <p className="mt-4 leading-7 text-zinc-600">BIT là nơi các bạn sinh viên cùng khám phá công nghệ, thực hành lập trình và phát triển kỹ năng qua những dự án thực tế. Thành viên có cơ hội làm việc trong các ban chuyên môn, tổ chức và truyền thông.</p>
-          </div>
-          <div className="rounded-3xl border border-emerald-100 bg-white p-7 shadow-sm">
-            <p className="text-sm font-semibold text-emerald-800">Bạn sẽ tìm thấy tại BIT</p>
-            <ul className="mt-5 space-y-4 text-sm leading-6 text-zinc-700">
-              <li className="flex gap-3"><span className="text-emerald-700" aria-hidden="true">✓</span><span>Môi trường học tập và thực hành công nghệ cùng đồng đội.</span></li>
-              <li className="flex gap-3"><span className="text-emerald-700" aria-hidden="true">✓</span><span>Cơ hội tham gia dự án và hoạt động của câu lạc bộ.</span></li>
-              <li className="flex gap-3"><span className="text-emerald-700" aria-hidden="true">✓</span><span>Các ban với vai trò phù hợp nhiều sở thích và kỹ năng.</span></li>
-            </ul>
-            <Link href="/positions" className="mt-7 inline-flex items-center rounded-xl bg-emerald-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-900">Xem các ban đang tuyển <span className="ml-2" aria-hidden="true">→</span></Link>
-          </div>
-        </div>
+      <div className="clubs-intro-wrap">
+        <section className="clubs-intro" aria-label="Giới thiệu cơ cấu CLB BIT">
+          <p>Được thành lập vào năm 2010, trải qua hơn 15 năm hoạt động và phát triển, BIT được vận hành bởi các ban thành viên cùng phối hợp trong học tập, tổ chức hoạt động và phát triển cộng đồng.</p>
+          <a href="#cac-ban" className="clubs-learn-more">Tìm hiểu thêm <span aria-hidden="true">↓</span></a>
+        </section>
+      </div>
+
+      <section id="cac-ban" className="clubs-structure-section" aria-label="Các ban trong CLB BIT">
+        <ClubStructureTabs teams={teams} loadError={loadError} />
+      </section>
+
+      <section className="about-cta">
+        <div className="about-cta-heading"><p className="about-eyebrow">Bạn đã sẵn sàng?</p><h2>Hẹn gặp bạn tại BIT.</h2></div>
+        <FlipClockCountdown deadline={deadline} />
       </section>
     </main>
   );

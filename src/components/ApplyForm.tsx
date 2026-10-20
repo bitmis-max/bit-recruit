@@ -157,10 +157,10 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
     setLoading(false);
   }
 
-  const inputClass = "mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-3 text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15";
+  const inputClass = "recruitment-input mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-3 text-zinc-900 outline-none transition placeholder:text-zinc-400";
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
+    <form onSubmit={handleSubmit} noValidate className="recruitment-form space-y-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
       <section className="space-y-5">
         <h2 className="text-lg font-semibold">Thông tin của bạn</h2>
         <div>
@@ -192,8 +192,8 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
               <fieldset className="mt-3 space-y-2">
                 <legend className="sr-only">Chọn ca phỏng vấn</legend>
                 {Array.from(new Map(interviewSessions.map((session) => [`${session.start_time}|${session.end_time}`, session])).values()).map((session) => (
-                  <label key={session.id} htmlFor={`q-${question.id}-${session.id}`} className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-3 transition hover:border-emerald-300 hover:bg-emerald-50/50">
-                    <input id={`q-${question.id}-${session.id}`} type="radio" name={`q-${question.id}`} value={session.id} checked={answers[question.id] === session.id} onChange={() => updateAnswer(question.id, session.id)} className="size-4 accent-emerald-700" />
+                  <label key={session.id} htmlFor={`q-${question.id}-${session.id}`} className="recruitment-option flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-3 transition">
+                    <input id={`q-${question.id}-${session.id}`} type="radio" name={`q-${question.id}`} value={session.id} checked={answers[question.id] === session.id} onChange={() => updateAnswer(question.id, session.id)} className="size-4 accent-sky-700" />
                     <span className="text-sm font-medium text-zinc-800">{formatInterviewRange(session.start_time, session.end_time)}</span>
                   </label>
                 ))}
@@ -204,8 +204,8 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
               <fieldset className="mt-3 space-y-2">
                 <legend className="sr-only">{question.question_text}</legend>
                 {(question.options ?? []).map((option) => (
-                  <label key={option} className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2.5 hover:bg-zinc-50">
-                    <input type="radio" name={`q-${question.id}`} value={option} checked={answers[question.id] === option} onChange={() => updateAnswer(question.id, option)} className="accent-emerald-700" />
+                  <label key={option} className="recruitment-option flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2.5">
+                    <input type="radio" name={`q-${question.id}`} value={option} checked={answers[question.id] === option} onChange={() => updateAnswer(question.id, option)} className="accent-sky-700" />
                     <span className="text-sm">{option}</span>
                   </label>
                 ))}
@@ -216,8 +216,8 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
                 {(question.options ?? []).map((option) => {
                   const selected = Array.isArray(answers[question.id]) ? answers[question.id] as string[] : [];
                   return (
-                    <label key={option} className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2.5 hover:bg-zinc-50">
-                      <input type="checkbox" checked={selected.includes(option)} onChange={(event) => updateAnswer(question.id, event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} className="size-4 accent-emerald-700" />
+                    <label key={option} className="recruitment-option flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2.5">
+                      <input type="checkbox" checked={selected.includes(option)} onChange={(event) => updateAnswer(question.id, event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} className="size-4 accent-sky-700" />
                       <span className="text-sm">{option}</span>
                     </label>
                   );
@@ -233,13 +233,13 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
 
       {submitError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{submitError}</div>}
       {token && (
-        <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
+        <div role="status" className="recruitment-success rounded-xl border p-5">
           <h2 className="font-semibold">Đã nhận đơn ứng tuyển</h2>
           <p className="mt-1 text-sm">Lưu mã theo dõi này để kiểm tra trạng thái đơn:</p>
           <code className="mt-3 block break-all rounded-lg bg-white px-3 py-2 font-mono text-sm">{token}</code>
         </div>
       )}
-      <button type="submit" disabled={loading || !!token} className="inline-flex min-h-12 items-center justify-center rounded-lg bg-emerald-700 px-6 font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+      <button type="submit" disabled={loading || !!token} className="recruitment-submit inline-flex min-h-12 items-center justify-center rounded-lg px-6 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60">
         {loading && <span aria-hidden="true" className="mr-2 size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
         {loading ? "Đang gửi đơn…" : token ? "Đã nộp đơn" : "Gửi đơn ứng tuyển"}
       </button>

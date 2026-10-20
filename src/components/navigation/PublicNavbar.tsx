@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
@@ -64,13 +65,13 @@ export function PublicNavbar() {
     <header className="site-nav">
       <nav className="site-nav-inner" aria-label="Điều hướng chính">
         <Link href="/" className="site-brand" aria-label="BIT — Trang chủ">
-          <span className="site-brand-mark">B</span><span>BIT<span className="site-brand-dot">.</span></span>
+          <Image src="/logo.png" alt="Logo BIT" width={40} height={40} className="site-brand-logo" priority unoptimized />
+          <span>BIT<span className="site-brand-dot">.</span></span>
         </Link>
         <div className="site-nav-links">
           <Link href="/" className={pathname === "/" ? "active" : ""}>Trang chủ</Link>
-          <Link href="/clubs" className={pathname === "/clubs" ? "active" : ""}>Khám phá CLB</Link>
-          <Link href="/positions" className={pathname === "/positions" ? "active" : ""}>Đợt tuyển gen</Link>
-          <Link href="/guide" className={pathname === "/guide" ? "active" : ""}>Hướng dẫn</Link>
+          <Link href="/clubs" className={pathname === "/clubs" ? "active" : ""}>Giới thiệu</Link>
+          <Link href="/events" className={pathname.startsWith("/events") ? "active" : ""}>Sự kiện</Link>
         </div>
         <div className="site-nav-account">
           {user ? (
@@ -88,7 +89,7 @@ export function PublicNavbar() {
         </div>
         <button className="mobile-menu-button" aria-label="Mở menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>☰</button>
         {menuOpen && <div className="mobile-nav-menu">
-          <Link href="/">Trang chủ</Link><Link href="/clubs">Khám phá CLB</Link><Link href="/positions">Đợt tuyển gen</Link><Link href="/guide">Hướng dẫn</Link>
+          <Link href="/">Trang chủ</Link><Link href="/clubs">Giới thiệu</Link><Link href="/events">Sự kiện</Link>
           {user ? <>{managedClubs.map((club) => <button key={club.id} onClick={() => visitClub(club.id)}>Đi tới {club.name}</button>)}<button onClick={() => void signOut()}>Đăng xuất</button></> : <><Link href="/login">Đăng nhập</Link><Link href="/register">Đăng kí</Link></>}
         </div>}
       </nav>
