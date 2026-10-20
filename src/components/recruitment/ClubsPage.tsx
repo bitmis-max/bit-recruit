@@ -3,7 +3,7 @@ import { createSupabaseServerClient } from "../../lib/supabase/server";
 import { FlipClockCountdown } from "../home/FlipClockCountdown";
 import { ClubStructureTabs } from "./ClubStructureTabs";
 
-type Team = { id: string; name: string; description: string | null };
+type Team = { id: string; name: string; description: string | null; image_url: string | null };
 
 export async function ClubsPage() {
   const supabase = await createSupabaseServerClient();
@@ -23,7 +23,7 @@ export async function ClubsPage() {
     } else if (club) {
       const now = new Date().toISOString();
       const [teamResult, campaignResult] = await Promise.all([
-        supabase.from("teams").select("id,name,description").eq("club_id", club.id).order("name"),
+        supabase.from("teams").select("id,name,description,image_url").eq("club_id", club.id).order("name"),
         supabase.from("recruitment_campaigns").select("end_date").eq("club_id", club.id).eq("status", "open")
           .or(`start_date.is.null,start_date.lte.${now}`).gte("end_date", now).not("end_date", "is", null)
           .order("start_date", { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),

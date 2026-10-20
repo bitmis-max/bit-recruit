@@ -110,6 +110,7 @@ create table teams (
   club_id uuid not null references clubs(id) on delete cascade,
   name text not null,
   description text,
+  image_url text,
   created_at timestamptz not null default now()
 );
 

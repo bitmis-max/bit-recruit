@@ -129,7 +129,7 @@ export function RecruitmentManager() {
       ? await supabase.from("recruitment_positions").update(payload).eq("id", positionDraft.id).select("id,campaign_id,team_id,name,description").single()
       : await supabase.from("recruitment_positions").insert(payload).select("id,campaign_id,team_id,name,description").single();
     setBusy(false);
-    if (result.error) reportError(result.error.message); else { const row = result.data as Position; setPositions((items) => positionDraft?.id ? items.map((item) => item.id === row.id ? row : item) : [...items, row]); setPositionId(row.id); setPositionDraft(row); reportSuccess(positionDraft?.id ? "Đã lưu ban tuyển." : "Đã tạo ban tuyển."); }
+    if (result.error) reportError(["42501", "42P17"].includes(result.error.code) ? "Policy RLS của vị trí tuyển đang chặn thao tác. Hãy chạy lại docs/migrate_admin_write_recruitment_positions.sql trong SQL Editor rồi thử lại." : result.error.message); else { const row = result.data as Position; setPositions((items) => positionDraft?.id ? items.map((item) => item.id === row.id ? row : item) : [...items, row]); setPositionId(row.id); setPositionDraft(row); reportSuccess(positionDraft?.id ? "Đã lưu vị trí tuyển." : "Đã tạo vị trí tuyển."); }
   }
 
   function newPosition() { setPositionId(""); setPositionDraft({ id: "", campaign_id: campaignId, team_id: null, name: "", description: null }); setForm(null); setQuestions([]); }

@@ -75,7 +75,6 @@ export default async function ApplyPage({ params }: { params: Promise<{ id: stri
         <div className="recruitment-form-heading">
           <p className="recruitment-eyebrow">VỊ TRÍ ỨNG TUYỂN</p>
           <h2>{position.name}</h2>
-          {position.description && <p>{position.description}</p>}
           {form?.description && <p>{form.description}</p>}
         </div>
         {!form ? (

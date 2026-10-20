@@ -1,9 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import { useState } from "react";
 
-type Team = { id: string; name: string; description: string | null };
+type Team = { id: string; name: string; description: string | null; image_url: string | null };
 
 export function ClubStructureTabs({ teams, loadError }: { teams: Team[]; loadError: boolean }) {
   const [activeTeamId, setActiveTeamId] = useState(teams[0]?.id ?? "");
@@ -42,7 +41,7 @@ export function ClubStructureTabs({ teams, loadError }: { teams: Team[]; loadErr
                 )}
               </div>
               <figure className="club-team-photo-wrap">
-                <Image src="/hero/1.jpg" alt={`Ảnh minh họa ${activeTeam.name}`} fill sizes="(max-width: 760px) 100vw, 50vw" className="club-team-photo" />
+                <img src={activeTeam.image_url || "/hero/1.jpg"} alt={`Ảnh ban ${activeTeam.name}`} className="club-team-photo" />
                 <figcaption>{activeTeam.name}</figcaption>
               </figure>
             </div>

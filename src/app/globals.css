@@ -238,7 +238,7 @@ button:hover {
 .club-team-copy { margin: 0; color: #263d5f; font-size: 16px; line-height: 1.75; white-space: pre-line; }
 .club-team-empty, .club-team-empty-state { color: #718096; }
 .club-team-photo-wrap { position: relative; min-height: 235px; aspect-ratio: 1.52 / 1; margin: 0; overflow: hidden; border-radius: 20px; background: #e8f1f0; box-shadow: 0 10px 24px rgb(16 45 85 / 13%); }
-.club-team-photo { object-fit: cover; transition: transform .45s ease; }
+.club-team-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .45s ease; }
 .club-team-photo-wrap:hover .club-team-photo { transform: scale(1.035); }
 .club-team-photo-wrap figcaption { position: absolute; right: 0; bottom: 0; left: 0; padding: 28px 16px 14px; background: linear-gradient(transparent, rgb(9 29 45 / 65%)); color: white; font-size: 13px; font-weight: 750; text-align: right; }
 .club-team-empty-state { padding: 36px 8px; text-align: center; }

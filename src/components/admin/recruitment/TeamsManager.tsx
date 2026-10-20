@@ -4,8 +4,21 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { useCurrentAdminClub } from "../AdminShell";
 
-type Team = { id: string; club_id: string; name: string; description: string | null; created_at: string };
+type Team = { id: string; club_id: string; name: string; description: string | null; image_url: string | null; created_at: string };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15";
+const teamImageBucket = "team-images";
+
+function teamImageStoragePath(imageUrl: string | null, clubId: string, teamId: string) {
+  const marker = `/storage/v1/object/public/${teamImageBucket}/`;
+  const markerIndex = imageUrl?.indexOf(marker) ?? -1;
+  if (!imageUrl || markerIndex < 0) return null;
+  try {
+    const path = decodeURIComponent(imageUrl.slice(markerIndex + marker.length).split("?")[0]);
+    return path.startsWith(`${clubId}/${teamId}/`) ? path : null;
+  } catch {
+    return null;
+  }
+}
 
 export function TeamsManager() {
   const supabase = getSupabaseClient();
@@ -15,6 +28,8 @@ export function TeamsManager() {
   const [selectedId, setSelectedId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [removeCurrentImage, setRemoveCurrentImage] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -26,7 +41,7 @@ export function TeamsManager() {
     if (!clubId) { setError("Tài khoản chưa được gán vào CLB nào."); setLoading(false); return; }
     setLoading(true);
     const { data, error: queryError } = await supabase.from("teams")
-      .select("id,club_id,name,description,created_at").eq("club_id", clubId).order("name");
+      .select("id,club_id,name,description,image_url,created_at").eq("club_id", clubId).order("name");
     if (queryError) {
       setError(queryError.message);
     } else {
@@ -44,6 +59,8 @@ export function TeamsManager() {
   useEffect(() => {
     setName(selected?.name ?? "");
     setDescription(selected?.description ?? "");
+    setImageFile(null);
+    setRemoveCurrentImage(false);
   }, [selectedId, selected?.name, selected?.description]);
 
   function startCreate() {
@@ -51,6 +68,8 @@ export function TeamsManager() {
     setIsCreating(true);
     setName("");
     setDescription("");
+    setImageFile(null);
+    setRemoveCurrentImage(false);
     setError(null);
     setNotice(null);
   }
@@ -60,18 +79,39 @@ export function TeamsManager() {
     if (!supabase || !clubId || !canWrite) return;
     const cleanName = name.trim();
     if (!cleanName) return;
+    if (imageFile && (!imageFile.type.match(/^image\/(jpeg|png|webp)$/) || imageFile.size > 5 * 1024 * 1024)) {
+      setError("Ảnh phải có định dạng JPG, PNG hoặc WebP và dung lượng tối đa 5 MB.");
+      return;
+    }
     setBusy(true); setError(null); setNotice(null);
-    const payload = { club_id: clubId, name: cleanName, description: description.trim() || null };
+    const teamId = selected && !isCreating ? selected.id : crypto.randomUUID();
+    const oldImageUrl = selected && !isCreating ? selected.image_url : null;
+    let imageUrl = removeCurrentImage ? null : oldImageUrl;
+    let uploadedPath: string | null = null;
+    if (imageFile) {
+      const extension = imageFile.type === "image/jpeg" ? "jpg" : imageFile.type === "image/png" ? "png" : "webp";
+      uploadedPath = `${clubId}/${teamId}/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabase.storage.from(teamImageBucket).upload(uploadedPath, imageFile, { contentType: imageFile.type, cacheControl: "3600", upsert: false });
+      if (uploadError) { setError(uploadError.message); setBusy(false); return; }
+      imageUrl = supabase.storage.from(teamImageBucket).getPublicUrl(uploadedPath).data.publicUrl;
+    }
     const result = selected && !isCreating
-      ? await supabase.from("teams").update({ name: payload.name, description: payload.description }).eq("id", selected.id).eq("club_id", clubId).select("id,club_id,name,description,created_at").single()
-      : await supabase.from("teams").insert(payload).select("id,club_id,name,description,created_at").single();
+      ? await supabase.from("teams").update({ name: cleanName, description: description.trim() || null, image_url: imageUrl }).eq("id", teamId).eq("club_id", clubId).select("id,club_id,name,description,image_url,created_at").single()
+      : await supabase.from("teams").insert({ id: teamId, club_id: clubId, name: cleanName, description: description.trim() || null, image_url: imageUrl }).select("id,club_id,name,description,image_url,created_at").single();
     setBusy(false);
-    if (result.error) { setError(result.error.message); return; }
+    if (result.error) {
+      if (uploadedPath) await supabase.storage.from(teamImageBucket).remove([uploadedPath]);
+      setError(result.error.message); return;
+    }
     const saved = result.data as Team;
+    const oldImagePath = teamImageStoragePath(oldImageUrl, clubId, teamId);
+    if (oldImagePath && oldImageUrl !== imageUrl) await supabase.storage.from(teamImageBucket).remove([oldImagePath]);
     setTeams((rows) => [...rows.filter((team) => team.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, "vi")));
     setSelectedId(saved.id);
     setIsCreating(false);
     setNotice(isCreating ? "Đã tạo ban." : "Đã lưu thay đổi.");
+    setImageFile(null);
+    setRemoveCurrentImage(false);
   }
 
   async function deleteTeam() {
@@ -95,6 +135,8 @@ export function TeamsManager() {
     const { error: deleteError } = await supabase.from("teams").delete().eq("id", selected.id).eq("club_id", clubId);
     setBusy(false);
     if (deleteError) { setError(deleteError.message); return; }
+    const imagePath = teamImageStoragePath(selected.image_url, clubId, selected.id);
+    if (imagePath) await supabase.storage.from(teamImageBucket).remove([imagePath]);
     const rows = teams.filter((team) => team.id !== selected.id);
     setTeams(rows);
     setSelectedId(rows[0]?.id ?? "");
@@ -119,6 +161,12 @@ export function TeamsManager() {
             <div><h2 className="text-lg font-semibold">{isCreating ? "Tạo ban mới" : "Thông tin ban"}</h2><p className="mt-1 text-sm text-zinc-500">Tên ban và phần mô tả giới thiệu.</p></div>
             <label className="block text-sm font-medium">Tên ban<input required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} disabled={!canWrite || busy} className={inputClass} /></label>
             <label className="block text-sm font-medium">Mô tả<textarea rows={7} value={description} onChange={(event) => setDescription(event.target.value)} disabled={!canWrite || busy} className={inputClass} placeholder="Giới thiệu nhiệm vụ và hoạt động của ban…" /></label>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium">Ảnh ban<input type="file" accept="image/jpeg,image/png,image/webp" disabled={!canWrite || busy} onChange={(event) => { setImageFile(event.target.files?.[0] ?? null); setRemoveCurrentImage(false); }} className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-emerald-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-emerald-800`} /><span className="mt-1 block text-xs font-normal text-zinc-500">JPG, PNG hoặc WebP, tối đa 5 MB.</span></label>
+              {selected?.image_url && !imageFile && !removeCurrentImage && <img src={selected.image_url} alt={`Ảnh ban ${name || selected.name}`} className="max-h-56 w-full rounded-xl border object-cover sm:max-w-md" />}
+              {imageFile && <p className="text-sm text-zinc-600">Ảnh mới: {imageFile.name}</p>}
+              {selected?.image_url && !imageFile && <label className="flex items-center gap-2 text-sm text-zinc-600"><input type="checkbox" checked={removeCurrentImage} disabled={!canWrite || busy} onChange={(event) => setRemoveCurrentImage(event.target.checked)} />Gỡ ảnh hiện tại</label>}
+            </div>
             {canWrite && <div className="flex flex-wrap gap-3"><button type="submit" disabled={busy} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60">{busy ? "Đang lưu…" : isCreating ? "Tạo ban" : "Lưu thay đổi"}</button>{selected && !isCreating && <button type="button" onClick={() => void deleteTeam()} disabled={busy} className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60">Xóa ban</button>}</div>}
           </form> : <p className="rounded-lg border border-dashed p-8 text-center text-sm text-zinc-500">Chọn một ban để xem hoặc chỉnh sửa thông tin.</p>}
         </div>

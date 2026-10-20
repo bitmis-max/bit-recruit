@@ -18,6 +18,12 @@ type FormAnswer = { application_id: string; question_id: string; question_text: 
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
 const availabilityQuestionLabel = "Thời gian có thể tham gia phỏng vấn";
 
+function toDateTimeLocalValue(value: string) {
+  const date = new Date(value);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
 function answerValue(answer: FormAnswer) {
   if (answer.answer_text) return answer.answer_text;
   if (answer.answer_json == null) return "Chưa có câu trả lời";
@@ -56,6 +62,7 @@ export function InterviewsManager() {
   const [candidateSearch, setCandidateSearch] = useState("");
   const [sessionApplicantSearch, setSessionApplicantSearch] = useState("");
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const [editingSession, setEditingSession] = useState(false);
   const [answers, setAnswers] = useState<Record<string, FormAnswer[]>>({});
   const [answersLoaded, setAnswersLoaded] = useState<string[]>([]);
   const [answersLoading, setAnswersLoading] = useState(false);
@@ -128,6 +135,7 @@ export function InterviewsManager() {
 
   async function openSession(sessionId: string, applicationIds: string[]) {
     setSelectedSession(sessionId);
+    setEditingSession(false);
     setSupportSearch(""); setCandidateSearch(""); setSessionApplicantSearch("");
     const missing = applicationIds.filter((id) => !answersLoaded.includes(id));
     if (!supabase || !missing.length) return;
@@ -225,6 +233,67 @@ export function InterviewsManager() {
     if (insertError) setError(insertError.message); else { setNotice("Đã thêm ứng viên vào ca phỏng vấn."); setCandidateSelection((current) => ({ ...current, [sessionId]: "" })); await load(); }
   }
 
+  async function deleteSession(session: Session) {
+    if (!supabase || !canWrite) return;
+    const applicantCount = assignments.filter((assignment) => assignment.session_id === session.id).length;
+    const supportCount = support.filter((row) => row.session_id === session.id).length;
+    if (applicantCount || supportCount) {
+      setError("Không thể xóa ca đã có ứng viên hoặc thành viên hỗ trợ.");
+      return;
+    }
+    if (!window.confirm("Xóa ca phỏng vấn này? Thao tác không thể hoàn tác.")) return;
+
+    setBusy(true); setError(""); setNotice("");
+    const { data: deletedSession, error: deleteError } = await supabase.from("interview_sessions").delete().eq("id", session.id).select("id").maybeSingle();
+    setBusy(false);
+    if (deleteError) { setError(deleteError.message); return; }
+    if (!deletedSession) { setError("Không thể xóa ca này. Ca có thể đã được gán ứng viên/người hỗ trợ hoặc bạn không có quyền."); return; }
+    setSessions((current) => current.filter((row) => row.id !== session.id));
+    setAssignments((current) => current.filter((row) => row.session_id !== session.id));
+    setSupport((current) => current.filter((row) => row.session_id !== session.id));
+    setSupportSelection((current) => { const next = { ...current }; delete next[session.id]; return next; });
+    setNotice("Đã xóa ca phỏng vấn.");
+    setSelectedSession(null);
+  }
+
+  async function updateSession(event: FormEvent<HTMLFormElement>, session: Session) {
+    event.preventDefault();
+    if (!supabase || !canWrite) return;
+    const values = new FormData(event.currentTarget);
+    const start = String(values.get("start_time") ?? "");
+    const end = String(values.get("end_time") ?? "");
+    if (new Date(end) <= new Date(start)) {
+      setError("Thời gian kết thúc phải sau thời gian bắt đầu.");
+      return;
+    }
+
+    setBusy(true); setError(""); setNotice("");
+    const { data: updatedSession, error: updateError } = await supabase.from("interview_sessions").update({
+      round: Number(values.get("round") || 1),
+      start_time: new Date(start).toISOString(),
+      end_time: new Date(end).toISOString(),
+      location: String(values.get("location") ?? "").trim() || null,
+      meeting_link: String(values.get("meeting_link") ?? "").trim() || null,
+      capacity: values.get("capacity") ? Number(values.get("capacity")) : null,
+      note: String(values.get("note") ?? "").trim() || null,
+    }).eq("id", session.id).select("id").maybeSingle();
+    setBusy(false);
+    if (updateError) { setError(updateError.message); return; }
+    if (!updatedSession) { setError("Không thể cập nhật ca này. Vui lòng kiểm tra quyền quản trị."); return; }
+    setSessions((current) => current.map((row) => row.id === session.id ? {
+      ...row,
+      round: Number(values.get("round") || 1),
+      start_time: new Date(start).toISOString(),
+      end_time: new Date(end).toISOString(),
+      location: String(values.get("location") ?? "").trim() || null,
+      meeting_link: String(values.get("meeting_link") ?? "").trim() || null,
+      capacity: values.get("capacity") ? Number(values.get("capacity")) : null,
+      note: String(values.get("note") ?? "").trim() || null,
+    } : row));
+    setEditingSession(false);
+    setNotice("Đã cập nhật thông tin ca phỏng vấn.");
+  }
+
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
     {!selectedSession && <header className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-emerald-700">Lịch phỏng vấn</p><h1 className="mt-1 text-3xl font-bold">Quản lý phỏng vấn</h1><p className="mt-2 text-sm text-zinc-600">Câu trả lời và ghi chú ứng viên được hiển thị khi mở từng ca.</p></div><button type="button" onClick={() => void load()} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Làm mới</button></header>}
     {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}{notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
@@ -259,6 +328,7 @@ export function InterviewsManager() {
       });
       const currentSupport = supportSelection[session.id] ?? [];
       const helpers = support.filter((row) => row.session_id === session.id);
+      const canDelete = canWrite && sessionAssignments.length === 0 && helpers.length === 0;
       const supportSearchText = normalizeSearchText(supportSearch);
       const filteredSupportMembers = members.filter((member) => member.team_id === teamId
         && (member.is_active || currentSupport.includes(member.id))
@@ -275,9 +345,25 @@ export function InterviewsManager() {
       });
       return <article key={session.id} className="overflow-hidden rounded-xl border bg-white shadow-sm">
         <div className="border-b bg-zinc-50 p-5">
-          <button type="button" onClick={() => setSelectedSession(null)} className="mb-4 rounded-lg border bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100">← Quay lại danh sách ca</button>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <button type="button" onClick={() => { setSelectedSession(null); setEditingSession(false); }} className="rounded-lg border bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100">← Quay lại danh sách ca</button>
+            {canWrite && <div className="flex gap-2">
+              <button type="button" onClick={() => setEditingSession((current) => !current)} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">{editingSession ? "Đóng chỉnh sửa" : "Sửa thông tin"}</button>
+              <button type="button" disabled={!canDelete || busy} onClick={() => void deleteSession(session)} title={canDelete ? "Xóa ca phỏng vấn" : "Không thể xóa ca đã có ứng viên hoặc người hỗ trợ"} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40">Xóa ca</button>
+            </div>}
+          </div>
           <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">{positionById.get(positionId ?? "")?.name ?? "Chưa gắn vị trí"} · Vòng {session.round}</p><h2 className="mt-1 text-xl font-semibold">{campaignName.get(session.campaign_id) ?? "Đợt tuyển"}</h2><p className="mt-2 text-sm text-zinc-600">{new Date(session.start_time).toLocaleString("vi-VN")} – {new Date(session.end_time).toLocaleString("vi-VN")}</p><p className="mt-1 text-sm text-zinc-600">{session.location || "Chưa có địa điểm"}{session.capacity ? ` · Sức chứa ${session.capacity}` : ""} · {sessionAssignments.length} ứng viên · {helpers.length} hỗ trợ</p>
         </div>
+        {editingSession && canWrite && <form onSubmit={(event) => void updateSession(event, session)} className="grid gap-3 border-b bg-white p-5 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="text-sm">Vòng<input required type="number" name="round" min="1" defaultValue={session.round} className={inputClass} /></label>
+          <label className="text-sm">Bắt đầu<input required type="datetime-local" name="start_time" defaultValue={toDateTimeLocalValue(session.start_time)} className={inputClass} /></label>
+          <label className="text-sm">Kết thúc<input required type="datetime-local" name="end_time" defaultValue={toDateTimeLocalValue(session.end_time)} className={inputClass} /></label>
+          <label className="text-sm">Địa điểm<input name="location" defaultValue={session.location ?? ""} className={inputClass} /></label>
+          <label className="text-sm">Đường dẫn họp<input type="url" name="meeting_link" defaultValue={session.meeting_link ?? ""} className={inputClass} placeholder="https://..." /></label>
+          <label className="text-sm">Sức chứa<input type="number" name="capacity" min="1" defaultValue={session.capacity ?? ""} className={inputClass} /></label>
+          <label className="text-sm sm:col-span-2 lg:col-span-3">Ghi chú<input name="note" defaultValue={session.note ?? ""} className={inputClass} /></label>
+          <div className="flex gap-2 sm:col-span-2 lg:col-span-3"><button disabled={busy} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Lưu thay đổi</button><button type="button" disabled={busy} onClick={() => setEditingSession(false)} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50">Hủy</button></div>
+        </form>}
         <div className="flex flex-col gap-6 border-t p-5">
           <section className="order-2"><h3 className="font-semibold">Ứng viên trong ca</h3>{canWrite && candidates.length > 0 && <form onSubmit={(event) => void addCandidate(event, session.id)} className="mt-3 grid gap-2 rounded-lg border bg-zinc-50 p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"><label className="text-sm">Tìm ứng viên<input type="search" value={candidateSearch} onChange={(event) => setCandidateSearch(event.target.value)} placeholder="Họ tên, mã sinh viên hoặc lớp" className={inputClass} /></label><label className="text-sm">Ứng viên<select required value={candidateSelection[session.id] ?? ""} onChange={(event) => setCandidateSelection((current) => ({ ...current, [session.id]: event.target.value }))} className={inputClass}><option value="" disabled>Chọn ứng viên</option>{filteredCandidates.map((application) => <option key={application.id} value={application.id}>{application.full_name} · {application.student_code || "Chưa có MSSV"} · {application.class_name || "Chưa có lớp"}</option>)}</select></label><button disabled={busy || !filteredCandidates.length} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Thêm vào ca</button>{candidateSearch && !filteredCandidates.length && <p className="text-sm text-zinc-500 sm:col-span-3">Không tìm thấy ứng viên phù hợp.</p>}</form>}
             {session.meeting_link && <a href={session.meeting_link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-emerald-800 underline">Mở đường dẫn họp</a>}{session.note && <p className="mt-2 text-sm text-zinc-600">Ghi chú ca: {session.note}</p>}
@@ -301,10 +387,15 @@ export function InterviewsManager() {
     })() : visibleSessions.length ? <div className="space-y-3">{visibleSessions.map((session) => {
       const helpers = support.filter((row) => row.session_id === session.id);
       const applicantCount = assignments.filter((assignment) => assignment.session_id === session.id).length;
-      return <button key={session.id} type="button" onClick={() => void openSession(session.id, applications.filter((application) => application.position_id === session.position_id).map((application) => application.id))} className="flex w-full flex-col gap-3 rounded-xl border bg-white p-5 text-left shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/30 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">{positionById.get(session.position_id ?? "")?.name ?? "Chưa gắn vị trí"} · Vòng {session.round}</p><h2 className="mt-1 text-lg font-semibold">{campaignName.get(session.campaign_id) ?? "Đợt tuyển"}</h2><p className="mt-2 text-sm text-zinc-600">{new Date(session.start_time).toLocaleString("vi-VN")} – {new Date(session.end_time).toLocaleString("vi-VN")}</p><p className="mt-1 text-sm text-zinc-600">{session.location || "Chưa có địa điểm"}</p></div>
-        <span className="flex items-center gap-2 self-start rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700">{applicantCount} ứng viên · {helpers.length} hỗ trợ <span aria-hidden="true">→</span></span>
-      </button>;
+      return <article key={session.id} className="flex flex-col gap-3 rounded-xl border bg-white p-5 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/30 sm:flex-row sm:items-center sm:justify-between">
+        <button type="button" onClick={() => void openSession(session.id, applications.filter((application) => application.position_id === session.position_id).map((application) => application.id))} className="min-w-0 flex-1 text-left">
+          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">{positionById.get(session.position_id ?? "")?.name ?? "Chưa gắn vị trí"} · Vòng {session.round}</p><h2 className="mt-1 text-lg font-semibold">{campaignName.get(session.campaign_id) ?? "Đợt tuyển"}</h2><p className="mt-2 text-sm text-zinc-600">{new Date(session.start_time).toLocaleString("vi-VN")} – {new Date(session.end_time).toLocaleString("vi-VN")}</p><p className="mt-1 text-sm text-zinc-600">{session.location || "Chưa có địa điểm"}</p>
+        </button>
+        <div className="flex shrink-0 items-center gap-2 self-start sm:self-center">
+          <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700">{applicantCount} ứng viên · {helpers.length} hỗ trợ</span>
+          <span aria-hidden="true" className="text-zinc-500">→</span>
+        </div>
+      </article>;
     })}</div> : <div className="rounded-xl border border-dashed bg-white p-8 text-center text-sm text-zinc-500">Chưa có ca phỏng vấn phù hợp. {canWrite && "Tạo một ca ở biểu mẫu phía trên."}</div>}
   </section>;
 }
