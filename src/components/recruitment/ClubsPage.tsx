@@ -6,7 +6,7 @@ export function ClubsPage() {
       <section className="bg-emerald-950 px-5 py-16 text-white sm:px-8 sm:py-24">
         <div className="mx-auto max-w-5xl">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-300">Khám phá câu lạc bộ</p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">CLB Công nghệ thông tin</h1>
+          <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">CLB Công nghệ ngân hàng BIT</h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-emerald-100">Câu lạc bộ dành cho sinh viên yêu thích công nghệ và lập trình.</p>
         </div>
       </section>

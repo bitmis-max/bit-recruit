@@ -20,7 +20,7 @@ export default function LoginPage() {
     if (!loading && session) {
       // Clear URL parameters to hide sensitive tokens
       const requestedNext = new URLSearchParams(window.location.search).get("next");
-      const destination = requestedNext?.startsWith("/admin") && !requestedNext.startsWith("//") ? requestedNext : "/admin";
+      const destination = requestedNext?.startsWith("/manage-clubs") && !requestedNext.startsWith("//") ? requestedNext : "/manage-clubs";
       window.history.replaceState({}, document.title, destination);
       router.replace(destination);
     }

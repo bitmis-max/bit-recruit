@@ -7,7 +7,7 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
   const supabase = await createSupabaseServerClient();
   if (!supabase) return <main className="p-8">Thiếu cấu hình Supabase.</main>;
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login?next=/admin");
+  if (!user) redirect("/login?next=/manage-clubs");
 
   const { data: memberships, error } = await supabase.from("club_members").select("club_id, full_name, role")
     .eq("user_id", user.id).eq("is_active", true);

@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { getNearestCampaignId } from "../../../lib/recruitment/campaign-selection";
+import { normalizeSearchText } from "../../../lib/recruitment/search";
 import { useCurrentAdminClub } from "../AdminShell";
 import { ApplicantAnswersModal } from "./ApplicantAnswersModal";
 
-type Campaign = { id: string; name: string };
+type Campaign = { id: string; name: string; status: string; start_date: string | null; end_date: string | null; created_at: string };
 type Team = { id: string; name: string };
 type Position = { id: string; name: string; team_id: string | null };
 type Application = { id: string; campaign_id: string; position_id: string; full_name: string; email: string; phone: string | null; student_code: string | null; class_name: string | null; status: string; submitted_at: string };
@@ -20,8 +22,9 @@ export function ApplicationsManager() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [answers, setAnswers] = useState<Answer[]>([]);
-  const [campaignFilter, setCampaignFilter] = useState("all");
+  const [campaignFilter, setCampaignFilter] = useState("");
   const [teamFilter, setTeamFilter] = useState("all");
+  const [applicantSearch, setApplicantSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -29,7 +32,7 @@ export function ApplicationsManager() {
     if (!supabase || !clubId) { setLoading(false); return; }
     setLoading(true); setError("");
     const [campaignResult, teamResult] = await Promise.all([
-      supabase.from("recruitment_campaigns").select("id,name").eq("club_id", clubId),
+      supabase.from("recruitment_campaigns").select("id,name,status,start_date,end_date,created_at").eq("club_id", clubId),
       supabase.from("teams").select("id,name").eq("club_id", clubId).order("name"),
     ]);
     if (campaignResult.error || teamResult.error) {
@@ -37,6 +40,7 @@ export function ApplicationsManager() {
     }
     const campaignRows = (campaignResult.data ?? []) as Campaign[];
     setCampaigns(campaignRows); setTeams((teamResult.data ?? []) as Team[]);
+    setCampaignFilter((current) => campaignRows.some((campaign) => campaign.id === current) ? current : getNearestCampaignId(campaignRows));
     if (!campaignRows.length) { setPositions([]); setApplications([]); setAnswers([]); setLoading(false); return; }
     const campaignIds = campaignRows.map((campaign) => campaign.id);
     const [positionResult, applicationResult] = await Promise.all([
@@ -76,8 +80,10 @@ export function ApplicationsManager() {
   const positionById = useMemo(() => new Map(positions.map((position) => [position.id, position])), [positions]);
   const campaignById = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign.name])), [campaigns]);
   const teamById = useMemo(() => new Map(teams.map((team) => [team.id, team.name])), [teams]);
-  const filtered = applications.filter((application) => (campaignFilter === "all" || application.campaign_id === campaignFilter)
-    && (teamFilter === "all" || (teamFilter === "unassigned" ? !teamByPosition.get(application.position_id) : teamByPosition.get(application.position_id) === teamFilter)));
+  const normalizedApplicantSearch = normalizeSearchText(applicantSearch);
+  const filtered = applications.filter((application) => application.campaign_id === campaignFilter
+    && (!normalizedApplicantSearch || [application.full_name, application.student_code, application.class_name].some((value) => normalizeSearchText(value).includes(normalizedApplicantSearch)))
+    && (teamFilter === "all" || teamByPosition.get(application.position_id) === teamFilter));
   const answersByApplication = useMemo(() => {
     const grouped = new Map<string, Answer[]>();
     for (const answer of answers) grouped.set(answer.application_id, [...(grouped.get(answer.application_id) ?? []), answer]);
@@ -85,9 +91,9 @@ export function ApplicationsManager() {
   }, [answers]);
 
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-emerald-700">Hồ sơ tuyển thành viên</p><h1 className="mt-1 text-3xl font-bold">Quản lý đơn ứng tuyển</h1><p className="mt-2 text-sm text-zinc-600">Lọc hồ sơ theo đợt tuyển và ban tuyển.</p></div><button onClick={() => void load()} className="rounded-lg border bg-white px-3 py-2 text-sm font-medium">Làm mới</button></header>
+    <header className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-emerald-700">Hồ sơ tuyển thành viên</p><h1 className="mt-1 text-3xl font-bold">Quản lý đơn ứng tuyển</h1><p className="mt-2 text-sm text-zinc-600">Lọc hồ sơ theo đợt tuyển và ban tuyển.</p></div><button type="button" onClick={() => void load()} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Làm mới</button></header>
     {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-    <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border bg-white p-4"><label htmlFor="application-campaign-filter" className="text-sm font-semibold">Đợt tuyển<select id="application-campaign-filter" value={campaignFilter} onChange={(event) => setCampaignFilter(event.target.value)} className="mt-1 block min-w-52 rounded-lg border bg-white px-3 py-2 text-sm"><option value="all">Tất cả đợt tuyển</option>{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}</select></label><label htmlFor="application-team-filter" className="text-sm font-semibold">Ban tuyển<select id="application-team-filter" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)} className="mt-1 block min-w-52 rounded-lg border bg-white px-3 py-2 text-sm"><option value="all">Tất cả các ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}<option value="unassigned">Chưa gán ban</option></select></label><span className="pb-2 text-sm text-zinc-500">{filtered.length} đơn</span></div>
+    <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border bg-white p-4"><label htmlFor="application-campaign-filter" className="text-sm font-semibold">Đợt tuyển<select id="application-campaign-filter" value={campaignFilter} onChange={(event) => setCampaignFilter(event.target.value)} className="mt-1 block min-w-52 rounded-lg border bg-white px-3 py-2 text-sm">{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}</select></label><label className="text-sm font-semibold">Tìm ứng viên<input type="search" value={applicantSearch} onChange={(event) => setApplicantSearch(event.target.value)} placeholder="Họ tên, mã sinh viên hoặc lớp" className="mt-1 block min-w-64 rounded-lg border bg-white px-3 py-2 text-sm" /></label><label htmlFor="application-team-filter" className="text-sm font-semibold">Ban tuyển<select id="application-team-filter" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)} className="mt-1 block min-w-52 rounded-lg border bg-white px-3 py-2 text-sm"><option value="all">Tất cả các ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label><span className="pb-2 text-sm text-zinc-500">{filtered.length} đơn</span></div>
     {loading ? <p className="rounded-xl border bg-white p-8 text-sm text-zinc-500">Đang tải đơn ứng tuyển…</p> : filtered.length ? <div className="overflow-x-auto rounded-xl border bg-white shadow-sm"><table className="w-full min-w-[1250px] text-left text-sm"><thead className="bg-zinc-50 text-xs uppercase text-zinc-500"><tr><th className="px-4 py-3">Ứng viên</th><th className="px-4 py-3">Đợt tuyển / ban / vị trí</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Thời gian tham gia phỏng vấn</th><th className="px-4 py-3">Câu trả lời trong form</th></tr></thead><tbody className="divide-y">{filtered.map((application) => {
       const position = positionById.get(application.position_id);
       const teamId = teamByPosition.get(application.position_id);

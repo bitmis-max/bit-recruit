@@ -42,7 +42,7 @@ export function PublicNavbar() {
   }, [supabase]);
 
   useEffect(() => { setMenuOpen(false); }, [pathname]);
-  if (pathname.startsWith("/admin") || pathname === "/login") return null;
+  if (pathname.startsWith("/manage-clubs") || pathname === "/login") return null;
 
   const name = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Tài khoản";
   const avatar = user?.user_metadata?.avatar_url as string | undefined;
@@ -55,9 +55,9 @@ export function PublicNavbar() {
   }
 
   function visitClub(clubId: string) {
-    document.cookie = `admin_club=${encodeURIComponent(clubId)}; Path=/admin; SameSite=Lax; Max-Age=2592000`;
+    document.cookie = `admin_club=${encodeURIComponent(clubId)}; Path=/manage-clubs; SameSite=Lax; Max-Age=2592000`;
     setMenuOpen(false);
-    router.push("/admin");
+    router.push("/manage-clubs");
   }
 
   return (

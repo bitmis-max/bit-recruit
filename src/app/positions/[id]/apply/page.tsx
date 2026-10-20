@@ -6,7 +6,7 @@ import { createSupabaseServerClient } from "../../../../lib/supabase/server";
 import type { ApplicationForm, FormQuestion } from "../../../../lib/recruitment/types";
 
 const interviewAvailabilityQuestion = "Thời gian có thể tham gia phỏng vấn";
-type InterviewSession = { id: string; team_id: string | null; start_time: string; end_time: string };
+type InterviewSession = { id: string; position_id: string; start_time: string; end_time: string };
 
 export default async function ApplyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,7 +17,7 @@ export default async function ApplyPage({ params }: { params: Promise<{ id: stri
 
   const { data: position } = await supabase
     .from("recruitment_positions")
-    .select("id,name,description,campaign_id,team_id,recruitment_campaigns!inner(status,start_date,end_date,club_id)")
+    .select("id,name,description,campaign_id,recruitment_campaigns!inner(status,start_date,end_date,club_id)")
     .eq("id", id)
     .eq("recruitment_campaigns.status", "open")
     .maybeSingle();
@@ -61,8 +61,7 @@ export default async function ApplyPage({ params }: { params: Promise<{ id: stri
       }
     }
 
-    let sessionsQuery = admin.from("interview_sessions").select("id,team_id,start_time,end_time").eq("campaign_id", position.campaign_id).gte("end_time", new Date().toISOString()).order("start_time");
-    sessionsQuery = position.team_id ? sessionsQuery.eq("team_id", position.team_id) : sessionsQuery.is("team_id", null);
+    const sessionsQuery = admin.from("interview_sessions").select("id,position_id,start_time,end_time").eq("position_id", position.id).gte("end_time", new Date().toISOString()).order("start_time");
     const { data: sessionRows } = await sessionsQuery;
     interviewSessions = (sessionRows ?? []) as InterviewSession[];
   }

@@ -8,8 +8,8 @@ export default async function ClubMailAdminPage() {
   if (!supabase) redirect("/login");
   const clubId = (await cookies()).get("admin_club")?.value;
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !clubId) redirect("/admin");
+  if (!user || !clubId) redirect("/manage-clubs");
   const { data: member } = await supabase.from("club_members").select("role").eq("user_id", user.id).eq("club_id", clubId).eq("is_active", true).limit(1).maybeSingle();
-  if (member?.role !== "owner" && member?.role !== "admin") redirect("/admin");
+  if (member?.role !== "owner" && member?.role !== "admin") redirect("/manage-clubs");
   return <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8"><MailMergeApp /></main>;
 }

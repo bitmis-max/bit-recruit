@@ -25,7 +25,7 @@ erDiagram
     recruitment_campaigns ||--o{ interview_sessions : schedules
 
     teams ||--o{ recruitment_positions : owns
-    teams ||--o{ interview_sessions : "may host"
+    recruitment_positions ||--o{ interview_sessions : schedules
 
     application_forms ||--o{ form_questions : contains
     recruitment_positions ||--o| application_forms : has
@@ -205,11 +205,13 @@ create table application_answers (
 
 ### 4.5. Phỏng vấn
 
+Mỗi ca phỏng vấn gắn với đúng một `recruitment_positions` qua `position_id`. Khi triển khai trên cơ sở dữ liệu đã có, chạy `migrate_interview_sessions_to_positions.sql`; migration chỉ tự gán vị trí cũ khi có thể suy ra duy nhất. Các ca cũ chưa xác định được vị trí cần được tạo lại trong trang quản lí phỏng vấn.
+
 ```sql
 create table interview_sessions (
   id uuid primary key default gen_random_uuid(),
   campaign_id uuid not null references recruitment_campaigns(id) on delete cascade,
-  team_id uuid references teams(id) on delete set null,  -- null nếu là ca chung
+  position_id uuid not null references recruitment_positions(id) on delete cascade,
   round int not null default 1,
   start_time timestamptz not null,
   end_time timestamptz not null,
@@ -255,7 +257,7 @@ create index on form_questions (form_id, order_index);
 create index on applications (campaign_id, status);
 create index on applications (position_id);
 create index on application_answers (application_id);
-create index on interview_sessions (campaign_id, start_time);
+create index on interview_sessions (position_id, start_time);
 create index on interview_assignments (session_id);
 ```
 
@@ -506,7 +508,7 @@ grant execute on function get_application_by_token to anon;
 2. Chuyển campaign sang `open`. Ứng viên truy cập trang đăng ký (không cần đăng nhập).
 3. Ứng viên gọi `submit_application` và nhận `tracking_token`.
 4. **Quản trị** lọc đơn, đổi `applications.status` sang `screening` hoặc `interview`.
-5. **Quản trị** tạo `interview_sessions`, gán thành viên hỗ trợ qua `interview_session_members`.
+5. **Quản trị** tạo `interview_sessions` cho một `position_id`, gán thành viên hỗ trợ qua `interview_session_members`.
 6. `submit_application` tự xếp ứng viên vào ca đã chọn qua `interview_assignments`.
 7. Sau phỏng vấn, cập nhật `status`, `score`, `comment`, `result` trong `interview_assignments`.
 8. Chốt kết quả: cập nhật `applications.status` thành `passed` hoặc `failed`.

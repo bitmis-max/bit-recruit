@@ -176,7 +176,7 @@ export function MailMergeApp() {
             const supabase = getSupabaseClient();
             const { error } = await supabase?.auth.linkIdentity({ provider: "google", options: {
               scopes: "email profile https://www.googleapis.com/auth/gmail.send",
-              redirectTo: `${window.location.origin}/admin/mail`,
+              redirectTo: `${window.location.origin}/manage-clubs/mail`,
               queryParams: { access_type: "offline", prompt: "consent" },
             } }) ?? { error: new Error("Supabase chưa được cấu hình") };
             if (error) alert(error.message);

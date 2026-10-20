@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const tabs = [
-  { href: "/admin/recruitment", label: "Quản lý đợt tuyển" },
-  { href: "/admin/recruitment/applications", label: "Quản lý đơn ứng tuyển" },
-  { href: "/admin/recruitment/interviews", label: "Quản lý phỏng vấn" },
+  { href: "/manage-clubs/recruitment", label: "Quản lý đợt tuyển" },
+  { href: "/manage-clubs/recruitment/applications", label: "Quản lý đơn ứng tuyển" },
+  { href: "/manage-clubs/recruitment/interviews", label: "Quản lý phỏng vấn" },
 ];
 
 export function RecruitmentTabs() {
