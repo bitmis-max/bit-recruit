@@ -178,6 +178,12 @@ create policy "public read teams for open positions" on public.teams
     )
   );
 
+drop policy if exists "admin manage teams" on public.teams;
+create policy "admin manage teams" on public.teams
+  for all to authenticated
+  using (public.is_club_admin(club_id))
+  with check (public.is_club_admin(club_id));
+
 drop policy if exists "members read application answers" on public.application_answers;
 create policy "members read application answers" on public.application_answers
   for select to authenticated using (
