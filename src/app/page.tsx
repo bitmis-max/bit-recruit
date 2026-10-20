@@ -1,36 +1,99 @@
 import Link from "next/link";
+import { PhotoCarousel } from "../components/home/PhotoCarousel";
+
+const heroPhotos = [
+  { src: "/hero/1.jpg", alt: "Thành viên CLB BIT trong buổi gặp mặt" },
+  { src: "/hero/2.png", alt: "Thành viên BIT Gen 16" },
+  { src: "/hero/3.jpg", alt: "Hoạt động nghiên cứu khoa học của BIT" },
+  { src: "/hero/4.png", alt: "Thành viên BIT tại giải đấu esports" },
+  { src: "/hero/5.jpg", alt: "Buổi trao đổi và làm việc của các thành viên BIT" },
+];
+
+const aboutPhotos = [
+  { src: "/hero/1.jpg", alt: "Các thế hệ thành viên CLB BIT" },
+  { src: "/hero/3.jpg", alt: "Thành viên BIT tại lễ tổng kết hoạt động khoa học" },
+];
+
+const recruitmentPhotos = [
+  { src: "/hero/2.png", alt: "Thành viên Gen 16 trong buổi gặp mặt đầu tiên" },
+  { src: "/hero/5.jpg", alt: "Thành viên BIT cùng trao đổi trong buổi tuyển thành viên" },
+  { src: "/hero/4.png", alt: "Đội tuyển BIT tại giải esports" },
+];
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-[#f7f8f6] text-zinc-900">
-      <section className="relative overflow-hidden bg-emerald-950 px-5 py-20 text-white sm:px-8 sm:py-28">
-        <div className="pointer-events-none absolute -right-28 -top-36 size-[480px] rounded-full border border-emerald-800/70" />
-        <div className="pointer-events-none absolute -right-8 -top-16 size-[330px] rounded-full border border-emerald-800/70" />
-        <div className="relative mx-auto max-w-6xl">
-          <p className="mb-5 text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">Cổng thông tin tuyển thành viên BIT</p>
-          <h1 className="max-w-3xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">Tìm nơi bạn thuộc về.<br /><span className="text-emerald-300">Bắt đầu cùng BIT.</span></h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-emerald-100">Khám phá các câu lạc bộ, tìm hiểu những đợt tuyển thành viên và gửi hồ sơ ứng tuyển ngay trên một nền tảng.</p>
-          <div className="mt-9 flex flex-wrap gap-3">
-            <Link href="/clubs" className="rounded-xl bg-white px-5 py-3 text-sm font-bold text-emerald-950 transition hover:bg-emerald-100">Khám phá CLB <span aria-hidden="true">→</span></Link>
-            <Link href="/guide" className="rounded-xl border border-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-900">Xem hướng dẫn</Link>
+    <main className="about-page">
+      <section className="about-hero" aria-label="Hình ảnh CLB BIT">
+        <PhotoCarousel photos={heroPhotos} className="hero-carousel" label="Ảnh hoạt động của CLB" />
+        <div className="about-hero-shade" />
+        <div className="about-hero-copy">
+          <p className="about-eyebrow">Banking Information Technology</p>
+          <h1>CLB Tin học Ngân hàng BIT - BAV</h1>
+          <p>Cùng học hỏi, sáng tạo và trưởng thành qua công nghệ.</p>
+          <div className="about-hero-actions">
+            <Link href="/clubs" className="about-button about-button-primary">Khám phá CLB <span aria-hidden="true">↗</span></Link>
           </div>
         </div>
+        <a className="hero-scroll" href="#gioi-thieu">Khám phá thêm <span aria-hidden="true">↓</span></a>
       </section>
 
-      <section className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
-        <div className="max-w-2xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">Một hành trình rõ ràng</p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Mọi điều cần cho hành trình ứng tuyển</h2>
-          <p className="mt-4 leading-7 text-zinc-600">Từ lúc tìm hiểu CLB đến khi gửi đơn, bạn có thể theo dõi các bước ngay trên cổng thông tin.</p>
+      <section id="gioi-thieu" className="about-section about-introduction">
+        <div className="section-heading">
+          <p className="about-eyebrow">Chúng mình là ai?</p>
+          <h2>Một cộng đồng công nghệ luôn chuyển động</h2>
         </div>
-        <div className="mt-9 grid gap-4 md:grid-cols-3">
-          <article className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"><span className="grid size-11 place-items-center rounded-xl bg-emerald-50 text-lg text-emerald-800" aria-hidden="true">⌕</span><h3 className="mt-5 text-lg font-semibold">Khám phá CLB</h3><p className="mt-2 leading-7 text-zinc-600">Tìm hiểu thông tin, hoạt động và các ban của từng câu lạc bộ.</p></article>
-          <article className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"><span className="grid size-11 place-items-center rounded-xl bg-emerald-50 text-lg text-emerald-800" aria-hidden="true">◷</span><h3 className="mt-5 text-lg font-semibold">Theo dõi đợt tuyển</h3><p className="mt-2 leading-7 text-zinc-600">Xem vị trí đang mở, yêu cầu ứng tuyển và thời gian nhận hồ sơ.</p></article>
-          <article className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"><span className="grid size-11 place-items-center rounded-xl bg-emerald-50 text-lg text-emerald-800" aria-hidden="true">↗</span><h3 className="mt-5 text-lg font-semibold">Ứng tuyển trực tuyến</h3><p className="mt-2 leading-7 text-zinc-600">Điền biểu mẫu của ban bạn quan tâm và gửi hồ sơ trực tiếp.</p></article>
+        <div className="about-story-grid">
+          <div className="about-story-copy">
+            <p>
+              Trực thuộc <strong>Hội Sinh viên Học viện Ngân hàng</strong>, hoạt động dưới sự bảo trợ chuyên môn của <strong>Khoa Công nghệ thông tin và Kinh tế số</strong>, CLB Tin học Ngân hàng BIT là nơi sinh viên cùng khám phá và ứng dụng công nghệ vào thực tế.
+            </p>
+            <p>
+              Với sứ mệnh kết nối những bạn trẻ yêu công nghệ, BIT tạo nên một môi trường để mỗi thành viên học hỏi, thử sức với ý tưởng mới và phát triển năng lực của mình qua từng dự án, hoạt động và sự kiện.
+            </p>
+            <div className="about-facts">
+              <div><strong>2010</strong><span>Năm thành lập</span></div>
+              <div><strong>Học tập</strong><span>Chia sẻ kiến thức</span></div>
+              <div><strong>Sáng tạo</strong><span>Cùng làm điều mới</span></div>
+            </div>
+          </div>
+          <PhotoCarousel photos={aboutPhotos} className="about-carousel" label="Ảnh giới thiệu CLB" />
+        </div>
+        <div className="about-values">
+          <span>Học hỏi không ngừng</span><span aria-hidden="true">✳</span>
+          <span>Kết nối chân thành</span><span aria-hidden="true">✳</span>
+          <span>Phát triển cùng nhau</span>
         </div>
       </section>
 
+      <section className="about-section recruitment-section">
+        <div className="section-heading section-heading-centered">
+          <p className="about-eyebrow">Hành trình thành viên</p>
+          <h2>Sự kiện tuyển CTV Gen 16</h2>
+          <p>Mỗi mùa tuyển thành viên là khởi đầu cho những tình bạn, ý tưởng và trải nghiệm mới tại BIT.</p>
+        </div>
+        <div className="recruitment-feature">
+          <div className="recruitment-copy">
+            <span className="recruitment-index">01 / GẶP GỠ</span>
+            <h3>Bắt đầu từ một cuộc gặp</h3>
+            <p>Sự kiện tuyển cộng tác viên là dịp để các bạn sinh viên làm quen với BIT, gặp gỡ những người bạn cùng sở thích và tìm hiểu cách CLB học tập, làm việc.</p>
+            <p>Từ vòng đơn đến những buổi sinh hoạt đầu tiên, mỗi bước đều mở ra cơ hội để bạn thử sức, đóng góp và phát triển cùng cộng đồng.</p>
+            <Link href="/positions" className="about-text-link">Tìm hiểu cơ hội tham gia <span aria-hidden="true">→</span></Link>
+          </div>
+          <div className="recruitment-gallery">
+            <PhotoCarousel photos={recruitmentPhotos} className="recruitment-carousel" label="Ảnh sự kiện tuyển cộng tác viên Gen 16" captions={["Ngày hội tuyển thành viên", "Cùng nhau học hỏi", "Hoạt động và kết nối"]} />
+            <p className="gallery-caption">Những khoảnh khắc trên hành trình trở thành một phần của BIT</p>
+          </div>
+        </div>
+        <div className="recruitment-bottom">
+          <div><span className="recruitment-index">02 / ĐỒNG HÀNH</span><h3>Thanh xuân được tạo nên từ những điều cùng làm.</h3></div>
+          <p>Được thành lập ngày 28 - 04 - 2010, BIT đã trở thành một phần trong thanh xuân của nhiều thế hệ sinh viên Khoa Công nghệ thông tin và Kinh tế số. Cùng nhau, chúng mình học công nghệ, tổ chức hoạt động và lưu lại những kỷ niệm đáng nhớ.</p>
+        </div>
+      </section>
 
+      <section className="about-cta">
+        <div><p className="about-eyebrow">Bạn đã sẵn sàng?</p><h2>Hẹn gặp bạn tại BIT.</h2></div>
+        <Link href="/clubs" className="about-button about-button-primary">Khám phá các câu lạc bộ <span aria-hidden="true">↗</span></Link>
+      </section>
     </main>
   );
 }
