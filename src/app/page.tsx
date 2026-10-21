@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { PhotoCarousel } from "../components/home/PhotoCarousel";
 import { FlipClockCountdown } from "../components/home/FlipClockCountdown";
 import { createSupabaseServerClient } from "../lib/supabase/server";
@@ -48,10 +49,12 @@ async function getRecruitmentDeadline(now: Date) {
   return campaign?.end_date ?? null;
 }
 
-export default async function HomePage() {
-  const now = new Date();
-  const deadline = await getRecruitmentDeadline(now);
+async function HomeCountdown() {
+  const deadline = await getRecruitmentDeadline(new Date());
+  return <FlipClockCountdown deadline={deadline} />;
+}
 
+export default function HomePage() {
   return (
     <main className="about-page">
       <section className="about-hero" aria-label="Hình ảnh CLB BIT">
@@ -122,7 +125,7 @@ export default async function HomePage() {
 
       <section className="about-cta">
         <div className="about-cta-heading"><p className="about-eyebrow">Bạn đã sẵn sàng?</p><h2>Hẹn gặp bạn tại BIT.</h2></div>
-        <FlipClockCountdown deadline={deadline} />
+        <Suspense fallback={null}><HomeCountdown /></Suspense>
       </section>
     </main>
   );

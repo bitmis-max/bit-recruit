@@ -36,6 +36,7 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
     { href: "/manage-clubs/accounts", label: "Quản lý tài khoản", allowed: canWrite },
     { href: "/manage-clubs/members", label: "Quản lý thành viên", allowed: canWrite },
     { href: "/manage-clubs/teams", label: "Quản lí ban", allowed: canWrite },
+    { href: "/manage-clubs/events", label: "Quản lý sự kiện", allowed: canWrite },
     { href: "/manage-clubs/recruitment", label: "Quản lý tuyển gen", allowed: true },
     { href: "/manage-clubs/mail", label: "Gửi mail", allowed: canWrite },
   ];

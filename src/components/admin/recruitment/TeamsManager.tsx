@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { useCurrentAdminClub } from "../AdminShell";
 
@@ -29,7 +29,8 @@ export function TeamsManager() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [removeCurrentImage, setRemoveCurrentImage] = useState(false);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -55,12 +56,18 @@ export function TeamsManager() {
 
   useEffect(() => { void loadTeams(); }, [loadTeams]);
 
+  useEffect(() => {
+    if (!imageFile) { setImagePreviewUrl(null); return; }
+    const previewUrl = URL.createObjectURL(imageFile);
+    setImagePreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [imageFile]);
+
   const selected = teams.find((team) => team.id === selectedId) ?? null;
   useEffect(() => {
     setName(selected?.name ?? "");
     setDescription(selected?.description ?? "");
     setImageFile(null);
-    setRemoveCurrentImage(false);
   }, [selectedId, selected?.name, selected?.description]);
 
   function startCreate() {
@@ -69,7 +76,6 @@ export function TeamsManager() {
     setName("");
     setDescription("");
     setImageFile(null);
-    setRemoveCurrentImage(false);
     setError(null);
     setNotice(null);
   }
@@ -86,12 +92,13 @@ export function TeamsManager() {
     setBusy(true); setError(null); setNotice(null);
     const teamId = selected && !isCreating ? selected.id : crypto.randomUUID();
     const oldImageUrl = selected && !isCreating ? selected.image_url : null;
-    let imageUrl = removeCurrentImage ? null : oldImageUrl;
+    let imageUrl = oldImageUrl;
     let uploadedPath: string | null = null;
     if (imageFile) {
       const extension = imageFile.type === "image/jpeg" ? "jpg" : imageFile.type === "image/png" ? "png" : "webp";
       uploadedPath = `${clubId}/${teamId}/${crypto.randomUUID()}.${extension}`;
-      const { error: uploadError } = await supabase.storage.from(teamImageBucket).upload(uploadedPath, imageFile, { contentType: imageFile.type, cacheControl: "3600", upsert: false });
+      // Each upload gets a unique path, so long-lived browser/CDN caching is safe.
+      const { error: uploadError } = await supabase.storage.from(teamImageBucket).upload(uploadedPath, imageFile, { contentType: imageFile.type, cacheControl: "31536000", upsert: false });
       if (uploadError) { setError(uploadError.message); setBusy(false); return; }
       imageUrl = supabase.storage.from(teamImageBucket).getPublicUrl(uploadedPath).data.publicUrl;
     }
@@ -111,7 +118,6 @@ export function TeamsManager() {
     setIsCreating(false);
     setNotice(isCreating ? "Đã tạo ban." : "Đã lưu thay đổi.");
     setImageFile(null);
-    setRemoveCurrentImage(false);
   }
 
   async function deleteTeam() {
@@ -162,10 +168,11 @@ export function TeamsManager() {
             <label className="block text-sm font-medium">Tên ban<input required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} disabled={!canWrite || busy} className={inputClass} /></label>
             <label className="block text-sm font-medium">Mô tả<textarea rows={7} value={description} onChange={(event) => setDescription(event.target.value)} disabled={!canWrite || busy} className={inputClass} placeholder="Giới thiệu nhiệm vụ và hoạt động của ban…" /></label>
             <div className="space-y-2">
-              <label className="block text-sm font-medium">Ảnh ban<input type="file" accept="image/jpeg,image/png,image/webp" disabled={!canWrite || busy} onChange={(event) => { setImageFile(event.target.files?.[0] ?? null); setRemoveCurrentImage(false); }} className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-emerald-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-emerald-800`} /><span className="mt-1 block text-xs font-normal text-zinc-500">JPG, PNG hoặc WebP, tối đa 5 MB.</span></label>
-              {selected?.image_url && !imageFile && !removeCurrentImage && <img src={selected.image_url} alt={`Ảnh ban ${name || selected.name}`} className="max-h-56 w-full rounded-xl border object-cover sm:max-w-md" />}
-              {imageFile && <p className="text-sm text-zinc-600">Ảnh mới: {imageFile.name}</p>}
-              {selected?.image_url && !imageFile && <label className="flex items-center gap-2 text-sm text-zinc-600"><input type="checkbox" checked={removeCurrentImage} disabled={!canWrite || busy} onChange={(event) => setRemoveCurrentImage(event.target.checked)} />Gỡ ảnh hiện tại</label>}
+              <p className="text-sm font-medium">Ảnh ban</p>
+              {imagePreviewUrl || selected?.image_url ? <img src={imagePreviewUrl ?? selected?.image_url ?? ""} alt={`Ảnh ban ${name || selected?.name || ""}`} className="max-h-64 w-full rounded-xl border object-cover sm:max-w-lg" /> : <div className="flex min-h-48 w-full items-center justify-center rounded-xl border border-dashed bg-zinc-50 text-sm text-zinc-500 sm:max-w-lg">Ban chưa có ảnh</div>}
+              <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" disabled={!canWrite || busy} onChange={(event) => { setImageFile(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} className="sr-only" />
+              {canWrite && <button type="button" onClick={() => imageInputRef.current?.click()} disabled={busy} className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60">{imageFile || selected?.image_url ? "Thay ảnh" : "Tải ảnh lên"}</button>}
+              <p className="text-xs text-zinc-500">JPG, PNG hoặc WebP, tối đa 5 MB.{imageFile ? ` Ảnh mới: ${imageFile.name}` : ""}</p>
             </div>
             {canWrite && <div className="flex flex-wrap gap-3"><button type="submit" disabled={busy} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60">{busy ? "Đang lưu…" : isCreating ? "Tạo ban" : "Lưu thay đổi"}</button>{selected && !isCreating && <button type="button" onClick={() => void deleteTeam()} disabled={busy} className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60">Xóa ban</button>}</div>}
           </form> : <p className="rounded-lg border border-dashed p-8 text-center text-sm text-zinc-500">Chọn một ban để xem hoặc chỉnh sửa thông tin.</p>}

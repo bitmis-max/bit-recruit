@@ -1,11 +1,12 @@
 import Image from "next/image";
+import { Suspense } from "react";
 import { createSupabaseServerClient } from "../../lib/supabase/server";
 import { FlipClockCountdown } from "../home/FlipClockCountdown";
 import { ClubStructureTabs } from "./ClubStructureTabs";
 
 type Team = { id: string; name: string; description: string | null; image_url: string | null };
 
-export async function ClubsPage() {
+async function ClubsLoadedSections() {
   const supabase = await createSupabaseServerClient();
   let teams: Team[] = [];
   let loadError = false;
@@ -39,20 +40,7 @@ export async function ClubsPage() {
   }
 
   return (
-    <main className="clubs-page">
-      <section className="clubs-hero" aria-labelledby="clubs-title">
-        <Image src="/hero/1.jpg" alt="Các thành viên CLB Tin học Ngân hàng BIT" fill priority sizes="100vw" className="clubs-hero-image" />
-        <div className="clubs-hero-overlay" />
-        <h1 id="clubs-title">ABOUT BIT&apos;S STRUCTURE</h1>
-      </section>
-
-      <div className="clubs-intro-wrap">
-        <section className="clubs-intro" aria-label="Giới thiệu cơ cấu CLB BIT">
-          <p>Được thành lập vào năm 2010, trải qua hơn 15 năm hoạt động và phát triển, BIT được vận hành bởi các ban thành viên cùng phối hợp trong học tập, tổ chức hoạt động và phát triển cộng đồng.</p>
-          <a href="#cac-ban" className="clubs-learn-more">Tìm hiểu thêm <span aria-hidden="true">↓</span></a>
-        </section>
-      </div>
-
+    <>
       <section id="cac-ban" className="clubs-structure-section" aria-label="Các ban trong CLB BIT">
         <ClubStructureTabs teams={teams} loadError={loadError} />
       </section>
@@ -61,6 +49,25 @@ export async function ClubsPage() {
         <div className="about-cta-heading"><p className="about-eyebrow">Bạn đã sẵn sàng?</p><h2>Hẹn gặp bạn tại BIT.</h2></div>
         <FlipClockCountdown deadline={deadline} />
       </section>
+    </>
+  );
+}
+
+export function ClubsPage() {
+  return (
+    <main className="clubs-page">
+      <section className="clubs-hero" aria-labelledby="clubs-title">
+        <Image src="/hero/1.jpg" alt="Các thành viên CLB Tin học Ngân hàng BIT" fill priority sizes="100vw" className="clubs-hero-image" />
+        <div className="clubs-hero-overlay" />
+        <h1 id="clubs-title">ABOUT BIT&apos;S STRUCTURE</h1>
+      </section>
+      <div className="clubs-intro-wrap">
+        <section className="clubs-intro" aria-label="Giới thiệu cơ cấu CLB BIT">
+          <p>Được thành lập vào năm 2010, trải qua hơn 15 năm hoạt động và phát triển, BIT được vận hành bởi các ban thành viên cùng phối hợp trong học tập, tổ chức hoạt động và phát triển cộng đồng.</p>
+          <a href="#cac-ban" className="clubs-learn-more">Tìm hiểu thêm <span aria-hidden="true">↓</span></a>
+        </section>
+      </div>
+      <Suspense fallback={null}><ClubsLoadedSections /></Suspense>
     </main>
   );
 }

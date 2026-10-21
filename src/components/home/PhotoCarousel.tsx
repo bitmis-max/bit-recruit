@@ -32,7 +32,9 @@ export function PhotoCarousel({ photos, className = "", label, captions }: Photo
       <div className="photo-carousel-frame">
         {photos.map((photo, index) => (
           <div className={`photo-carousel-slide${index === activeIndex ? " is-active" : ""}`} key={photo.src} aria-hidden={index !== activeIndex}>
-            <Image src={photo.src} alt={photo.alt} fill sizes={className.includes("hero") ? "100vw" : "(max-width: 768px) 100vw, 50vw"} priority={className.includes("hero") && index === 0} />
+            {(index === activeIndex || index === (activeIndex + 1) % photos.length || index === (activeIndex - 1 + photos.length) % photos.length) && (
+              <Image src={photo.src} alt={photo.alt} fill sizes={className.includes("hero") ? "100vw" : "(max-width: 768px) 100vw, 50vw"} priority={className.includes("hero") && index === 0} loading={className.includes("hero") && index === 0 ? "eager" : "lazy"} />
+            )}
           </div>
         ))}
         {photos.length > 1 && (

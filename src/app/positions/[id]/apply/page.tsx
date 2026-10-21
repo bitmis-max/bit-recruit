@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import ApplyForm from "../../../../components/ApplyForm";
@@ -9,11 +10,11 @@ import type { ApplicationForm, FormQuestion } from "../../../../lib/recruitment/
 const interviewAvailabilityQuestion = "Thời gian có thể tham gia phỏng vấn";
 type InterviewSession = { id: string; position_id: string; start_time: string; end_time: string };
 
-export default async function ApplyPage({ params }: { params: Promise<{ id: string }> }) {
+async function ApplyContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
-    return <main className="mx-auto max-w-3xl p-8">Chưa cấu hình kết nối Supabase. Vui lòng thử lại sau.</main>;
+    return <div className="mx-auto max-w-3xl p-8">Chưa cấu hình kết nối Supabase. Vui lòng thử lại sau.</div>;
   }
 
   const { data: position } = await supabase
@@ -68,8 +69,7 @@ export default async function ApplyPage({ params }: { params: Promise<{ id: stri
   }
 
   return (
-    <main className="recruitment-page">
-      <RecruitmentHero title="Đơn ứng tuyển" subtitle="Hãy cho chúng mình biết thêm về bạn qua biểu mẫu bên dưới nhé." />
+    <div>
       <div className="recruitment-form-content">
         <Link href={`/clubs/${campaign?.club_id ?? ""}`} className="recruitment-back-link">← Quay lại các ban đang tuyển</Link>
         <div className="recruitment-form-heading">
@@ -83,6 +83,15 @@ export default async function ApplyPage({ params }: { params: Promise<{ id: stri
           <ApplyForm position={{ id: position.id, name: position.name }} questions={questions} interviewSessions={interviewSessions} />
         )}
       </div>
+    </div>
+  );
+}
+
+export default function ApplyPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <main className="recruitment-page">
+      <RecruitmentHero title="Đơn ứng tuyển" subtitle="Hãy cho chúng mình biết thêm về bạn qua biểu mẫu bên dưới nhé." />
+      <Suspense fallback={null}><ApplyContent params={params} /></Suspense>
     </main>
   );
 }

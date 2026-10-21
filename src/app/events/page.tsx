@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { Suspense } from "react";
 import { createSupabaseServerClient } from "../../lib/supabase/server";
 import { FlipClockCountdown } from "../../components/home/FlipClockCountdown";
 
@@ -16,7 +17,7 @@ function formatEventDate(value: string) {
   return new Intl.DateTimeFormat("vi-VN", { dateStyle: "long" }).format(new Date(value));
 }
 
-export default async function EventsPage() {
+async function EventsLoadedSections() {
   const supabase = await createSupabaseServerClient();
   let events: ClubEvent[] = [];
   let loadError = !supabase;
@@ -50,19 +51,7 @@ export default async function EventsPage() {
   }
 
   return (
-    <main className="events-page">
-      <section className="events-hero" aria-labelledby="events-heading">
-        <Image src="/hero/4.png" alt="Các thành viên BIT trong một sự kiện của câu lạc bộ" fill priority sizes="100vw" className="events-hero-image" />
-        <div className="events-hero-shade" />
-        <h1 id="events-heading">BIT&apos;S EVENTS</h1>
-      </section>
-
-      <div className="events-intro-wrap">
-        <section className="events-intro" aria-label="Giới thiệu sự kiện BIT">
-          <p>{eventIntro}</p>
-        </section>
-      </div>
-
+    <>
       <section className="events-list" aria-label="Danh sách sự kiện">
         {events.length ? events.map((event) => (
           <article className="event-card" key={event.id}>
@@ -94,6 +83,24 @@ export default async function EventsPage() {
         <div className="about-cta-heading"><p className="about-eyebrow">Bạn đã sẵn sàng?</p><h2>Hẹn gặp bạn tại BIT.</h2></div>
         <FlipClockCountdown deadline={deadline} />
       </section>
+    </>
+  );
+}
+
+export default function EventsPage() {
+  return (
+    <main className="events-page">
+      <section className="events-hero" aria-labelledby="events-heading">
+        <Image src="/hero/4.png" alt="Các thành viên BIT trong một sự kiện của câu lạc bộ" fill priority sizes="100vw" className="events-hero-image" />
+        <div className="events-hero-shade" />
+        <h1 id="events-heading">BIT&apos;S EVENTS</h1>
+      </section>
+      <div className="events-intro-wrap">
+        <section className="events-intro" aria-label="Giới thiệu sự kiện BIT">
+          <p>{eventIntro}</p>
+        </section>
+      </div>
+      <Suspense fallback={null}><EventsLoadedSections /></Suspense>
     </main>
   );
 }

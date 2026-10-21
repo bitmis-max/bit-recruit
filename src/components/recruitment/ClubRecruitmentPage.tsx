@@ -13,7 +13,7 @@ type RecruitmentItem = {
   teams: { id: string; name: string; description: string | null }[] | { id: string; name: string; description: string | null } | null;
 };
 
-export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
+export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId: string; showHero?: boolean }) {
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
     return <main className="mx-auto max-w-5xl p-8">Chưa cấu hình kết nối Supabase. Vui lòng thử lại sau.</main>;
@@ -63,7 +63,7 @@ export async function ClubRecruitmentPage({ clubId }: { clubId: string }) {
 
   return (
     <PageShell>
-      <RecruitmentHero title="Cơ hội tham gia BIT" subtitle="Tìm ban phù hợp và cùng chúng mình tạo nên những trải nghiệm đáng nhớ." />
+      {showHero && <RecruitmentHero title="Cơ hội tham gia BIT" subtitle="Tìm ban phù hợp và cùng chúng mình tạo nên những trải nghiệm đáng nhớ." />}
       <div className="recruitment-content">
         <Link href="/clubs" className="recruitment-back-link">← Giới thiệu CLB BIT</Link>
 

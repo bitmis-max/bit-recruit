@@ -329,7 +329,10 @@ button:hover {
 .events-intro { display: flex; align-items: center; gap: 24px; border: 2px solid #20d2df; border-radius: 32px; background: rgb(255 255 255 / 78%); padding: 13px 24px; box-shadow: 0 8px 20px rgb(16 45 85 / 8%); }
 .events-intro p { margin: 0; color: #193762; font-size: 15px; line-height: 1.75; }
 .events-list { display: grid; width: min(1120px, calc(100% - 40px)); gap: 54px; margin: 0 auto; padding: 0 0 96px; }
-.event-card { position: relative; border-radius: 28px; background: rgb(48 76 126 / 88%); padding: 46px 30px 30px; color: white; box-shadow: 0 16px 32px rgb(20 45 84 / 15%); }
+.event-card { position: relative; border-radius: 28px; background: rgb(48 76 126 / 88%); padding: 46px 30px 30px; color: white; box-shadow: 0 16px 32px rgb(20 45 84 / 15%); animation: club-team-enter .34s ease both; }
+.event-card:nth-child(2) { animation-delay: .06s; }
+.event-card:nth-child(3) { animation-delay: .12s; }
+.event-card:nth-child(4) { animation-delay: .18s; }
 .event-card:nth-child(odd) { width: 88%; justify-self: start; }
 .event-card:nth-child(even) { width: 84%; justify-self: end; }
 .event-card:nth-child(even) { background: rgb(35 68 112 / 89%); }
@@ -362,4 +365,7 @@ button:hover {
   .event-copy { font-size: 13px; }
   .event-image-wrap { min-height: 190px; aspect-ratio: 1.45 / 1; border-radius: 21px; }
   .events-cta { padding: 68px 20px 78px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .event-card { animation: none; }
 }
