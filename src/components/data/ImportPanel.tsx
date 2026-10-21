@@ -6,8 +6,10 @@ import { parseFile, type ParsedData } from "../../lib/files/parse";
 import type { EmailImageAsset } from "../../lib/email/template";
 
 export type ImportPanelProps = {
-  onDataParsed: (data: ParsedData, file: File) => void;
+  onDataParsed: (data: ParsedData, file?: File) => void;
   onImageParsed: (image: EmailImageAsset) => void;
+  onImportApplications: () => void;
+  importingApplications?: boolean;
   externalError?: string | null;
 };
 
@@ -44,6 +46,8 @@ async function readImageFile(file: File): Promise<EmailImageAsset> {
 export function ImportPanel({
   onDataParsed,
   onImageParsed,
+  onImportApplications,
+  importingApplications = false,
   externalError,
 }: ImportPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -157,6 +161,14 @@ export function ImportPanel({
             Hỗ trợ CSV, XLSX. Kéo thả hoặc chọn file.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={onImportApplications}
+          disabled={importingApplications}
+          className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60"
+        >
+          {importingApplications ? "Đang tải đơn…" : "Import đơn ứng tuyển"}
+        </button>
         <button
           type="button"
           onClick={handleDownloadTemplate}

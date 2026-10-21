@@ -16,14 +16,15 @@ import { useSender } from "../hooks/useSender";
 
 import { SetupGuide } from "./auth/SetupGuide";
 import { getSupabaseClient } from "../lib/supabase/client";
+import { useCurrentAdminClub } from "./admin/AdminClubContext";
 
 export function MailMergeApp() {
   const {
     session,
     supabaseConfigured,
     lastError: authError,
-    handleLogout,
   } = useAuth();
+  const { id: clubId } = useCurrentAdminClub();
 
   const {
     subject,
@@ -42,6 +43,7 @@ export function MailMergeApp() {
   } = useTemplates();
 
   const [importError, setImportError] = useState<string | null>(null);
+  const [importingApplications, setImportingApplications] = useState(false);
   const [importedImage, setImportedImage] = useState<EmailImageAsset | null>(null);
   const [insertVariable, setInsertVariable] = useState<
     (variable: string) => void
@@ -98,6 +100,67 @@ export function MailMergeApp() {
     }
   }, [setRows, setSelectedId]);
 
+  const handleImportApplications = useCallback(async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !clubId) {
+      setImportError("Không thể tải dữ liệu ứng tuyển của CLB hiện tại.");
+      return;
+    }
+
+    setImportingApplications(true);
+    setImportError(null);
+    try {
+      const { data: campaigns, error: campaignError } = await supabase
+        .from("recruitment_campaigns")
+        .select("id,name")
+        .eq("club_id", clubId);
+      if (campaignError) throw campaignError;
+      if (!campaigns?.length) throw new Error("CLB chưa có đợt tuyển nào.");
+
+      const campaignIds = campaigns.map((campaign) => campaign.id);
+      const [
+        { data: applications, error: applicationError },
+        { data: positions, error: positionError },
+      ] = await Promise.all([
+        supabase.from("applications")
+          .select("campaign_id,position_id,email,full_name,phone,student_code,class_name")
+          .in("campaign_id", campaignIds)
+          .order("submitted_at", { ascending: false }),
+        supabase.from("recruitment_positions")
+          .select("id,name")
+          .in("campaign_id", campaignIds),
+      ]);
+      if (applicationError) throw applicationError;
+      if (positionError) throw positionError;
+      if (!applications?.length) throw new Error("Chưa có đơn ứng tuyển trong các đợt tuyển của CLB.");
+
+      const campaignById = new Map(campaigns.map((campaign) => [campaign.id, campaign.name]));
+      const positionById = new Map((positions ?? []).map((position) => [position.id, position.name]));
+      const columns = ["email", "full_name", "phone", "student_code", "class_name", "campaign_name", "position_name"];
+      const rows = applications.flatMap((application) => {
+        const email = application.email?.trim();
+        if (!email) return [];
+        return [{
+          email,
+          full_name: application.full_name,
+          phone: application.phone ?? "",
+          student_code: application.student_code ?? "",
+          class_name: application.class_name ?? "",
+          campaign_name: campaignById.get(application.campaign_id) ?? "",
+          position_name: positionById.get(application.position_id) ?? "",
+        }];
+      });
+      if (!rows.length) throw new Error("Không tìm thấy đơn ứng tuyển có địa chỉ email.");
+
+      handleDataParsed({ columns, rows });
+      setImportError(null);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Không thể nhập dữ liệu đơn ứng tuyển.");
+    } finally {
+      setImportingApplications(false);
+    }
+  }, [clubId, handleDataParsed]);
+
   const handleImageParsed = useCallback((image: EmailImageAsset) => {
     setImportedImage(image);
   }, []);
@@ -138,50 +201,6 @@ export function MailMergeApp() {
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">BIT MAIL</h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {session && (
-            <div className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-              {session.user.user_metadata?.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={session.user.user_metadata.avatar_url}
-                  alt="Avatar"
-                  className="h-6 w-6 rounded-full border border-zinc-200 dark:border-zinc-800"
-                />
-              ) : (
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 font-bold text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">
-                  {session.user.email?.[0].toUpperCase()}
-                </div>
-              )}
-              <div className="flex flex-col text-left">
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  {session.user.user_metadata?.full_name ?? session.user.email}
-                </span>
-                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-none mt-0.5">
-                  {session.user.email}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="ml-2 rounded-lg bg-zinc-50 border border-zinc-200 px-2 py-1 font-semibold text-zinc-600 transition hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Đăng xuất
-              </button>
-            </div>
-          )}
-
-          <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block" />
-
-          {!session.provider_token && <button type="button" onClick={async () => {
-            const supabase = getSupabaseClient();
-            const { error } = await supabase?.auth.linkIdentity({ provider: "google", options: {
-              scopes: "email profile https://www.googleapis.com/auth/gmail.send",
-              redirectTo: `${window.location.origin}/manage-clubs/mail`,
-              queryParams: { access_type: "offline", prompt: "consent" },
-            } }) ?? { error: new Error("Supabase chưa được cấu hình") };
-            if (error) alert(error.message);
-          }} className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold">Kết nối Google để gửi mail</button>}
-
           <select
             className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700 shadow-sm outline-none transition focus:border-indigo-400 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
             value={selectedTemplate ?? ""}
@@ -261,6 +280,8 @@ export function MailMergeApp() {
           <ImportPanel
             onDataParsed={handleDataParsed}
             onImageParsed={handleImageParsed}
+            onImportApplications={() => void handleImportApplications()}
+            importingApplications={importingApplications}
             externalError={importError}
           />
 
