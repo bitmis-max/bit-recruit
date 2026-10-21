@@ -42,6 +42,9 @@ export function SetupGuide() {
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key`}
               </pre>
             </li>
+            <li>
+              <strong className="text-zinc-900 dark:text-white">Production URL configuration:</strong> In <strong>Authentication &gt; URL Configuration</strong>, set <strong>Site URL</strong> to your deployed domain (for example, <code>https://your-domain.com</code>) and add <code>https://your-domain.com/auth/callback</code> to <strong>Redirect URLs</strong>. The app builds the callback URL from the domain currently in use.
+            </li>
           </ol>
         </div>
 

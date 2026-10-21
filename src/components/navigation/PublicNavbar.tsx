@@ -85,12 +85,12 @@ export function PublicNavbar() {
                 <button onClick={() => void signOut()}>Đăng xuất</button>
               </div>}
             </div>
-          ) : <><Link href="/login" className="login-link">Đăng nhập</Link><Link href="/register" className="register-link">Đăng kí</Link></>}
+          ) : <Link href="/register" className="register-link">Đăng kí</Link>}
         </div>
         <button className="mobile-menu-button" aria-label="Mở menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>☰</button>
         {menuOpen && <div className="mobile-nav-menu">
           <Link href="/">Trang chủ</Link><Link href="/clubs">Giới thiệu</Link><Link href="/events">Sự kiện</Link>
-          {user ? <>{managedClubs.map((club) => <button key={club.id} onClick={() => visitClub(club.id)}>Đi tới {club.name}</button>)}<button onClick={() => void signOut()}>Đăng xuất</button></> : <><Link href="/login">Đăng nhập</Link><Link href="/register">Đăng kí</Link></>}
+          {user ? <>{managedClubs.map((club) => <button key={club.id} onClick={() => visitClub(club.id)}>Đi tới {club.name}</button>)}<button onClick={() => void signOut()}>Đăng xuất</button></> : <Link href="/register">Đăng kí</Link>}
         </div>}
       </nav>
     </header>

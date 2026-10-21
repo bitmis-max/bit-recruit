@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
 
-export function GoogleAuthButton({ next = "/" }: { next?: string }) {
+export function GoogleAuthButton({ next }: { next?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -16,8 +16,14 @@ export function GoogleAuthButton({ next = "/" }: { next?: string }) {
     }
 
     setLoading(true);
+    const requestedNext = new URLSearchParams(window.location.search).get("next");
+    const destination = next ?? (
+      requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
+        ? requestedNext
+        : "/manage-clubs"
+    );
     const callback = new URL("/auth/callback", window.location.origin);
-    callback.searchParams.set("next", next);
+    callback.searchParams.set("next", destination);
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: callback.toString() },
