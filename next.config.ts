@@ -2,9 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   experimental: {
-    // Keep recently visited dynamic pages in this browser for quick return navigation.
+    // Keep recently visited dynamic pages in the client router cache for quick tab switching.
     staleTimes: {
-      dynamic: 60,
+      dynamic: 300,
       static: 300,
     },
   },

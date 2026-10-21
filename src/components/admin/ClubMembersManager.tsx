@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { useCurrentAdminClub } from "./AdminShell";
+import { useCurrentAdminClub } from "./AdminClubContext";
 
 type Member = { id: string; full_name: string; student_code: string | null; class_name: string | null; team_id: string | null; role: string; is_active: boolean; user_id: string | null };
 type Team = { id: string; name: string };

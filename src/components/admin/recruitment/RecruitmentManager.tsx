@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
-import { useCurrentAdminClub } from "../AdminShell";
+import { useCurrentAdminClub } from "../AdminClubContext";
 import { FormBuilder, type Question } from "./FormBuilder";
 
 type Campaign = { id: string; club_id: string; name: string; description: string | null; status: "draft" | "open" | "closed" | "done"; start_date: string | null; end_date: string | null };

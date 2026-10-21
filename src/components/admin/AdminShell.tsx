@@ -1,22 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useContext, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { AdminClubProvider, type AdminClub } from "./AdminClubContext";
+import { EventsManager } from "./EventsManager";
+import { ClubAccountsManager } from "./ClubAccountsManager";
+import { ClubMembersManager } from "./ClubMembersManager";
+import { TeamsManager } from "./recruitment/TeamsManager";
+import { RecruitmentManager } from "./recruitment/RecruitmentManager";
+import { ApplicationsManager } from "./recruitment/ApplicationsManager";
+import { InterviewsManager } from "./recruitment/InterviewsManager";
+import { RecruitmentTabs } from "./recruitment/RecruitmentTabs";
+import { MailMergeApp } from "../MailMergeApp";
 
-export type AdminClub = { id: string; name: string; role: string };
-const CurrentAdminClub = createContext<{ id: string; role: string } | null>(null);
-
-export function useCurrentAdminClub() {
-  const value = useContext(CurrentAdminClub);
-  if (!value) throw new Error("Admin club context is unavailable");
-  return value;
-}
+export type { AdminClub } from "./AdminClubContext";
 
 export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: AdminClub[]; selectedClubId: string; email: string; children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [visitedTabs, setVisitedTabs] = useState<string[]>([pathname]);
+  useEffect(() => {
+    setVisitedTabs((visited) => visited.includes(pathname) ? visited : [...visited, pathname]);
+  }, [pathname]);
   const current = clubs.find((club) => club.id === selectedClubId) ?? null;
   const canWrite = current?.role === "owner" || current?.role === "admin";
   useEffect(() => {
@@ -40,7 +47,21 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
     { href: "/manage-clubs/recruitment", label: "Quản lý tuyển gen", allowed: true },
     { href: "/manage-clubs/mail", label: "Gửi mail", allowed: canWrite },
   ];
-  return <CurrentAdminClub.Provider value={{ id: selectedClubId, role: current?.role ?? "organizer" }}><div className="min-h-screen bg-zinc-50 text-zinc-900 md:flex">
+  const tabViews = [
+    { href: "/manage-clubs", content: <section className="mx-auto max-w-5xl p-6 sm:p-10"><p className="text-sm font-semibold text-emerald-700">Quản trị CLB</p><h1 className="mt-2 text-3xl font-bold">Tổng quan</h1><p className="mt-3 text-zinc-600">Chọn CLB ở thanh bên để làm việc trong đúng không gian.</p></section> },
+    { href: "/manage-clubs/accounts", content: <ClubAccountsManager /> },
+    { href: "/manage-clubs/members", content: <ClubMembersManager /> },
+    { href: "/manage-clubs/teams", content: <TeamsManager /> },
+    { href: "/manage-clubs/events", content: <EventsManager /> },
+    { href: "/manage-clubs/recruitment", content: <><RecruitmentTabs /><RecruitmentManager /></> },
+    { href: "/manage-clubs/recruitment/applications", content: <><RecruitmentTabs /><ApplicationsManager /></> },
+    { href: "/manage-clubs/recruitment/interviews", content: <><RecruitmentTabs /><InterviewsManager /></> },
+    { href: "/manage-clubs/mail", content: <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8"><MailMergeApp /></main> },
+  ];
+  const activeTab = tabViews.find((tab) => tab.href === pathname);
+  // Keep visited tab trees mounted so their loaded data and form state survive navigation.
+  const visibleTabs = tabViews.filter((tab) => visitedTabs.includes(tab.href) || tab.href === activeTab?.href);
+  return <AdminClubProvider value={{ id: selectedClubId, role: current?.role ?? "organizer" }}><div className="min-h-screen bg-zinc-50 text-zinc-900 md:flex">
     <aside className="flex w-full flex-col border-r bg-white md:min-h-screen md:w-64">
       <div className="border-b p-5"><Link href="/" className="text-xs font-bold uppercase tracking-widest text-emerald-700">BIT · Quản trị</Link><label className="mt-5 block text-xs font-semibold text-zinc-500">CLB hiện tại</label>
         <select aria-label="Chọn CLB" value={selectedClubId} onChange={(e) => void selectClub(e.target.value)} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm">{clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}</select>
@@ -51,6 +72,6 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
       })}</nav>
       <div className="mt-auto border-t p-4"><p className="truncate text-xs text-zinc-500">{email}</p><button onClick={signOut} className="mt-2 text-sm font-medium text-zinc-700 hover:text-rose-700">Đăng xuất</button></div>
     </aside>
-    <main className="min-w-0 flex-1">{children}</main>
-  </div></CurrentAdminClub.Provider>;
+    <main className="min-w-0 flex-1">{visibleTabs.map((tab) => <div key={tab.href} hidden={tab.href !== activeTab?.href}>{tab.content}</div>)}{!activeTab && children}</main>
+  </div></AdminClubProvider>;
 }

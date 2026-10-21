@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { getNearestCampaignId } from "../../../lib/recruitment/campaign-selection";
 import { normalizeSearchText } from "../../../lib/recruitment/search";
-import { useCurrentAdminClub } from "../AdminShell";
+import { useCurrentAdminClub } from "../AdminClubContext";
 import { ApplicantAnswersModal } from "./ApplicantAnswersModal";
 
 type Campaign = { id: string; name: string; status: string; start_date: string | null; end_date: string | null; created_at: string };

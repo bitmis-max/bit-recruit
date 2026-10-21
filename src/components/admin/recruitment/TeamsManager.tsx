@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
-import { useCurrentAdminClub } from "../AdminShell";
+import { useCurrentAdminClub } from "../AdminClubContext";
 
 type Team = { id: string; club_id: string; name: string; description: string | null; image_url: string | null; created_at: string };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15";

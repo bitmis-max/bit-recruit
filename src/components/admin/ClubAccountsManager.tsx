@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { useCurrentAdminClub } from "./AdminShell";
+import { useCurrentAdminClub } from "./AdminClubContext";
 
 type AccountRow = { memberId: string; memberName: string; role: string; account: { id: string; email: string; fullName: string } | null };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
