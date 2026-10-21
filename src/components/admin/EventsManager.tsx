@@ -9,12 +9,12 @@ type ClubEvent = {
   title: string;
   description: string | null;
   image_url: string | null;
-  event_date: string | null;
+  sort_order: number;
   created_at: string;
 };
 
-type EventDraft = { title: string; description: string; image_url: string; event_date: string };
-const emptyDraft: EventDraft = { title: "", description: "", image_url: "", event_date: "" };
+type EventDraft = { title: string; description: string; image_url: string };
+const emptyDraft: EventDraft = { title: "", description: "", image_url: "" };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15";
 async function deleteEventImage(clubId: string, imageUrl: string) {
   const response = await fetch("/api/admin/events/image", {
@@ -26,18 +26,12 @@ async function deleteEventImage(clubId: string, imageUrl: string) {
   if (!response.ok) throw new Error(result.error || "Không xóa được ảnh cũ.");
 }
 
-function toLocalDateTime(value: string | null) {
-  return value ? new Date(new Date(value).getTime() - new Date(value).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : "";
-}
-
-function formatEventDate(value: string | null) {
-  return value ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Chưa đặt thời gian";
-}
-
 export function EventsManager() {
   const { id: clubId, role } = useCurrentAdminClub();
   const canWrite = role === "owner" || role === "admin";
   const [events, setEvents] = useState<ClubEvent[]>([]);
+  const [savedOrderIds, setSavedOrderIds] = useState<string[]>([]);
+  const [draggedEventId, setDraggedEventId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EventDraft>(emptyDraft);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -58,6 +52,7 @@ export function EventsManager() {
       if (!response.ok) throw new Error(result.error || "Không tải được danh sách sự kiện.");
       const rows = result.events as ClubEvent[];
       setEvents(rows);
+      setSavedOrderIds(rows.map((event) => event.id));
       setSelectedId((current) => rows.some((event) => event.id === current) ? current : rows[0]?.id ?? "");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Không tải được danh sách sự kiện.");
@@ -76,6 +71,8 @@ export function EventsManager() {
   }, [imageFile]);
 
   const selected = events.find((event) => event.id === selectedId) ?? null;
+  const orderHasChanges = events.length !== savedOrderIds.length
+    || events.some((event, index) => event.id !== savedOrderIds[index]);
   useEffect(() => {
     if (creating) return;
     setImageFile(null);
@@ -83,9 +80,8 @@ export function EventsManager() {
       title: selected.title,
       description: selected.description ?? "",
       image_url: selected.image_url ?? "",
-      event_date: toLocalDateTime(selected.event_date),
     } : emptyDraft);
-  }, [selectedId, selected?.id, selected?.title, selected?.description, selected?.image_url, selected?.event_date, creating]);
+  }, [selectedId, selected?.id, selected?.title, selected?.description, selected?.image_url, creating]);
 
   function startCreate() {
     setCreating(true);
@@ -94,6 +90,43 @@ export function EventsManager() {
     setImageFile(null);
     setError(null);
     setNotice(null);
+  }
+
+  function reorderEvents(draggedId: string, targetId: string) {
+    if (!canWrite || busy || draggedId === targetId) return;
+    const fromIndex = events.findIndex((event) => event.id === draggedId);
+    const toIndex = events.findIndex((event) => event.id === targetId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const reordered = [...events];
+    const [dragged] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, dragged);
+    setEvents(reordered);
+    setError(null);
+    setNotice(null);
+  }
+
+  async function saveOrder() {
+    if (!canWrite || busy || !orderHasChanges) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/admin/events", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clubId, orderedEventIds: events.map((item) => item.id) }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không sắp xếp được sự kiện.");
+      const savedEvents = result.events as ClubEvent[];
+      setEvents(savedEvents);
+      setSavedOrderIds(savedEvents.map((item) => item.id));
+      setNotice("Đã lưu thứ tự hiển thị.");
+    } catch (orderError) {
+      setError(orderError instanceof Error ? orderError.message : "Không lưu được thứ tự sự kiện.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveEvent(event: FormEvent<HTMLFormElement>) {
@@ -128,7 +161,6 @@ export function EventsManager() {
           id: eventId,
           ...draft,
           image_url: imageUrl,
-          event_date: draft.event_date ? new Date(draft.event_date).toISOString() : "",
         }),
       });
       const result = await response.json();
@@ -139,8 +171,10 @@ export function EventsManager() {
         await deleteEventImage(clubId, oldImageUrl).catch(() => undefined);
       }
       uploadedImageUrl = null;
-      setEvents((rows) => [saved, ...rows.filter((row) => row.id !== saved.id)]
-        .sort((a, b) => (b.event_date ?? b.created_at).localeCompare(a.event_date ?? a.created_at)));
+      const updatedEvents = [saved, ...events.filter((row) => row.id !== saved.id)]
+        .sort((a, b) => a.sort_order - b.sort_order || b.created_at.localeCompare(a.created_at));
+      setEvents(updatedEvents);
+      if (creating) setSavedOrderIds(updatedEvents.map((item) => item.id));
       setSelectedId(saved.id);
       setCreating(false);
       setImageFile(null);
@@ -193,11 +227,21 @@ export function EventsManager() {
       {loading ? <p className="rounded-xl border bg-white p-6 text-sm text-zinc-600">Đang tải danh sách sự kiện…</p> : (
         <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
           <aside className="rounded-xl border bg-white p-3">
-            <h2 className="px-2 py-2 text-sm font-semibold">Sự kiện của CLB</h2>
+            <div className="flex items-center justify-between gap-2 px-2 py-2">
+              <h2 className="text-sm font-semibold">Sự kiện của CLB</h2>
+              {canWrite && <button type="button" onClick={() => void saveOrder()} disabled={busy || !orderHasChanges} className="shrink-0 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40">{busy ? "Đang lưu…" : "Lưu thứ tự"}</button>}
+            </div>
+            {orderHasChanges && <p className="px-2 text-xs text-amber-700">Thứ tự có thay đổi chưa lưu.</p>}
             {events.length ? <ul className="mt-1 space-y-1">{events.map((item) => (
-              <li key={item.id}><button type="button" onClick={() => { setSelectedId(item.id); setCreating(false); setError(null); setNotice(null); }} className={`w-full rounded-lg px-3 py-2.5 text-left ${selectedId === item.id && !creating ? "bg-emerald-50 text-emerald-900" : "text-zinc-700 hover:bg-zinc-50"}`}>
-                <span className="block text-sm font-medium">{item.title}</span><span className="mt-1 block text-xs text-zinc-500">{formatEventDate(item.event_date)}</span>
-              </button></li>
+              <li key={item.id}
+                onDragOver={(event) => { if (canWrite && !busy) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
+                onDrop={(event) => { event.preventDefault(); reorderEvents(event.dataTransfer.getData("text/plain") || draggedEventId || "", item.id); setDraggedEventId(null); }}
+                className={`flex items-center gap-1 rounded-lg ${draggedEventId === item.id ? "opacity-40" : ""}`}>
+                {canWrite && <span draggable={!busy} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); setDraggedEventId(item.id); }} onDragEnd={() => setDraggedEventId(null)} title="Kéo để sắp xếp" aria-label={`Kéo ${item.title} để sắp xếp`} className={`cursor-grab select-none px-2 text-lg text-zinc-400 active:cursor-grabbing ${busy ? "pointer-events-none" : ""}`}>⠿</span>}
+                <button type="button" onClick={() => { setSelectedId(item.id); setCreating(false); setError(null); setNotice(null); }} className={`min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left ${selectedId === item.id && !creating ? "bg-emerald-50 text-emerald-900" : "text-zinc-700 hover:bg-zinc-50"}`}>
+                  <span className="block truncate text-sm font-medium">{item.title}</span>
+                </button>
+              </li>
             ))}</ul> : <p className="px-2 py-3 text-sm text-zinc-500">Chưa có sự kiện nào.</p>}
           </aside>
 
@@ -205,7 +249,6 @@ export function EventsManager() {
             {creating || selected ? <form onSubmit={saveEvent} className="space-y-4">
               <div><h2 className="text-lg font-semibold">{creating ? "Tạo sự kiện mới" : "Thông tin sự kiện"}</h2><p className="mt-1 text-sm text-zinc-500">Nội dung này sẽ xuất hiện trong danh sách trên trang Sự kiện.</p></div>
               <label className="block text-sm font-medium">Tên sự kiện<input required maxLength={200} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} disabled={!canWrite || busy} className={inputClass} /></label>
-              <label className="block text-sm font-medium">Thời gian<input type="datetime-local" value={draft.event_date} onChange={(event) => setDraft((current) => ({ ...current, event_date: event.target.value }))} disabled={!canWrite || busy} className={inputClass} /><span className="mt-1 block text-xs font-normal text-zinc-500">Để trống nếu chưa xác định thời gian.</span></label>
               <label className="block text-sm font-medium">Mô tả<textarea rows={6} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} disabled={!canWrite || busy} className={inputClass} /></label>
               <div className="space-y-2">
                 <p className="text-sm font-medium">Ảnh sự kiện</p>

@@ -4,12 +4,12 @@ create table if not exists public.events (
   title text not null,
   description text,
   image_url text,
-  event_date timestamptz,
+  sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
 
-create index if not exists events_club_event_date_idx
-  on public.events (club_id, event_date desc);
+create index if not exists events_club_sort_order_idx
+  on public.events (club_id, sort_order, created_at desc);
 
 grant select on public.clubs to anon, authenticated;
 drop policy if exists "public read club overview" on public.clubs;

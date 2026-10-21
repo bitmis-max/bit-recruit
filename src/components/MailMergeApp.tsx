@@ -231,8 +231,8 @@ export function MailMergeApp() {
         </div>
       </header>
 
-      <main className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <section className="flex flex-col gap-6">
+      <main className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <section className="flex min-w-0 flex-col gap-6">
           <div className="grid gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
             <div className="flex flex-col gap-1 border-b border-zinc-100 pb-4 dark:border-zinc-800">
               <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
@@ -275,7 +275,7 @@ export function MailMergeApp() {
           />
         </section>
 
-        <section className="flex flex-col gap-6">
+        <section className="flex min-w-0 flex-col gap-6">
           <VariableSidebar variables={variables} onInsert={insertVariable} />
           <ImportPanel
             onDataParsed={handleDataParsed}

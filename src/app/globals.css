@@ -344,7 +344,6 @@ button:hover {
 .event-card:nth-child(even) .event-image-wrap { order: 1; }
 .event-copy { color: rgb(255 255 255 / 95%); font-size: 14px; font-weight: 560; line-height: 1.72; }
 .event-copy p { margin: 0; white-space: pre-line; }
-.event-date { display: block; margin-bottom: 10px; color: #c8f2ed; font-size: 12px; font-weight: 750; letter-spacing: .04em; }
 .event-image-wrap { position: relative; min-height: 220px; aspect-ratio: 1.55 / 1; overflow: hidden; margin: 0; border: 4px solid #fff; border-radius: 28px; background: #e8f1f0; box-shadow: 0 8px 16px rgb(5 20 38 / 20%); }
 .event-image-wrap img, .event-local-image { width: 100%; height: 100%; object-fit: cover; }
 .events-empty { margin: 0; border: 1px solid rgb(23 52 92 / 12%); border-radius: 18px; background: rgb(255 255 255 / 75%); padding: 32px; color: #34516c; text-align: center; }

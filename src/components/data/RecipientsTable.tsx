@@ -41,7 +41,7 @@ export function RecipientsTable({ rows, selectedId, onSelect }: RecipientsTableP
         accessorKey: key,
         header: key,
         cell: ({ row }: CellContext<RecipientRow, unknown>) => (
-          <span className="text-sm text-zinc-700 dark:text-zinc-200">
+          <span title={row.original[key]} className="block max-w-full truncate text-sm text-zinc-700 dark:text-zinc-200">
             {row.original[key]}
           </span>
         ),
@@ -55,14 +55,14 @@ export function RecipientsTable({ rows, selectedId, onSelect }: RecipientsTableP
   });
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="max-h-[420px] overflow-auto">
-        <table className="min-w-full border-collapse text-left text-xs">
+    <div className="min-w-0 w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="min-w-0 max-h-[420px] overflow-auto">
+        <table className="w-full min-w-[640px] table-fixed border-collapse text-left text-xs">
           <thead className="sticky top-0 bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <th key={header.id} className="px-3 py-2 font-semibold">
+                  <th key={header.id} className="max-w-0 truncate px-3 py-2 font-semibold" title={String(header.column.columnDef.header ?? "")}>
                     {header.isPlaceholder
                       ? null
                       : flexRender(
@@ -86,7 +86,7 @@ export function RecipientsTable({ rows, selectedId, onSelect }: RecipientsTableP
                   }`}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-3 py-2">
+                    <td key={cell.id} className="max-w-0 px-3 py-2">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

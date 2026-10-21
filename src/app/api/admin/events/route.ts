@@ -3,13 +3,12 @@ import { revalidatePath } from "next/cache";
 import { getClubAdminContext } from "../../../../lib/admin/api";
 
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
-const eventFields = "id,club_id,title,description,image_url,event_date,created_at";
+const eventFields = "id,club_id,title,description,image_url,sort_order,created_at";
 
 function parseEventFields(body: Record<string, unknown>) {
   const title = text(body.title);
   const description = text(body.description) || null;
   const imageUrlText = text(body.image_url);
-  const dateText = text(body.event_date);
   let imageUrl: string | null = null;
   if (imageUrlText) {
     try {
@@ -20,15 +19,9 @@ function parseEventFields(body: Record<string, unknown>) {
       return { error: "Đường dẫn ảnh phải là URL HTTP hoặc HTTPS." } as const;
     }
   }
-  let eventDate: string | null = null;
-  if (dateText) {
-    const parsedDate = new Date(dateText);
-    if (Number.isNaN(parsedDate.getTime())) return { error: "Ngày sự kiện không hợp lệ." } as const;
-    eventDate = parsedDate.toISOString();
-  }
   if (!title) return { error: "Vui lòng nhập tên sự kiện." } as const;
   if (title.length > 200) return { error: "Tên sự kiện không được vượt quá 200 ký tự." } as const;
-  return { data: { title, description, image_url: imageUrl, event_date: eventDate } } as const;
+  return { data: { title, description, image_url: imageUrl } } as const;
 }
 
 export async function GET(request: NextRequest) {
@@ -36,7 +29,7 @@ export async function GET(request: NextRequest) {
   const context = await getClubAdminContext(clubId);
   if (context.error) return context.error;
   const { data, error } = await context.admin.from("events").select(eventFields)
-    .eq("club_id", clubId).order("event_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
+    .eq("club_id", clubId).order("sort_order", { ascending: true }).order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ events: data ?? [] });
 }
@@ -53,8 +46,11 @@ export async function POST(request: NextRequest) {
   if (eventId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventId)) {
     return NextResponse.json({ error: "Mã sự kiện không hợp lệ." }, { status: 400 });
   }
+  const { data: lastEvent, error: orderError } = await context.admin.from("events")
+    .select("sort_order").eq("club_id", clubId).order("sort_order", { ascending: false }).limit(1).maybeSingle();
+  if (orderError) return NextResponse.json({ error: orderError.message }, { status: 500 });
   const { data, error } = await context.admin.from("events")
-    .insert({ ...(eventId ? { id: eventId } : {}), club_id: clubId, ...parsed.data }).select(eventFields).single();
+    .insert({ ...(eventId ? { id: eventId } : {}), club_id: clubId, sort_order: (lastEvent?.sort_order ?? -1) + 1, ...parsed.data }).select(eventFields).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   revalidatePath("/events");
   return NextResponse.json({ event: data }, { status: 201 });
@@ -65,8 +61,33 @@ export async function PATCH(request: NextRequest) {
   if (!body) return NextResponse.json({ error: "Dữ liệu gửi lên không hợp lệ." }, { status: 400 });
   const clubId = text(body.clubId);
   const eventId = text(body.id);
+  const orderedEventIds = body.orderedEventIds;
   const context = await getClubAdminContext(clubId);
   if (context.error) return context.error;
+  if (Array.isArray(orderedEventIds)) {
+    const isValidId = (id: unknown): id is string => typeof id === "string"
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+    if (!orderedEventIds.every(isValidId) || new Set(orderedEventIds).size !== orderedEventIds.length) {
+      return NextResponse.json({ error: "Thứ tự sự kiện không hợp lệ." }, { status: 400 });
+    }
+    const { data: currentEvents, error: currentError } = await context.admin.from("events")
+      .select("id").eq("club_id", clubId);
+    if (currentError) return NextResponse.json({ error: currentError.message }, { status: 500 });
+    const currentIds = new Set((currentEvents ?? []).map((event) => event.id));
+    if (orderedEventIds.length !== currentIds.size || orderedEventIds.some((id) => !currentIds.has(id))) {
+      return NextResponse.json({ error: "Danh sách sự kiện đã thay đổi. Hãy tải lại trang." }, { status: 409 });
+    }
+    for (const [sortOrder, id] of orderedEventIds.entries()) {
+      const { error } = await context.admin.from("events").update({ sort_order: sortOrder })
+        .eq("id", id).eq("club_id", clubId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    const { data: reorderedEvents, error: reorderError } = await context.admin.from("events").select(eventFields)
+      .eq("club_id", clubId).order("sort_order", { ascending: true }).order("created_at", { ascending: false });
+    if (reorderError) return NextResponse.json({ error: reorderError.message }, { status: 500 });
+    revalidatePath("/events");
+    return NextResponse.json({ events: reorderedEvents ?? [] });
+  }
   if (!eventId) return NextResponse.json({ error: "Thiếu sự kiện cần cập nhật." }, { status: 400 });
   const parsed = parseEventFields(body);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });

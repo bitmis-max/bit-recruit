@@ -8,14 +8,10 @@ type ClubEvent = {
   title: string;
   description: string | null;
   image_url: string | null;
-  event_date: string | null;
+  sort_order: number;
 };
 
 const eventIntro = "Mặc dù là một CLB học thuật, song những sự kiện bổ ích và thú vị là một món ăn tinh thần không thể thiếu đối với đời sống học tập và giải trí của các thành viên BIT nói chung và các bạn sinh viên Khoa Công nghệ thông tin và Kinh tế số nói riêng. Với sứ mệnh tạo ra một môi trường sáng tạo và phát triển cho các tín đồ công nghệ, BIT tự hào giới thiệu mảng sự kiện đa dạng và phong phú, phục vụ cho sở thích và nhu cầu của cộng đồng sinh viên.";
-
-function formatEventDate(value: string) {
-  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "long" }).format(new Date(value));
-}
 
 async function EventsLoadedSections() {
   const supabase = await createSupabaseServerClient();
@@ -36,9 +32,9 @@ async function EventsLoadedSections() {
       const now = new Date().toISOString();
       const [eventResult, campaignResult] = await Promise.all([
         supabase.from("events")
-          .select("id,title,description,image_url,event_date")
+          .select("id,title,description,image_url,sort_order")
           .eq("club_id", club.id)
-          .order("event_date", { ascending: false, nullsFirst: false })
+          .order("sort_order", { ascending: true })
           .order("created_at", { ascending: false }),
         supabase.from("recruitment_campaigns").select("end_date").eq("club_id", club.id).eq("status", "open")
           .or(`start_date.is.null,start_date.lte.${now}`).gte("end_date", now).not("end_date", "is", null)
@@ -58,7 +54,6 @@ async function EventsLoadedSections() {
             <h2 className="event-title">{event.title}</h2>
             <div className="event-card-body">
               <div className="event-copy">
-                {event.event_date && <time dateTime={event.event_date} className="event-date">{formatEventDate(event.event_date)}</time>}
                 <p>{event.description || "Thông tin về sự kiện sẽ được cập nhật."}</p>
               </div>
               {event.image_url ? (
