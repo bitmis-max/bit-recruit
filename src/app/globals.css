@@ -157,6 +157,7 @@ button:hover {
 .about-carousel .photo-carousel-slide img, .recruitment-carousel .photo-carousel-slide img { object-fit: cover; }
 .about-carousel .carousel-arrow, .recruitment-carousel .carousel-arrow { border-color: rgb(255 255 255 / 75%); background: rgb(15 42 64 / 46%); }
 .about-carousel .carousel-arrow { display: none; }
+.recruitment-carousel .carousel-arrow { display: none; }
 .about-values { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 15px; margin-top: 92px; padding: 21px 0; border-top: 1px solid #cbdcdd; border-bottom: 1px solid #cbdcdd; color: #286e76; font-size: 13px; font-weight: 750; letter-spacing: .03em; }
 .about-values span[aria-hidden] { color: #80b9b5; }
 .recruitment-section { width: 100%; max-width: none; padding: 110px max(24px, calc((100% - 1120px) / 2)) 100px; background: #e8f1f0; }
