@@ -173,6 +173,7 @@ create table form_template_questions (
   template_id uuid not null references form_templates(id) on delete cascade,
   question_text text not null,
   question_type question_type not null default 'text',
+  field_key text check (field_key is null or field_key in ('full_name', 'email', 'phone', 'student_code', 'class_name')),
   options jsonb,
   is_required boolean not null default false,
   order_index int not null default 0,
@@ -194,11 +195,15 @@ create table form_questions (
   form_id uuid not null references application_forms(id) on delete cascade,
   question_text text not null,
   question_type question_type not null default 'text',
+  field_key text check (field_key is null or field_key in ('full_name', 'email', 'phone', 'student_code', 'class_name')),
   options jsonb,                         -- danh sách lựa chọn cho single/multi_choice
   is_required boolean not null default false,
   order_index int not null default 0,
   created_at timestamptz not null default now()
 );
+
+`field_key` ánh xạ một câu hỏi vào đúng một cột hồ sơ ứng viên: `full_name`, `email`, `phone`, `student_code` hoặc `class_name`. Giá trị `NULL` dành cho câu hỏi tùy chỉnh và câu trả lời được lưu trong `application_answers`. Mỗi `field_key` chỉ xuất hiện một lần trong cùng form/mẫu. Khi tạo form, mọi câu hỏi mẫu (kể cả câu hỏi thông tin ứng viên) được sao chép sang `form_questions`.
+
 
 create table applications (
   id uuid primary key default gen_random_uuid(),
@@ -206,8 +211,8 @@ create table applications (
   position_id uuid not null references recruitment_positions(id) on delete cascade,
 
   -- Thông tin ứng viên (không cần tài khoản)
-  full_name text not null,
-  email text not null,
+  full_name text, -- có thể null nếu câu hỏi tương ứng được cấu hình không bắt buộc
+  email text,     -- có thể null nếu câu hỏi tương ứng được cấu hình không bắt buộc
   phone text,
   student_code text,
   class_name text,
@@ -283,6 +288,8 @@ create index on recruitment_campaigns (club_id);
 create index on recruitment_positions (campaign_id);
 create index on form_questions (form_id, order_index);
 create index on form_template_questions (template_id, order_index);
+create unique index on form_questions (form_id, field_key) where field_key is not null;
+create unique index on form_template_questions (template_id, field_key) where field_key is not null;
 create index on applications (campaign_id, status);
 create index on applications (position_id);
 create index on application_answers (application_id);
@@ -315,10 +322,10 @@ Mẫu là dữ liệu dùng chung toàn hệ thống; owner/admin của ít nh�
 
 ```sql
 insert into form_questions (
-  form_id, question_text, question_type, options, is_required, order_index
+  form_id, question_text, question_type, field_key, options, is_required, order_index
 )
 select
-  :new_form_id, question_text, question_type, options, is_required, order_index
+  :new_form_id, question_text, question_type, field_key, options, is_required, order_index
 from form_template_questions
 where template_id = :template_id
 order by order_index, created_at;
@@ -444,75 +451,7 @@ Làm tương tự policy staff/admin cho `form_questions`, `teams`, `recruitment
 
 **Không cho `anon` `INSERT` hoặc `SELECT` trực tiếp trên `applications`.** Thay vào đó dùng RPC chạy `security definer`:
 
-```sql
--- Nộp đơn: kiểm tra campaign đang mở, chặn trùng, ghi cả đơn và câu trả lời
-create or replace function submit_application(
-  p_position_id uuid,
-  p_full_name text,
-  p_email text,
-  p_phone text,
-  p_student_code text,
-  p_class_name text,
-  p_answers jsonb   -- [{ "question_id": "...", "text": "...", "json": {...} }]
-)
-returns text         -- trả về tracking_token
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_campaign_id uuid;
-  v_app_id uuid;
-  v_token text;
-begin
-  select p.campaign_id into v_campaign_id
-  from recruitment_positions p
-  join recruitment_campaigns c on c.id = p.campaign_id
-  where p.id = p_position_id
-    and c.status = 'open'
-    and (c.start_date is null or c.start_date <= now())
-    and (c.end_date is null or c.end_date >= now());
-
-  if v_campaign_id is null then
-    raise exception 'Đợt tuyển không mở hoặc vị trí không tồn tại';
-  end if;
-
-  if exists (
-    select 1
-    from jsonb_array_elements(p_answers) a
-    where not exists (
-      select 1
-      from application_forms f
-      join form_questions q on q.form_id = f.id
-      where f.position_id = p_position_id
-        and q.id = (a->>'question_id')::uuid
-    )
-  ) then
-    raise exception 'Câu trả lời không thuộc biểu mẫu của ban tuyển';
-  end if;
-
-  insert into applications (
-    campaign_id, position_id, full_name, email, phone, student_code, class_name
-  )
-  values (
-    v_campaign_id, p_position_id, p_full_name, lower(p_email), p_phone,
-    p_student_code, p_class_name
-  )
-  returning id, tracking_token into v_app_id, v_token;
-
-  insert into application_answers (application_id, question_id, answer_text, answer_json)
-  select v_app_id,
-         (a->>'question_id')::uuid,
-         a->>'text',
-         a->'json'
-  from jsonb_array_elements(p_answers) a;
-
-  return v_token;
-end;
-$$;
-
-grant execute on function submit_application to anon;
-```
+Client chỉ gửi `p_position_id` và `p_answers` (`[{ "question_id": "...", "text": "...", "json": {...} }]`) tới `submit_application(uuid, jsonb)`. RPC kiểm tra campaign/form/câu hỏi, xác thực trường bắt buộc và kiểu dữ liệu; `field_key` khác `NULL` được lưu vào cột tương ứng của `applications`, còn câu hỏi thường được ghi vào `application_answers`. Toàn bộ thao tác nằm trong một transaction của RPC. Triển khai cụ thể có trong `supabase/migration/migrate_application_system_fields.sql`; áp dụng sau migration form templates và `migrate_interview_sessions_to_positions.sql`.
 
 ```sql
 -- Xem lại trạng thái đơn bằng token (chỉ trả về thông tin cần thiết)

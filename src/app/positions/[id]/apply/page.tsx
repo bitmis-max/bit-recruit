@@ -42,7 +42,7 @@ async function ApplyContent({ params }: { params: Promise<{ id: string }> }) {
   form = formData as ApplicationForm | null;
   if (form) {
     const { data: questionData } = await supabase.from("form_questions")
-      .select("id,question_text,question_type,options,is_required,order_index")
+      .select("id,question_text,question_type,field_key,options,is_required,order_index")
       .eq("form_id", form.id)
       .order("order_index");
     questions = (questionData ?? []) as FormQuestion[];
@@ -53,12 +53,12 @@ async function ApplyContent({ params }: { params: Promise<{ id: string }> }) {
   if (supabaseUrl && serviceRoleKey) {
     const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
     if (form && !questions.some((question) => question.question_text.trim().toLocaleLowerCase("vi") === interviewAvailabilityQuestion.toLocaleLowerCase("vi"))) {
-      const { data: existingQuestions } = await admin.from("form_questions").select("id,question_text,question_type,options,is_required,order_index").eq("form_id", form.id).order("order_index");
+      const { data: existingQuestions } = await admin.from("form_questions").select("id,question_text,question_type,field_key,options,is_required,order_index").eq("form_id", form.id).order("order_index");
       const existingQuestion = (existingQuestions ?? []).find((question) => question.question_text.trim().toLocaleLowerCase("vi") === interviewAvailabilityQuestion.toLocaleLowerCase("vi"));
       if (existingQuestion) questions = [...questions, existingQuestion as FormQuestion];
       else {
         const nextOrder = questions.reduce((max, question) => Math.max(max, question.order_index), -1) + 1;
-        const { data: createdQuestion } = await admin.from("form_questions").insert({ form_id: form.id, question_text: interviewAvailabilityQuestion, question_type: "long_text", is_required: true, order_index: nextOrder }).select("id,question_text,question_type,options,is_required,order_index").single();
+        const { data: createdQuestion } = await admin.from("form_questions").insert({ form_id: form.id, question_text: interviewAvailabilityQuestion, question_type: "long_text", field_key: null, is_required: true, order_index: nextOrder }).select("id,question_text,question_type,field_key,options,is_required,order_index").single();
         if (createdQuestion) questions = [...questions, createdQuestion as FormQuestion];
       }
     }

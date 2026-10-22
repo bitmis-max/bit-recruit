@@ -8,25 +8,19 @@ import { formatInterviewRange } from "../lib/recruitment/interview-time";
 
 type InterviewSession = { id: string; start_time: string; end_time: string };
 type Props = { position: { id: string; name: string }; questions: FormQuestion[]; interviewSessions: InterviewSession[] };
-type Applicant = { full_name: string; email: string; phone: string; student_code: string; class_name: string };
 type AnswerValue = string | string[];
 const interviewAvailabilityQuestion = "Thời gian có thể tham gia phỏng vấn";
 const normalizeQuestionText = (text: string) => text.trim().replace(/\s+/g, " ").toLocaleLowerCase("vi");
 const isInterviewAvailabilityQuestion = (text: string) => normalizeQuestionText(text) === normalizeQuestionText(interviewAvailabilityQuestion);
 
-const requiredText = (label: string) => z.string().trim().min(1, `${label} là bắt buộc`);
-
 export default function ApplyForm({ position, questions, interviewSessions }: Props) {
   const activeQuestions = useMemo(() => {
-    let availabilityIncluded = false;
-    return questions.filter((question) => {
+    const availabilityIndex = questions.findIndex((question) => isInterviewAvailabilityQuestion(question.question_text));
+    return questions.filter((question, index) => {
       if (!isInterviewAvailabilityQuestion(question.question_text)) return true;
-      if (!interviewSessions.length || availabilityIncluded) return false;
-      availabilityIncluded = true;
-      return true;
+      return interviewSessions.length > 0 && index === availabilityIndex;
     });
   }, [questions, interviewSessions]);
-  const [applicant, setApplicant] = useState<Applicant>({ full_name: "", email: "", phone: "", student_code: "", class_name: "" });
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(
     () => Object.fromEntries(activeQuestions.map((q) => [q.id, q.question_type === "multi_choice" ? [] : ""])),
   );
@@ -41,6 +35,13 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
       const required = question.is_required;
       if (isInterviewAvailabilityQuestion(question.question_text)) {
         answerShape[question.id] = z.string().min(1, "Vui lòng chọn ca phỏng vấn").refine((value) => interviewSessions.some((session) => session.id === value), "Ca phỏng vấn không hợp lệ");
+        continue;
+      }
+      if (question.field_key) {
+        let fieldSchema = z.string();
+        if (required) fieldSchema = fieldSchema.trim().min(1, `${question.question_text} là bắt buộc`);
+        if (question.field_key === "email") fieldSchema = fieldSchema.refine((value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), "Email không đúng định dạng");
+        answerShape[question.id] = fieldSchema;
         continue;
       }
       switch (question.question_type) {
@@ -78,20 +79,8 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
       }
     }
 
-    return z.object({
-      full_name: requiredText("Họ và tên"),
-      email: requiredText("Email").email("Email không đúng định dạng"),
-      phone: z.string(),
-      student_code: z.string(),
-      class_name: z.string(),
-      answers: z.object(answerShape),
-    });
+    return z.object({ answers: z.object(answerShape) });
   }, [activeQuestions, interviewSessions]);
-
-  const updateApplicant = (key: keyof Applicant, value: string) => {
-    setApplicant((current) => ({ ...current, [key]: value }));
-    setFieldErrors((current) => ({ ...current, [key]: "" }));
-  };
 
   const updateAnswer = (id: string, value: AnswerValue) => {
     setAnswers((current) => ({ ...current, [id]: value }));
@@ -104,11 +93,11 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
     setSubmitError(null);
     setToken(null);
 
-    const result = schema.safeParse({ ...applicant, answers });
+    const result = schema.safeParse({ answers });
     if (!result.success) {
       const errors: Record<string, string> = {};
       for (const issue of result.error.issues) {
-        const key = issue.path[0] === "answers" ? String(issue.path[1]) : String(issue.path[0]);
+        const key = String(issue.path[1] ?? issue.path[0]);
         errors[key] ??= issue.message;
       }
       setFieldErrors(errors);
@@ -137,11 +126,6 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
 
     const { data, error } = await supabase.rpc("submit_application", {
       p_position_id: position.id,
-      p_full_name: result.data.full_name,
-      p_email: result.data.email,
-      p_phone: result.data.phone.trim() || null,
-      p_student_code: result.data.student_code.trim() || null,
-      p_class_name: result.data.class_name.trim() || null,
       p_answers,
     });
 
@@ -161,26 +145,6 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
 
   return (
     <form onSubmit={handleSubmit} noValidate className="recruitment-form space-y-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-      <section className="space-y-5">
-        <h2 className="text-lg font-semibold">Thông tin của bạn</h2>
-        <div>
-          <label htmlFor="full_name" className="text-sm font-medium">Họ và tên <span className="text-red-600">*</span></label>
-          <input id="full_name" autoComplete="name" className={inputClass} value={applicant.full_name} onChange={(event) => updateApplicant("full_name", event.target.value)} aria-invalid={!!fieldErrors.full_name} aria-describedby={fieldErrors.full_name ? "error-full_name" : undefined} />
-          <FieldError id="error-full_name" message={fieldErrors.full_name} />
-        </div>
-        <div>
-          <label htmlFor="email" className="text-sm font-medium">Email <span className="text-red-600">*</span></label>
-          <input id="email" type="email" autoComplete="email" className={inputClass} value={applicant.email} onChange={(event) => updateApplicant("email", event.target.value)} aria-invalid={!!fieldErrors.email} aria-describedby={fieldErrors.email ? "error-email" : undefined} />
-          <FieldError id="error-email" message={fieldErrors.email} />
-        </div>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <TextField label="Số điện thoại" id="phone" value={applicant.phone} onChange={(value) => updateApplicant("phone", value)} className={inputClass} />
-          <TextField label="Mã số sinh viên" id="student_code" value={applicant.student_code} onChange={(value) => updateApplicant("student_code", value)} className={inputClass} />
-        </div>
-        <TextField label="Lớp" id="class_name" value={applicant.class_name} onChange={(value) => updateApplicant("class_name", value)} className={inputClass} />
-      </section>
-
-      {activeQuestions.length > 0 && <hr className="border-zinc-200" />}
       <section className="space-y-6">
         {questions.some((question) => isInterviewAvailabilityQuestion(question.question_text)) && interviewSessions.length === 0 && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Hiện chưa có ca phỏng vấn để chọn. Ban tuyển sẽ liên hệ lịch với bạn sau.</p>}
         {activeQuestions.map((question) => (
@@ -198,6 +162,8 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
                   </label>
                 ))}
               </fieldset>
+            ) : question.field_key ? (
+              <input id={`q-${question.id}`} type={question.field_key === "email" ? "email" : question.field_key === "phone" ? "tel" : "text"} autoComplete={question.field_key === "full_name" ? "name" : question.field_key === "email" ? "email" : question.field_key === "phone" ? "tel" : undefined} className={inputClass} value={String(answers[question.id] ?? "")} onChange={(event) => updateAnswer(question.id, event.target.value)} aria-invalid={!!fieldErrors[question.id]} />
             ) : question.question_type === "long_text" ? (
               <textarea id={`q-${question.id}`} rows={4} className={inputClass} value={String(answers[question.id] ?? "")} onChange={(event) => updateAnswer(question.id, event.target.value)} aria-invalid={!!fieldErrors[question.id]} />
             ) : question.question_type === "single_choice" ? (
@@ -251,6 +217,3 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   return message ? <p id={id} className="mt-1.5 text-sm text-red-700">{message}</p> : null;
 }
 
-function TextField({ label, id, value, onChange, className }: { label: string; id: string; value: string; onChange: (value: string) => void; className: string }) {
-  return <div><label htmlFor={id} className="text-sm font-medium">{label}</label><input id={id} className={className} value={value} onChange={(event) => onChange(event.target.value)} /></div>;
-}

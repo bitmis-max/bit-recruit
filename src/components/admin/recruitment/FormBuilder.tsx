@@ -28,7 +28,7 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
         if (templateError) throw new Error(`Không tải được mẫu biểu mẫu mặc định. Hãy chạy migration supabase/migration/migrate_form_templates.sql. ${templateError.message}`);
         templateId = template?.id ?? null;
         if (templateId) {
-          const { data, error: questionsError } = await supabase.from("form_template_questions").select("question_text,question_type,options,is_required,order_index").eq("template_id", templateId).order("order_index");
+          const { data, error: questionsError } = await supabase.from("form_template_questions").select("question_text,question_type,field_key,options,is_required,order_index").eq("template_id", templateId).order("order_index");
           if (questionsError) throw questionsError;
           templateQuestions = (data ?? []) as Omit<Question, "id">[];
         }
@@ -39,9 +39,9 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
       if (result.error) throw result.error;
       if (!form) createdFormId = result.data.id;
       let nextQuestions = questions;
-      if (!form && templateQuestions.length) {
+      if (!form) {
         const copies = templateQuestions.map((question) => ({ ...question, form_id: result.data.id }));
-        const { data: copied, error: copyError } = await supabase.from("form_questions").insert(copies).select("id,question_text,question_type,options,is_required,order_index");
+        const { data: copied, error: copyError } = await supabase.from("form_questions").insert(copies).select("id,question_text,question_type,field_key,options,is_required,order_index");
         if (copyError) throw copyError;
         nextQuestions = (copied ?? []) as Question[];
         onQuestionsChange(nextQuestions);
@@ -55,7 +55,7 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
           question_type: "long_text",
           is_required: true,
           order_index: Math.max(-1, ...nextQuestions.map((question) => question.order_index)) + 1,
-        }).select("id,question_text,question_type,options,is_required,order_index").single();
+        }).select("id,question_text,question_type,field_key,options,is_required,order_index").single();
         if (availabilityError) throw availabilityError;
         nextQuestions = [...nextQuestions, availabilityQuestion as Question].sort((a, b) => a.order_index - b.order_index);
       }
@@ -84,7 +84,7 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
 
   async function addQuestion() {
     if (!form || !supabase) return;
-    const { data, error } = await supabase.from("form_questions").insert({ form_id: form.id, question_text: "Câu hỏi mới", question_type: "text", is_required: false, order_index: questions.length }).select("id,question_text,question_type,options,is_required,order_index").single();
+    const { data, error } = await supabase.from("form_questions").insert({ form_id: form.id, question_text: "Câu hỏi mới", question_type: "text", field_key: null, is_required: false, order_index: questions.length }).select("id,question_text,question_type,field_key,options,is_required,order_index").single();
     if (error) onError(error.message); else onQuestionsChange([...questions, data as Question]);
   }
 
@@ -96,7 +96,7 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
       onError("Câu hỏi chọn một/chọn nhiều cần ít nhất hai lựa chọn có nội dung.");
       return;
     }
-    const { error } = await supabase.from("form_questions").update({ question_text: question.question_text.trim(), question_type: question.question_type, options, is_required: question.is_required }).eq("id", question.id);
+    const { error } = await supabase.from("form_questions").update({ question_text: question.question_text.trim(), question_type: question.question_type, field_key: question.field_key, options, is_required: question.is_required }).eq("id", question.id);
     if (error) onError(error.message);
     else if (isChoice) patchQuestion(question.id, { options });
   }
@@ -147,7 +147,7 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
     {form && <div className="mt-6 border-t pt-5"><div className="mb-3 flex items-center justify-between"><div><h4 className="font-semibold">Câu hỏi ({questions.length})</h4><p className="mt-1 text-xs text-zinc-500">Các ca phỏng vấn đang mở sẽ tự hiện thành lựa chọn thời gian trong form.</p></div>{canWrite && <button onClick={() => void addQuestion()} className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold">+ Thêm câu hỏi</button>}</div>
       {!questions.length ? <p className="rounded-lg border border-dashed bg-white p-4 text-sm text-zinc-500">Chưa có câu hỏi.</p> : <ol className="space-y-3">{[...questions].sort((a,b) => a.order_index-b.order_index).map((question, index) => { const isAvailabilityQuestion = question.question_text === interviewAvailabilityQuestion; return <li key={question.id} draggable={canWrite && !isAvailabilityQuestion} onDragStart={() => setDragged(question.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragged) void moveQuestion(dragged, question.id); setDragged(null); }} className="rounded-xl border bg-white p-3 sm:p-4">
         <div className="mb-3 flex items-center gap-2"><button type="button" title="Kéo để sắp xếp" aria-label={`Kéo để sắp xếp câu ${index + 1}`} className="cursor-grab text-zinc-400" disabled={!canWrite || isAvailabilityQuestion}>⠿</button><div className="ml-auto flex gap-1"><button type="button" disabled={!canWrite || index === 0 || isAvailabilityQuestion} onClick={() => void moveQuestion(question.id, questions[index - 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển lên">↑</button><button type="button" disabled={!canWrite || index === questions.length-1 || isAvailabilityQuestion} onClick={() => void moveQuestion(question.id, questions[index + 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển xuống">↓</button></div></div>
-        <QuestionFields question={question} index={index} canWrite={canWrite} locked={isAvailabilityQuestion} lockNote="trường dùng để xếp ca" onChange={(updated) => patchQuestion(question.id, updated)} onSave={() => void saveQuestion(question)} onDelete={() => void deleteQuestion(question.id)} />
+        <QuestionFields question={question} index={index} canWrite={canWrite} locked={isAvailabilityQuestion} hideFieldMapping onChange={(updated) => patchQuestion(question.id, updated)} onSave={() => void saveQuestion(question)} onDelete={() => void deleteQuestion(question.id)} />
       </li>; })}</ol>}
     </div>}
   </section>;

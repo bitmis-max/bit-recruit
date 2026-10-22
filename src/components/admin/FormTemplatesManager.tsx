@@ -35,12 +35,15 @@ export function FormTemplatesManager() {
     setLoading(false);
   }, [supabase, message]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
   useEffect(() => {
     let cancelled = false;
     async function loadQuestions() {
       if (!supabase || !selectedId) { setQuestions([]); return; }
-      const { data, error: queryError } = await supabase.from("form_template_questions").select("id,template_id,question_text,question_type,options,is_required,order_index").eq("template_id", selectedId).order("order_index");
+      const { data, error: queryError } = await supabase.from("form_template_questions").select("id,template_id,question_text,question_type,field_key,options,is_required,order_index").eq("template_id", selectedId).order("order_index");
       if (cancelled) return;
       if (queryError) message(queryError.message, true); else setQuestions((data ?? []) as TemplateQuestion[]);
     }
@@ -79,7 +82,7 @@ export function FormTemplatesManager() {
 
   async function addQuestion() {
     if (!supabase || !selected || !canWrite) return;
-    const { data, error: insertError } = await supabase.from("form_template_questions").insert({ template_id: selected.id, question_text: "Câu hỏi mới", question_type: "text", is_required: false, order_index: questions.length }).select("id,template_id,question_text,question_type,options,is_required,order_index").single();
+    const { data, error: insertError } = await supabase.from("form_template_questions").insert({ template_id: selected.id, question_text: "Câu hỏi mới", question_type: "text", field_key: null, is_required: false, order_index: questions.length }).select("id,template_id,question_text,question_type,field_key,options,is_required,order_index").single();
     if (insertError) message(insertError.message, true); else setQuestions((rows) => [...rows, data as TemplateQuestion]);
   }
 
@@ -88,7 +91,7 @@ export function FormTemplatesManager() {
     const isChoice = question.question_type === "single_choice" || question.question_type === "multi_choice";
     const options = isChoice ? (question.options ?? []).map((option) => option.trim()).filter(Boolean) : null;
     if (!question.question_text.trim() || (isChoice && (options?.length ?? 0) < 2)) { message("Câu hỏi cần có nội dung; câu hỏi lựa chọn cần ít nhất hai lựa chọn.", true); return; }
-    const { error: updateError } = await supabase.from("form_template_questions").update({ question_text: question.question_text.trim(), question_type: question.question_type, options, is_required: question.is_required }).eq("id", question.id);
+    const { error: updateError } = await supabase.from("form_template_questions").update({ question_text: question.question_text.trim(), question_type: question.question_type, field_key: question.field_key, options, is_required: question.is_required }).eq("id", question.id);
     if (updateError) message(updateError.message, true); else { setQuestions((rows) => rows.map((item) => item.id === question.id ? { ...question, options } : item)); message("Đã lưu câu hỏi mẫu."); }
   }
 
@@ -120,7 +123,7 @@ export function FormTemplatesManager() {
   }
 
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
-    <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Quản trị CLB</p><h1 className="mt-1 text-3xl font-bold">Quản lý biểu mẫu</h1><p className="mt-2 text-sm text-zinc-600">Chỉnh sửa câu hỏi mặc định. Mỗi form mới sẽ nhận bản sao của mẫu mặc định.</p></header>
+    <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Quản trị CLB</p><h1 className="mt-1 text-3xl font-bold">Quản lý biểu mẫu</h1><p className="mt-2 text-sm text-zinc-600">Chỉnh sửa câu hỏi mặc định. Mỗi form mới sẽ nhận bản sao của mẫu mặc định. Nếu mẫu thiếu họ tên hoặc email, hệ thống tự thêm hai trường bắt buộc này vào form.</p></header>
     {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}{notice && <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
     <div className="grid gap-5 lg:grid-cols-[270px_minmax(0,1fr)]">
       <aside className="space-y-4 rounded-xl border bg-white p-4">

@@ -85,7 +85,7 @@ export function RecruitmentManager() {
       if (formError) { reportError(formError.message); return; }
       if (!formRow) return;
       setForm(formRow as ApplicationForm);
-      const { data, error: questionError } = await supabase.from("form_questions").select("id,question_text,question_type,options,is_required,order_index").eq("form_id", formRow.id).order("order_index");
+      const { data, error: questionError } = await supabase.from("form_questions").select("id,question_text,question_type,field_key,options,is_required,order_index").eq("form_id", formRow.id).order("order_index");
       if (cancelled) return;
       if (questionError) reportError(questionError.message); else setQuestions((data ?? []) as Question[]);
     }

@@ -9,7 +9,7 @@ import { ApplicantAnswersModal } from "./ApplicantAnswersModal";
 
 type Campaign = { id: string; name: string; status: string; start_date: string | null; end_date: string | null; created_at: string };
 type Position = { id: string; campaign_id: string; name: string; team_id: string | null };
-type Application = { id: string; campaign_id: string; position_id: string; full_name: string; email: string; phone: string | null; student_code: string | null; class_name: string | null };
+type Application = { id: string; campaign_id: string; position_id: string; full_name: string | null; email: string | null; phone: string | null; student_code: string | null; class_name: string | null };
 type Session = { id: string; campaign_id: string; position_id: string | null; round: number; start_time: string; end_time: string; location: string | null; meeting_link: string | null; capacity: number | null; note: string | null };
 type Assignment = { id: string; session_id: string; application_id: string; comment: string | null };
 type SupportAssignment = { session_id: string; member_id: string; duty: string | null };
@@ -336,12 +336,12 @@ export function InterviewsManager() {
       const hasActiveSupportMembers = members.some((member) => member.team_id === teamId && member.is_active);
       const candidateSearchText = normalizeSearchText(candidateSearch);
       const filteredCandidates = candidates.filter((application) => !candidateSearchText
-        || [application.full_name, application.student_code, application.class_name].some((value) => normalizeSearchText(value).includes(candidateSearchText)));
+        || [application.full_name ?? "", application.student_code ?? "", application.class_name ?? ""].some((value) => normalizeSearchText(value).includes(candidateSearchText)));
       const sessionApplicantSearchText = normalizeSearchText(sessionApplicantSearch);
       const filteredSessionAssignments = sessionAssignments.filter((assignment) => {
         const applicant = applicationById.get(assignment.application_id);
         return !!applicant && (!sessionApplicantSearchText
-          || [applicant.full_name, applicant.student_code, applicant.class_name].some((value) => normalizeSearchText(value).includes(sessionApplicantSearchText)));
+          || [applicant.full_name ?? "", applicant.student_code ?? "", applicant.class_name ?? ""].some((value) => normalizeSearchText(value).includes(sessionApplicantSearchText)));
       });
       return <article key={session.id} className="overflow-hidden rounded-xl border bg-white shadow-sm">
         <div className="border-b bg-zinc-50 p-5">
@@ -374,7 +374,7 @@ export function InterviewsManager() {
               return <tr key={assignment.id} className="align-top">
                 <td className="px-4 py-2"><p className="font-medium">{applicant.full_name}</p><p className="text-xs text-zinc-600">{applicant.email}</p><p className="text-xs text-zinc-600">{applicant.phone || "Chưa có số điện thoại"}</p><p className="text-xs text-zinc-500">{applicant.student_code || ""}</p></td>
                 <td className="w-28 max-w-28 px-2 py-2"><span className="block truncate" title={position?.name ?? "Vị trí"}>{position?.name ?? "Vị trí"}</span></td>
-                <td className="px-4 py-2">{answersLoading && !answersLoaded.includes(applicant.id) ? <span className="text-xs text-zinc-500">Đang tải…</span> : <ApplicantAnswersModal applicantName={applicant.full_name} answers={answers[applicant.id] ?? []} />}</td>
+                <td className="px-4 py-2">{answersLoading && !answersLoaded.includes(applicant.id) ? <span className="text-xs text-zinc-500">Đang tải…</span> : <ApplicantAnswersModal applicantName={applicant.full_name ?? "Ứng viên"} answers={answers[applicant.id] ?? []} />}</td>
                 <td className="min-w-[260px] px-4 py-2">{canWrite ? <><label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Ghi chú<textarea rows={2} value={draftNotes[assignment.id] ?? ""} onChange={(event) => setDraftNotes((current) => ({ ...current, [assignment.id]: event.target.value }))} className={inputClass} placeholder="Nhận xét sau phỏng vấn" /></label><button disabled={busy} onClick={() => void saveNote(assignment)} className="mt-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-50">Lưu ghi chú</button></> : <p className="whitespace-pre-wrap text-zinc-700">{assignment.comment || "—"}</p>}</td>
               </tr>;
             })}</tbody></table></div>{!filteredSessionAssignments.length && <p className="mt-2 text-sm text-zinc-500">Không tìm thấy ứng viên phù hợp.</p>}</> : <p className="mt-2 text-sm text-zinc-500">Chưa có ứng viên được xếp vào ca.</p>}
