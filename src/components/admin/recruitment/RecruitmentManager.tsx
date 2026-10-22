@@ -8,7 +8,7 @@ import { FormBuilder, type Question } from "./FormBuilder";
 type Campaign = { id: string; club_id: string; name: string; description: string | null; status: "draft" | "open" | "closed" | "done"; start_date: string | null; end_date: string | null };
 type Position = { id: string; campaign_id: string; team_id: string | null; name: string; description: string | null };
 type Team = { id: string; name: string };
-type ApplicationForm = { id: string; name: string; description: string | null };
+type ApplicationForm = { id: string; name: string; description: string | null; source_template_id: string | null };
 
 const statusLabels = { draft: "Nháp", open: "Đang mở", closed: "Đã đóng", done: "Hoàn tất" };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600";
@@ -80,7 +80,7 @@ export function RecruitmentManager() {
     async function loadForm() {
       setForm(null); setQuestions([]);
       if (!supabase || !positionId) return;
-      const { data: formRow, error: formError } = await supabase.from("application_forms").select("id,name,description").eq("position_id", positionId).maybeSingle();
+      const { data: formRow, error: formError } = await supabase.from("application_forms").select("id,name,description,source_template_id").eq("position_id", positionId).maybeSingle();
       if (cancelled) return;
       if (formError) { reportError(formError.message); return; }
       if (!formRow) return;

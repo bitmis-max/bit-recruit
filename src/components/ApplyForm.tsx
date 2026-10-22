@@ -19,7 +19,7 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
     return questions.filter((question, index) => {
       if (!isInterviewAvailabilityQuestion(question.question_text)) return true;
       return interviewSessions.length > 0 && index === availabilityIndex;
-    });
+    }).sort((a, b) => Number(isInterviewAvailabilityQuestion(a.question_text)) - Number(isInterviewAvailabilityQuestion(b.question_text)) || a.order_index - b.order_index);
   }, [questions, interviewSessions]);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(
     () => Object.fromEntries(activeQuestions.map((q) => [q.id, q.question_type === "multi_choice" ? [] : ""])),
@@ -200,9 +200,8 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
       {submitError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{submitError}</div>}
       {token && (
         <div role="status" className="recruitment-success rounded-xl border p-5">
-          <h2 className="font-semibold">Đã nhận đơn ứng tuyển</h2>
-          <p className="mt-1 text-sm">Lưu mã theo dõi này để kiểm tra trạng thái đơn:</p>
-          <code className="mt-3 block break-all rounded-lg bg-white px-3 py-2 font-mono text-sm">{token}</code>
+          <h2 className="font-semibold">Cảm ơn bạn đã điền đơn đăng ký {position.name}</h2>
+          <p className="mt-1 text-sm">Kết quả sẽ được gửi qua mail trong thời gian sớm nhất.</p>
         </div>
       )}
       <button type="submit" disabled={loading || !!token} className="recruitment-submit inline-flex min-h-12 items-center justify-center rounded-lg px-6 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60">

@@ -71,7 +71,7 @@ async function ApplyContent({ params }: { params: Promise<{ id: string }> }) {
   return (
     <div>
       <div className="recruitment-form-content">
-        <Link href={`/clubs/${campaign?.club_id ?? ""}`} className="recruitment-back-link">← Quay lại các ban đang tuyển</Link>
+        <Link href="/positions" className="recruitment-back-link">← Quay lại các ban đang tuyển</Link>
         <div className="recruitment-form-heading">
           <p className="recruitment-eyebrow">VỊ TRÍ ỨNG TUYỂN</p>
           <h2>{position.name}</h2>

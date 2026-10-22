@@ -318,7 +318,7 @@ alter table interview_assignments enable row level security;
 alter table interview_session_members enable row level security;
 ```
 
-Mẫu là dữ liệu dùng chung toàn hệ thống; owner/admin của ít nhất một CLB được quản lý mẫu trong trang **Quản lý biểu mẫu**. Chỉ nhóm này có quyền đọc và ghi mẫu qua RLS. Mỗi lần tạo form, ứng dụng tự chọn mẫu có `is_default = true`, tạo `application_forms` với `source_template_id`, rồi sao chép câu hỏi theo `order_index`:
+Mẫu là dữ liệu dùng chung toàn hệ thống; owner/admin của ít nhất một CLB được quản lý mẫu trong trang **Quản lý biểu mẫu**. Chỉ nhóm này có quyền đọc và ghi mẫu qua RLS. Khi tạo form, quản trị viên chọn template; ứng dụng tạo `application_forms` với `source_template_id` rồi sao chép toàn bộ câu hỏi (kể cả `field_key`) cùng câu hỏi chọn ca phỏng vấn trong một RPC/transaction. Các thay đổi ở template chỉ áp dụng cho lần khởi tạo form tiếp theo. Triển khai luồng này trong `supabase/migration/create_application_form_from_template.sql`.
 
 ```sql
 insert into form_questions (
@@ -452,6 +452,8 @@ Làm tương tự policy staff/admin cho `form_questions`, `teams`, `recruitment
 **Không cho `anon` `INSERT` hoặc `SELECT` trực tiếp trên `applications`.** Thay vào đó dùng RPC chạy `security definer`:
 
 Client chỉ gửi `p_position_id` và `p_answers` (`[{ "question_id": "...", "text": "...", "json": {...} }]`) tới `submit_application(uuid, jsonb)`. RPC kiểm tra campaign/form/câu hỏi, xác thực trường bắt buộc và kiểu dữ liệu; `field_key` khác `NULL` được lưu vào cột tương ứng của `applications`, còn câu hỏi thường được ghi vào `application_answers`. Toàn bộ thao tác nằm trong một transaction của RPC. Triển khai cụ thể có trong `supabase/migration/migrate_application_system_fields.sql`; áp dụng sau migration form templates và `migrate_interview_sessions_to_positions.sql`.
+
+Form Builder lưu toàn bộ nội dung và thứ tự câu hỏi qua `save_application_form_questions(uuid, jsonb)`, để quyền được kiểm tra một lần và cập nhật chạy theo lô. Triển khai trong `supabase/migration/save_application_form_questions.sql` sau migration quyền CLB và trường hệ thống.
 
 ```sql
 -- Xem lại trạng thái đơn bằng token (chỉ trả về thông tin cần thiết)

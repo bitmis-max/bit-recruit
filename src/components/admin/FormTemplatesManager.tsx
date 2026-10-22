@@ -86,29 +86,43 @@ export function FormTemplatesManager() {
     if (insertError) message(insertError.message, true); else setQuestions((rows) => [...rows, data as TemplateQuestion]);
   }
 
-  async function saveQuestion(question: TemplateQuestion) {
-    if (!supabase || !canWrite) return;
-    const isChoice = question.question_type === "single_choice" || question.question_type === "multi_choice";
-    const options = isChoice ? (question.options ?? []).map((option) => option.trim()).filter(Boolean) : null;
-    if (!question.question_text.trim() || (isChoice && (options?.length ?? 0) < 2)) { message("Câu hỏi cần có nội dung; câu hỏi lựa chọn cần ít nhất hai lựa chọn.", true); return; }
-    const { error: updateError } = await supabase.from("form_template_questions").update({ question_text: question.question_text.trim(), question_type: question.question_type, field_key: question.field_key, options, is_required: question.is_required }).eq("id", question.id);
-    if (updateError) message(updateError.message, true); else { setQuestions((rows) => rows.map((item) => item.id === question.id ? { ...question, options } : item)); message("Đã lưu câu hỏi mẫu."); }
+  async function saveQuestions() {
+    if (!supabase || !selected || !canWrite) return;
+    const rows = [...questions].sort((a, b) => a.order_index - b.order_index);
+    const payload = rows.map((question, index) => {
+      const isChoice = question.question_type === "single_choice" || question.question_type === "multi_choice";
+      const options = isChoice ? (question.options ?? []).map((option) => option.trim()).filter(Boolean) : null;
+      return { question, index, options, isChoice };
+    });
+    if (payload.some(({ question, options, isChoice }) => !question.question_text.trim() || (isChoice && (options?.length ?? 0) < 2))) {
+      message("Mỗi câu hỏi cần có nội dung; câu hỏi lựa chọn cần ít nhất hai lựa chọn.", true);
+      return;
+    }
+    setBusy(true);
+    const results = await Promise.all(payload.map(({ question, index, options }) => supabase.from("form_template_questions").update({
+      question_text: question.question_text.trim(),
+      question_type: question.question_type,
+      field_key: question.field_key,
+      options,
+      is_required: question.is_required,
+      order_index: index,
+    }).eq("id", question.id)));
+    const failed = results.find((result) => result.error)?.error;
+    setBusy(false);
+    if (failed) message(failed.message, true);
+    else {
+      setQuestions(payload.map(({ question, index, options }) => ({ ...question, question_text: question.question_text.trim(), options, order_index: index })));
+      message("Đã lưu các câu hỏi và thứ tự.");
+    }
   }
 
   async function deleteQuestion(question: TemplateQuestion) {
     if (!supabase || !canWrite || !confirm("Xóa câu hỏi khỏi mẫu? Các biểu mẫu đã tạo từ mẫu không bị ảnh hưởng.")) return;
     const { error: deleteError } = await supabase.from("form_template_questions").delete().eq("id", question.id);
-    if (deleteError) message(deleteError.message, true); else { setQuestions((rows) => rows.filter((item) => item.id !== question.id)); message("Đã xóa câu hỏi khỏi mẫu."); }
+    if (deleteError) message(deleteError.message, true); else { setQuestions((rows) => rows.filter((item) => item.id !== question.id).map((item, index) => ({ ...item, order_index: index }))); message("Đã xóa câu hỏi khỏi mẫu."); }
   }
 
   function patchQuestion(id: string, patch: Partial<TemplateQuestion>) { setQuestions((rows) => rows.map((item) => item.id === id ? { ...item, ...patch } : item)); }
-
-  async function persistQuestionOrder(rows: TemplateQuestion[]) {
-    if (!supabase) return;
-    const results = await Promise.all(rows.map((question, index) => supabase.from("form_template_questions").update({ order_index: index }).eq("id", question.id)));
-    const failed = results.find((result) => result.error)?.error;
-    if (failed) message(failed.message, true);
-  }
 
   async function moveQuestion(sourceId: string, targetId: string) {
     if (sourceId === targetId) return;
@@ -119,7 +133,6 @@ export function FormTemplatesManager() {
     ordered.splice(to, 0, ordered.splice(from, 1)[0]);
     const next = ordered.map((question, index) => ({ ...question, order_index: index }));
     setQuestions(next);
-    await persistQuestionOrder(next);
   }
 
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
@@ -136,8 +149,9 @@ export function FormTemplatesManager() {
           <section className="rounded-xl border bg-white p-4"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">Câu hỏi mặc định ({questions.length})</h2><p className="mt-1 text-xs text-zinc-500">Thay đổi tại đây chỉ áp dụng cho các form tạo về sau.</p></div>{canWrite && <button type="button" onClick={() => void addQuestion()} className="rounded-lg border px-3 py-2 text-sm font-semibold">+ Thêm câu hỏi</button>}</div>
             {!questions.length ? <p className="rounded-lg border border-dashed p-4 text-sm text-zinc-500">Mẫu chưa có câu hỏi.</p> : <ol className="space-y-3">{[...questions].sort((a, b) => a.order_index - b.order_index).map((question, index) => <li key={question.id} draggable={canWrite} onDragStart={() => setDraggedQuestionId(question.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (draggedQuestionId) void moveQuestion(draggedQuestionId, question.id); setDraggedQuestionId(null); }} className="rounded-xl border bg-zinc-50 p-3">
               <div className="mb-2 flex items-center gap-2"><button type="button" title="Kéo để sắp xếp" aria-label={`Kéo để sắp xếp câu ${index + 1}`} className="cursor-grab text-zinc-400" disabled={!canWrite}>⠿</button><span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Sắp xếp câu {index + 1}</span><div className="ml-auto flex gap-1"><button type="button" disabled={!canWrite || index === 0} onClick={() => void moveQuestion(question.id, questions[index - 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển lên">↑</button><button type="button" disabled={!canWrite || index === questions.length - 1} onClick={() => void moveQuestion(question.id, questions[index + 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển xuống">↓</button></div></div>
-              <QuestionFields question={question} index={index} canWrite={canWrite} onChange={(updated) => patchQuestion(question.id, updated)} onSave={() => void saveQuestion(question)} onDelete={() => void deleteQuestion(question)} />
+              <QuestionFields question={question} index={index} canWrite={canWrite} onChange={(updated) => patchQuestion(question.id, updated)} onDelete={() => void deleteQuestion(question)} />
             </li>)}</ol>}
+            {canWrite && <div className="mt-4 flex justify-end"><button type="button" disabled={busy} onClick={() => void saveQuestions()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang lưu câu hỏi…" : "Lưu các câu hỏi"}</button></div>}
           </section>
         </> : <div className="rounded-xl border border-dashed bg-white p-8 text-center text-sm text-zinc-500">Tạo hoặc chọn một mẫu để chỉnh sửa.</div>}
       </div>
