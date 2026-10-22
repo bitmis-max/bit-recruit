@@ -3,15 +3,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
 import { useCurrentAdminClub } from "./AdminClubContext";
-import type { QuestionType } from "./recruitment/FormBuilder";
+import { QuestionFields, type EditableQuestion } from "./recruitment/QuestionFields";
 
 type Template = { id: string; name: string; description: string | null; is_default: boolean };
-type TemplateQuestion = { id: string; template_id: string; question_text: string; question_type: QuestionType; options: string[] | null; is_required: boolean; order_index: number };
-const types: { value: QuestionType; label: string }[] = [
-  { value: "text", label: "Trả lời ngắn" }, { value: "long_text", label: "Trả lời dài" },
-  { value: "single_choice", label: "Chọn một" }, { value: "multi_choice", label: "Chọn nhiều" },
-  { value: "number", label: "Số" }, { value: "date", label: "Ngày" },
-];
+type TemplateQuestion = EditableQuestion & { template_id: string };
 const input = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
 
 export function FormTemplatesManager() {
@@ -21,6 +16,7 @@ export function FormTemplatesManager() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [questions, setQuestions] = useState<TemplateQuestion[]>([]);
+  const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -104,6 +100,25 @@ export function FormTemplatesManager() {
 
   function patchQuestion(id: string, patch: Partial<TemplateQuestion>) { setQuestions((rows) => rows.map((item) => item.id === id ? { ...item, ...patch } : item)); }
 
+  async function persistQuestionOrder(rows: TemplateQuestion[]) {
+    if (!supabase) return;
+    const results = await Promise.all(rows.map((question, index) => supabase.from("form_template_questions").update({ order_index: index }).eq("id", question.id)));
+    const failed = results.find((result) => result.error)?.error;
+    if (failed) message(failed.message, true);
+  }
+
+  async function moveQuestion(sourceId: string, targetId: string) {
+    if (sourceId === targetId) return;
+    const ordered = [...questions].sort((a, b) => a.order_index - b.order_index);
+    const from = ordered.findIndex((question) => question.id === sourceId);
+    const to = ordered.findIndex((question) => question.id === targetId);
+    if (from < 0 || to < 0) return;
+    ordered.splice(to, 0, ordered.splice(from, 1)[0]);
+    const next = ordered.map((question, index) => ({ ...question, order_index: index }));
+    setQuestions(next);
+    await persistQuestionOrder(next);
+  }
+
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
     <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Quản trị CLB</p><h1 className="mt-1 text-3xl font-bold">Quản lý biểu mẫu</h1><p className="mt-2 text-sm text-zinc-600">Chỉnh sửa câu hỏi mặc định. Mỗi form mới sẽ nhận bản sao của mẫu mặc định.</p></header>
     {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}{notice && <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
@@ -116,9 +131,9 @@ export function FormTemplatesManager() {
         {selected ? <>
           <form key={selected.id} onSubmit={saveTemplate} className="rounded-xl border bg-white p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium">Tên mẫu<input name="name" required defaultValue={selected.name} disabled={!canWrite} className={input} /></label><label className="text-sm font-medium">Mô tả<input name="description" defaultValue={selected.description ?? ""} disabled={!canWrite} className={input} /></label></div><div className="mt-3 flex flex-wrap gap-2">{canWrite && <button disabled={busy} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-800">Lưu thông tin</button>}{canWrite && !selected.is_default && <button type="button" disabled={busy} onClick={() => void setDefault()} className="rounded-lg border px-3 py-2 text-sm">Đặt làm mặc định</button>}</div></form>
           <section className="rounded-xl border bg-white p-4"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">Câu hỏi mặc định ({questions.length})</h2><p className="mt-1 text-xs text-zinc-500">Thay đổi tại đây chỉ áp dụng cho các form tạo về sau.</p></div>{canWrite && <button type="button" onClick={() => void addQuestion()} className="rounded-lg border px-3 py-2 text-sm font-semibold">+ Thêm câu hỏi</button>}</div>
-            {!questions.length ? <p className="rounded-lg border border-dashed p-4 text-sm text-zinc-500">Mẫu chưa có câu hỏi.</p> : <ol className="space-y-3">{questions.map((question, index) => <li key={question.id} className="rounded-xl border bg-zinc-50 p-3"><div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Câu {index + 1}</div><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium sm:col-span-2">Nội dung<input value={question.question_text} disabled={!canWrite} onChange={(event) => patchQuestion(question.id, { question_text: event.target.value })} className={input} /></label><label className="text-sm font-medium">Loại câu hỏi<select value={question.question_type} disabled={!canWrite} onChange={(event) => patchQuestion(question.id, { question_type: event.target.value as QuestionType, options: ["single_choice", "multi_choice"].includes(event.target.value) ? question.options?.length ? question.options : ["", ""] : null })} className={input}>{types.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={question.is_required} disabled={!canWrite} onChange={(event) => patchQuestion(question.id, { is_required: event.target.checked })} />Bắt buộc trả lời</label>
-              {["single_choice", "multi_choice"].includes(question.question_type) && <label className="text-sm font-medium sm:col-span-2">Các lựa chọn (mỗi lựa chọn một dòng)<textarea rows={3} value={(question.options ?? []).join("\n")} disabled={!canWrite} onChange={(event) => patchQuestion(question.id, { options: event.target.value.split("\n") })} className={input} /></label>}</div>
-              {canWrite && <div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => void deleteQuestion(question)} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">Xóa câu hỏi</button><button type="button" onClick={() => void saveQuestion(question)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-800">Lưu câu hỏi</button></div>}
+            {!questions.length ? <p className="rounded-lg border border-dashed p-4 text-sm text-zinc-500">Mẫu chưa có câu hỏi.</p> : <ol className="space-y-3">{[...questions].sort((a, b) => a.order_index - b.order_index).map((question, index) => <li key={question.id} draggable={canWrite} onDragStart={() => setDraggedQuestionId(question.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (draggedQuestionId) void moveQuestion(draggedQuestionId, question.id); setDraggedQuestionId(null); }} className="rounded-xl border bg-zinc-50 p-3">
+              <div className="mb-2 flex items-center gap-2"><button type="button" title="Kéo để sắp xếp" aria-label={`Kéo để sắp xếp câu ${index + 1}`} className="cursor-grab text-zinc-400" disabled={!canWrite}>⠿</button><span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Sắp xếp câu {index + 1}</span><div className="ml-auto flex gap-1"><button type="button" disabled={!canWrite || index === 0} onClick={() => void moveQuestion(question.id, questions[index - 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển lên">↑</button><button type="button" disabled={!canWrite || index === questions.length - 1} onClick={() => void moveQuestion(question.id, questions[index + 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển xuống">↓</button></div></div>
+              <QuestionFields question={question} index={index} canWrite={canWrite} onChange={(updated) => patchQuestion(question.id, updated)} onSave={() => void saveQuestion(question)} onDelete={() => void deleteQuestion(question)} />
             </li>)}</ol>}
           </section>
         </> : <div className="rounded-xl border border-dashed bg-white p-8 text-center text-sm text-zinc-500">Tạo hoặc chọn một mẫu để chỉnh sửa.</div>}

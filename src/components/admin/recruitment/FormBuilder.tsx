@@ -2,17 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { QuestionFields, type EditableQuestion } from "./QuestionFields";
 
-export type QuestionType = "text" | "long_text" | "single_choice" | "multi_choice" | "number" | "date";
-export type Question = { id: string; question_text: string; question_type: QuestionType; options: string[] | null; is_required: boolean; order_index: number };
+export type { QuestionType } from "./QuestionFields";
+export type Question = EditableQuestion;
 const interviewAvailabilityQuestion = "Thời gian có thể tham gia phỏng vấn";
 type Props = { positionId: string; form: { id: string; name: string; description: string | null } | null; questions: Question[]; canWrite: boolean; onFormChange: (form: Props["form"]) => void; onQuestionsChange: (questions: Question[]) => void; onError: (message: string) => void };
-
-const types: { value: QuestionType; label: string }[] = [
-  { value: "text", label: "Trả lời ngắn" }, { value: "long_text", label: "Trả lời dài" },
-  { value: "single_choice", label: "Chọn một" }, { value: "multi_choice", label: "Chọn nhiều" },
-  { value: "number", label: "Số" }, { value: "date", label: "Ngày" },
-];
 
 export function FormBuilder({ positionId, form, questions, canWrite, onFormChange, onQuestionsChange, onError }: Props) {
   const [saving, setSaving] = useState(false);
@@ -141,14 +136,6 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
     onQuestionsChange(questions.map((question) => question.id === id ? { ...question, ...patch } : question));
   }
 
-  function addChoice(question: Question) {
-    patchQuestion(question.id, { options: [...(question.options ?? []), ""] });
-  }
-
-  function removeChoice(question: Question, index: number) {
-    patchQuestion(question.id, { options: (question.options ?? []).filter((_, optionIndex) => optionIndex !== index) });
-  }
-
   return <section className="mt-5 rounded-xl border bg-zinc-50 p-4 sm:p-5">
     <div className="mb-4"><h3 className="font-semibold">Biểu mẫu ứng tuyển</h3><p className="text-xs text-zinc-500">Mỗi vị trí tuyển có một biểu mẫu riêng.</p></div>
     <form key={form?.id ?? positionId} onSubmit={saveForm} className="grid gap-3 sm:grid-cols-2">
@@ -159,17 +146,8 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
 
     {form && <div className="mt-6 border-t pt-5"><div className="mb-3 flex items-center justify-between"><div><h4 className="font-semibold">Câu hỏi ({questions.length})</h4><p className="mt-1 text-xs text-zinc-500">Các ca phỏng vấn đang mở sẽ tự hiện thành lựa chọn thời gian trong form.</p></div>{canWrite && <button onClick={() => void addQuestion()} className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold">+ Thêm câu hỏi</button>}</div>
       {!questions.length ? <p className="rounded-lg border border-dashed bg-white p-4 text-sm text-zinc-500">Chưa có câu hỏi.</p> : <ol className="space-y-3">{[...questions].sort((a,b) => a.order_index-b.order_index).map((question, index) => { const isAvailabilityQuestion = question.question_text === interviewAvailabilityQuestion; return <li key={question.id} draggable={canWrite && !isAvailabilityQuestion} onDragStart={() => setDragged(question.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragged) void moveQuestion(dragged, question.id); setDragged(null); }} className="rounded-xl border bg-white p-3 sm:p-4">
-        <div className="mb-3 flex items-center gap-2"><button type="button" title="Kéo để sắp xếp" aria-label={`Kéo để sắp xếp câu ${index + 1}`} className="cursor-grab text-zinc-400" disabled={!canWrite}>⠿</button><span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Câu {index + 1}</span><div className="ml-auto flex gap-1"><button type="button" disabled={!canWrite || index === 0} onClick={() => void moveQuestion(question.id, questions[index - 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển lên">↑</button><button type="button" disabled={!canWrite || index === questions.length-1} onClick={() => void moveQuestion(question.id, questions[index + 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển xuống">↓</button></div></div>
-        <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium sm:col-span-2">Nội dung câu hỏi<input value={question.question_text} disabled={!canWrite || isAvailabilityQuestion} onChange={(event) => patchQuestion(question.id, { question_text: event.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" /></label>
-          <label className="text-sm font-medium">Loại câu hỏi<select value={question.question_type} disabled={!canWrite || isAvailabilityQuestion} onChange={(event) => patchQuestion(question.id, { question_type: event.target.value as QuestionType, options: ["single_choice", "multi_choice"].includes(event.target.value) ? question.options?.length ? question.options : ["", ""] : null })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2">{types.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select></label>
-          <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={question.is_required} disabled={!canWrite || isAvailabilityQuestion} onChange={(event) => patchQuestion(question.id, { is_required: event.target.checked })} />Bắt buộc trả lời{isAvailabilityQuestion && <span className="text-xs text-zinc-500">(trường dùng để xếp ca)</span>}</label>
-          {["single_choice", "multi_choice"].includes(question.question_type) && <div className="sm:col-span-2">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-medium">Các lựa chọn</span>{canWrite && <button type="button" onClick={() => addChoice(question)} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 transition hover:bg-sky-100">+ Thêm lựa chọn</button>}</div>
-            <div className="space-y-2">{(question.options ?? []).map((option, optionIndex) => <div key={`${question.id}-option-${optionIndex}`} className="flex items-center gap-2"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-sky-50 text-xs font-semibold text-sky-800">{optionIndex + 1}</span><input aria-label={`Lựa chọn ${optionIndex + 1}`} value={option} disabled={!canWrite} onChange={(event) => { const options = [...(question.options ?? [])]; options[optionIndex] = event.target.value; patchQuestion(question.id, { options }); }} placeholder={`Nội dung lựa chọn ${optionIndex + 1}`} className="w-full rounded-lg border px-3 py-2" />{canWrite && <button type="button" onClick={() => removeChoice(question, optionIndex)} aria-label={`Xóa lựa chọn ${optionIndex + 1}`} className="grid size-9 shrink-0 place-items-center rounded-lg border border-rose-200 text-lg font-medium text-rose-700 transition hover:bg-rose-50">×</button>}</div>)}</div>
-            {(question.options ?? []).filter((option) => option.trim()).length < 2 && <p className="mt-2 text-xs text-zinc-500">Thêm ít nhất hai lựa chọn có nội dung rồi lưu câu hỏi.</p>}
-          </div>}
-        </div>
-        {canWrite && <div className="mt-3 flex justify-end gap-2">{!isAvailabilityQuestion && <button type="button" onClick={() => void deleteQuestion(question.id)} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">Xóa</button>}{!isAvailabilityQuestion && <button type="button" onClick={() => void saveQuestion(question)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-800">Lưu câu hỏi</button>}</div>}
+        <div className="mb-3 flex items-center gap-2"><button type="button" title="Kéo để sắp xếp" aria-label={`Kéo để sắp xếp câu ${index + 1}`} className="cursor-grab text-zinc-400" disabled={!canWrite || isAvailabilityQuestion}>⠿</button><div className="ml-auto flex gap-1"><button type="button" disabled={!canWrite || index === 0 || isAvailabilityQuestion} onClick={() => void moveQuestion(question.id, questions[index - 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển lên">↑</button><button type="button" disabled={!canWrite || index === questions.length-1 || isAvailabilityQuestion} onClick={() => void moveQuestion(question.id, questions[index + 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển xuống">↓</button></div></div>
+        <QuestionFields question={question} index={index} canWrite={canWrite} locked={isAvailabilityQuestion} lockNote="trường dùng để xếp ca" onChange={(updated) => patchQuestion(question.id, updated)} onSave={() => void saveQuestion(question)} onDelete={() => void deleteQuestion(question.id)} />
       </li>; })}</ol>}
     </div>}
   </section>;
