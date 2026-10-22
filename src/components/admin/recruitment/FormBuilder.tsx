@@ -23,12 +23,34 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
     event.preventDefault(); if (!canWrite || !supabase) return;
     const values = new FormData(event.currentTarget);
     setSaving(true);
+    let createdFormId: string | null = null;
     try {
       const payload = { name: String(values.get("name") ?? "").trim(), description: String(values.get("description") ?? "").trim() || null };
+      let templateQuestions: Omit<Question, "id">[] = [];
+      let templateId: string | null = null;
+      if (!form) {
+        const { data: template, error: templateError } = await supabase.from("form_templates").select("id").eq("is_default", true).maybeSingle();
+        if (templateError) throw new Error(`Không tải được mẫu biểu mẫu mặc định. Hãy chạy migration supabase/migration/migrate_form_templates.sql. ${templateError.message}`);
+        templateId = template?.id ?? null;
+        if (templateId) {
+          const { data, error: questionsError } = await supabase.from("form_template_questions").select("question_text,question_type,options,is_required,order_index").eq("template_id", templateId).order("order_index");
+          if (questionsError) throw questionsError;
+          templateQuestions = (data ?? []) as Omit<Question, "id">[];
+        }
+      }
       const result = form
         ? await supabase.from("application_forms").update(payload).eq("id", form.id).select("id,name,description").single()
-        : await supabase.from("application_forms").insert({ ...payload, position_id: positionId }).select("id,name,description").single();
+        : await supabase.from("application_forms").insert({ ...payload, position_id: positionId, source_template_id: templateId }).select("id,name,description").single();
       if (result.error) throw result.error;
+      if (!form) createdFormId = result.data.id;
+      let nextQuestions = questions;
+      if (!form && templateQuestions.length) {
+        const copies = templateQuestions.map((question) => ({ ...question, form_id: result.data.id }));
+        const { data: copied, error: copyError } = await supabase.from("form_questions").insert(copies).select("id,question_text,question_type,options,is_required,order_index");
+        if (copyError) throw copyError;
+        nextQuestions = (copied ?? []) as Question[];
+        onQuestionsChange(nextQuestions);
+      }
       const { data: savedAvailability, error: availabilityLoadError } = await supabase.from("form_questions").select("id").eq("form_id", result.data.id).eq("question_text", interviewAvailabilityQuestion).maybeSingle();
       if (availabilityLoadError) throw availabilityLoadError;
       if (!savedAvailability) {
@@ -37,13 +59,17 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
           question_text: interviewAvailabilityQuestion,
           question_type: "long_text",
           is_required: true,
-          order_index: 0,
+          order_index: Math.max(-1, ...nextQuestions.map((question) => question.order_index)) + 1,
         }).select("id,question_text,question_type,options,is_required,order_index").single();
         if (availabilityError) throw availabilityError;
-        onQuestionsChange([...questions, availabilityQuestion as Question].sort((a, b) => a.order_index - b.order_index));
+        nextQuestions = [...nextQuestions, availabilityQuestion as Question].sort((a, b) => a.order_index - b.order_index);
       }
+      if (!form || !savedAvailability) onQuestionsChange(nextQuestions);
       onFormChange(result.data);
-    } catch (error) { onError(error instanceof Error ? error.message : "Không lưu được biểu mẫu."); }
+    } catch (error) {
+      if (createdFormId) await supabase.from("application_forms").delete().eq("id", createdFormId);
+      onError(error instanceof Error ? error.message : "Không lưu được biểu mẫu.");
+    }
     finally { setSaving(false); }
   }
 

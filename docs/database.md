@@ -28,6 +28,8 @@ erDiagram
     recruitment_positions ||--o{ interview_sessions : schedules
 
     application_forms ||--o{ form_questions : contains
+    form_templates ||--o{ form_template_questions : contains
+    form_templates ||..o{ application_forms : "copied from"
     recruitment_positions ||--o| application_forms : has
 
     recruitment_positions ||--o{ applications : "applied to"
@@ -50,6 +52,8 @@ erDiagram
 | | `club_members` | Danh sách thành viên (có thể không có tài khoản) |
 | tuyển gen | `recruitment_campaigns` | Đợt tuyển |
 | | `recruitment_positions` | Vị trí tuyển trong đợt |
+| | `form_templates` | Mẫu biểu mẫu có thể tái sử dụng |
+| | `form_template_questions` | Câu hỏi gốc thuộc mẫu |
 | | `application_forms` | Form đăng ký riêng của từng ban tuyển |
 | | `form_questions` | Câu hỏi trong form |
 | | `applications` | Đơn ứng tuyển |
@@ -153,10 +157,33 @@ create table recruitment_positions (
   created_at timestamptz not null default now()
 );
 
--- Mỗi ban tuyển có tối đa một form riêng.
+-- Mẫu dùng để khởi tạo biểu mẫu. Câu hỏi được sao chép vào form_questions,
+-- vì vậy thay đổi mẫu sau này không làm thay đổi các form đã tạo.
+create table form_templates (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  description text,
+  is_default boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table form_template_questions (
+  id uuid primary key default gen_random_uuid(),
+  template_id uuid not null references form_templates(id) on delete cascade,
+  question_text text not null,
+  question_type question_type not null default 'text',
+  options jsonb,
+  is_required boolean not null default false,
+  order_index int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- Mỗi vị trí tuyển có tối đa một form riêng.
 create table application_forms (
   id uuid primary key default gen_random_uuid(),
   position_id uuid not null unique references recruitment_positions(id) on delete cascade,
+  source_template_id uuid references form_templates(id) on delete set null,
   name text not null,
   description text,
   created_at timestamptz not null default now()
@@ -255,6 +282,7 @@ create index on club_members (club_id);
 create index on recruitment_campaigns (club_id);
 create index on recruitment_positions (campaign_id);
 create index on form_questions (form_id, order_index);
+create index on form_template_questions (template_id, order_index);
 create index on applications (campaign_id, status);
 create index on applications (position_id);
 create index on application_answers (application_id);
@@ -272,6 +300,8 @@ alter table club_members enable row level security;
 alter table teams enable row level security;
 alter table recruitment_campaigns enable row level security;
 alter table recruitment_positions enable row level security;
+alter table form_templates enable row level security;
+alter table form_template_questions enable row level security;
 alter table application_forms enable row level security;
 alter table form_questions enable row level security;
 alter table applications enable row level security;
@@ -280,6 +310,21 @@ alter table interview_sessions enable row level security;
 alter table interview_assignments enable row level security;
 alter table interview_session_members enable row level security;
 ```
+
+Mẫu là dữ liệu dùng chung toàn hệ thống; owner/admin của ít nhất một CLB được quản lý mẫu trong trang **Quản lý biểu mẫu**. Chỉ nhóm này có quyền đọc và ghi mẫu qua RLS. Mỗi lần tạo form, ứng dụng tự chọn mẫu có `is_default = true`, tạo `application_forms` với `source_template_id`, rồi sao chép câu hỏi theo `order_index`:
+
+```sql
+insert into form_questions (
+  form_id, question_text, question_type, options, is_required, order_index
+)
+select
+  :new_form_id, question_text, question_type, options, is_required, order_index
+from form_template_questions
+where template_id = :template_id
+order by order_index, created_at;
+```
+
+Hai thao tác tạo form và sao chép câu hỏi cần nằm trong cùng một transaction (ví dụ RPC `security definer`) để không tạo form thiếu câu hỏi nếu bước sao chép lỗi. Câu hỏi đặc thù như “Thời gian có thể tham gia phỏng vấn” vẫn do hệ thống thêm vào nếu chưa có. Sau khi sao chép, quản trị viên chỉ sửa `form_questions`; các thay đổi về sau trong mẫu không lan sang form đã tạo.
 
 ### 5.1. Hàm kiểm tra quyền
 
@@ -505,7 +550,7 @@ grant execute on function get_application_by_token to anon;
 
 ## 6. Luồng nghiệp vụ
 
-1. **Quản trị** tạo `recruitment_campaigns`, `recruitment_positions`, form riêng trong `application_forms` cho từng ban, rồi tạo `form_questions`.
+1. Owner/admin chỉnh câu hỏi mặc định trong **Quản lý biểu mẫu**. Khi tạo `application_forms` cho một vị trí, hệ thống sao chép câu hỏi của mẫu mặc định sang `form_questions`, sau đó quản trị viên tùy chỉnh bản sao.
 2. Chuyển campaign sang `open`. Ứng viên truy cập trang đăng ký (không cần đăng nhập).
 3. Ứng viên gọi `submit_application` và nhận `tracking_token`.
 4. **Quản trị** lọc đơn, đổi `applications.status` sang `screening` hoặc `interview`.

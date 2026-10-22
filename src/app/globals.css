@@ -156,6 +156,7 @@ button:hover {
 .about-carousel .photo-carousel-frame { box-shadow: 18px 18px 0 #d5e9e7; }
 .about-carousel .photo-carousel-slide img, .recruitment-carousel .photo-carousel-slide img { object-fit: cover; }
 .about-carousel .carousel-arrow, .recruitment-carousel .carousel-arrow { border-color: rgb(255 255 255 / 75%); background: rgb(15 42 64 / 46%); }
+.about-carousel .carousel-arrow { display: none; }
 .about-values { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 15px; margin-top: 92px; padding: 21px 0; border-top: 1px solid #cbdcdd; border-bottom: 1px solid #cbdcdd; color: #286e76; font-size: 13px; font-weight: 750; letter-spacing: .03em; }
 .about-values span[aria-hidden] { color: #80b9b5; }
 .recruitment-section { width: 100%; max-width: none; padding: 110px max(24px, calc((100% - 1120px) / 2)) 100px; background: #e8f1f0; }
@@ -278,6 +279,14 @@ button:hover {
 .recruitment-intro h2, .recruitment-team-heading h2 { margin: 0; color: #102d55; font-size: clamp(23px, 3vw, 31px); font-weight: 780; letter-spacing: -.035em; }
 .recruitment-intro-copy { margin: 12px 0 0; color: #455c73; font-size: 15px; line-height: 1.75; white-space: pre-wrap; }
 .recruitment-team-list { display: grid; gap: 22px; padding: 0; list-style: none; }
+.recruitment-campaign-list { display: grid; gap: 24px; }
+.recruitment-campaign-card { overflow: hidden; border: 1px solid rgb(7 137 209 / 20%); border-radius: 26px; background: #f7fcfc; box-shadow: 0 14px 32px rgb(16 45 85 / 7%); }
+.recruitment-campaign-heading { padding: 24px 28px; background: #dff3f3; }
+.recruitment-campaign-heading .recruitment-eyebrow { margin-bottom: 6px; }
+.recruitment-campaign-heading h2 { margin: 0; color: #102d55; font-size: clamp(24px, 3vw, 32px); font-weight: 800; letter-spacing: -.035em; }
+.recruitment-campaign-heading > p:last-child { margin: 9px 0 0; color: #455c73; line-height: 1.7; white-space: pre-wrap; }
+.recruitment-campaign-card .recruitment-team-list { padding: 22px; }
+.recruitment-campaign-card .recruitment-team-card { border-radius: 18px; box-shadow: 0 5px 16px rgb(16 45 85 / 5%); }
 .recruitment-team-card { border: 1px solid rgb(23 52 92 / 11%); border-radius: 24px; background: #fff; padding: 26px 30px; box-shadow: 0 12px 30px rgb(16 45 85 / 7%); }
 .recruitment-team-heading { display: flex; align-items: center; gap: 16px; }
 .recruitment-team-heading .recruitment-eyebrow { margin-bottom: 5px; }

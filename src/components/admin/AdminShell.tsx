@@ -8,6 +8,7 @@ import { AdminClubProvider, type AdminClub } from "./AdminClubContext";
 import { EventsManager } from "./EventsManager";
 import { ClubAccountsManager } from "./ClubAccountsManager";
 import { ClubMembersManager } from "./ClubMembersManager";
+import { FormTemplatesManager } from "./FormTemplatesManager";
 import { TeamsManager } from "./recruitment/TeamsManager";
 import { RecruitmentManager } from "./recruitment/RecruitmentManager";
 import { ApplicationsManager } from "./recruitment/ApplicationsManager";
@@ -45,6 +46,7 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
     { href: "/manage-clubs/teams", label: "Quản lí ban", allowed: canWrite },
     { href: "/manage-clubs/events", label: "Quản lý sự kiện", allowed: canWrite },
     { href: "/manage-clubs/recruitment", label: "Quản lý tuyển gen", allowed: true },
+    { href: "/manage-clubs/form-templates", label: "Quản lý biểu mẫu", allowed: canWrite },
     { href: "/manage-clubs/mail", label: "Gửi mail", allowed: canWrite },
   ];
   const tabViews = [
@@ -56,6 +58,7 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
     { href: "/manage-clubs/recruitment", content: <><RecruitmentTabs /><RecruitmentManager /></> },
     { href: "/manage-clubs/recruitment/applications", content: <><RecruitmentTabs /><ApplicationsManager /></> },
     { href: "/manage-clubs/recruitment/interviews", content: <><RecruitmentTabs /><InterviewsManager /></> },
+    { href: "/manage-clubs/form-templates", content: <FormTemplatesManager /> },
     { href: "/manage-clubs/mail", content: <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8"><MailMergeApp /></main> },
   ];
   const activeTab = tabViews.find((tab) => tab.href === pathname);

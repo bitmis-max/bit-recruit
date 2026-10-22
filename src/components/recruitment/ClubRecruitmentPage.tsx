@@ -12,6 +12,7 @@ type RecruitmentItem = {
   team_id: string | null;
   teams: { id: string; name: string; description: string | null }[] | { id: string; name: string; description: string | null } | null;
 };
+type RecruitmentCampaign = { id: string; name: string; description: string | null };
 
 export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId: string; showHero?: boolean }) {
   const supabase = await createSupabaseServerClient();
@@ -28,7 +29,7 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
 
   const now = new Date().toISOString();
   const { data: campaigns, error: campaignError } = await supabase.from("recruitment_campaigns")
-    .select("id")
+    .select("id,name,description")
     .eq("club_id", clubId)
     .eq("status", "open")
     .or(`start_date.is.null,start_date.lte.${now}`)
@@ -48,17 +49,20 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
     if (error) errorMessage = "Không tải được danh sách ban đang tuyển. Hãy kiểm tra policy RLS cho teams và recruitment_positions.";
   }
 
-  const grouped = new Map<string, { teamName: string; teamDescription: string | null; openings: RecruitmentItem[] }>();
+  const grouped = new Map<string, { campaign: RecruitmentCampaign; teams: Map<string, { teamName: string; teamDescription: string | null; openings: RecruitmentItem[] }> }>();
   for (const item of items) {
     const team = Array.isArray(item.teams) ? item.teams[0] ?? null : item.teams;
+    const campaign = (campaigns as RecruitmentCampaign[]).find((row) => row.id === item.campaign_id)!;
+    const campaignGroup = grouped.get(item.campaign_id) ?? { campaign, teams: new Map() };
     const key = item.team_id ?? `opening:${item.id}`;
-    const group = grouped.get(key) ?? {
+    const group = campaignGroup.teams.get(key) ?? {
       teamName: team?.name ?? item.name,
       teamDescription: team?.description ?? null,
       openings: [],
     };
     group.openings.push(item);
-    grouped.set(key, group);
+    campaignGroup.teams.set(key, group);
+    grouped.set(item.campaign_id, campaignGroup);
   }
 
   return (
@@ -72,9 +76,17 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
       ) : grouped.size === 0 ? (
         <div className="recruitment-empty">CLB hiện chưa có ban nào mở tuyển.</div>
       ) : (
-        <ul className="recruitment-team-list">
-          {[...grouped.entries()].map(([key, team]) => (
-            <li key={key} className="recruitment-team-card">
+        <div className="recruitment-campaign-list">
+          {[...grouped.values()].map(({ campaign, teams }) => (
+            <section key={campaign.id} className="recruitment-campaign-card">
+              <header className="recruitment-campaign-heading">
+                <p className="recruitment-eyebrow">ĐỢT TUYỂN</p>
+                <h2>{campaign.name}</h2>
+                {campaign.description && <p>{campaign.description}</p>}
+              </header>
+              <ul className="recruitment-team-list">
+                {[...teams.entries()].map(([key, team]) => (
+                  <li key={key} className="recruitment-team-card">
               <div className="recruitment-team-heading">
                 <span className="recruitment-team-mark" aria-hidden="true">
                   <Image src="/logo.png" alt="" width={48} height={48} className="recruitment-team-logo" unoptimized />
@@ -97,9 +109,12 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
                   </li>
                 ))}
               </ul>
-            </li>
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
       </div>
     </PageShell>

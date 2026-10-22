@@ -20,10 +20,11 @@ export default function RegisterPage() {
     const supabase = getSupabaseClient();
     if (!supabase) { setError("Hệ thống đăng ký chưa được cấu hình."); return; }
     setSubmitting(true);
+    const emailRedirectTo = new URL("/auth/callback?next=%2F", window.location.origin).toString();
     const { error: signUpError } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: name.trim() } },
+      options: { data: { full_name: name.trim() }, emailRedirectTo },
     });
     setSubmitting(false);
     if (signUpError) { setError(signUpError.message); return; }
