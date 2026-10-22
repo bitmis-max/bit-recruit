@@ -101,7 +101,7 @@ export default function HomePage() {
       <section className="about-section recruitment-section">
         <div className="section-heading section-heading-centered">
           <p className="about-eyebrow">Hành trình thành viên</p>
-          <h2>Sự kiện tuyển CTV Gen 16</h2>
+          <h2>Sự kiện tuyển CTV Gen 17</h2>
           <p>Mỗi mùa tuyển thành viên là khởi đầu cho những tình bạn, ý tưởng và trải nghiệm mới tại BIT.</p>
         </div>
         <div className="recruitment-feature">
@@ -113,7 +113,7 @@ export default function HomePage() {
             <Link href="/positions" className="about-text-link">Tìm hiểu cơ hội tham gia <span aria-hidden="true">→</span></Link>
           </div>
           <div className="recruitment-gallery">
-            <PhotoCarousel photos={recruitmentPhotos} className="recruitment-carousel" label="Ảnh sự kiện tuyển cộng tác viên Gen 16" captions={["Ngày hội tuyển thành viên", "Cùng nhau học hỏi", "Hoạt động và kết nối"]} />
+            <PhotoCarousel photos={recruitmentPhotos} className="recruitment-carousel" label="Ảnh sự kiện tuyển cộng tác viên Gen 17" captions={["Ngày hội tuyển thành viên", "Cùng nhau học hỏi", "Hoạt động và kết nối"]} />
             <p className="gallery-caption">Những khoảnh khắc trên hành trình trở thành một phần của BIT</p>
           </div>
         </div>

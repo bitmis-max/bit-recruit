@@ -108,7 +108,7 @@ button:hover {
 /* BIT introduction page */
 .about-page { --bit-ink: #102d55; --bit-blue: #42678f; --bit-mist: #eaf4f4; color: var(--bit-ink); background: #f4f8f7; }
 .about-hero { position: relative; isolation: isolate; display: flex; min-height: min(720px, calc(100svh - 72px)); align-items: center; overflow: hidden; background: #16365a; color: white; }
-.photo-carousel { min-width: 0; }
+.photo-carousel { position: relative; min-width: 0; }
 .photo-carousel-frame { position: relative; height: 100%; overflow: hidden; }
 .photo-carousel-slide { position: absolute; inset: 0; opacity: 0; transform: scale(1.025); transition: opacity .7s ease, transform 5s ease; }
 .photo-carousel-slide.is-active { z-index: 1; opacity: 1; transform: scale(1); }
