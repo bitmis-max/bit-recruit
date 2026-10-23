@@ -101,7 +101,6 @@ export function useSender({
               attachmentName: attachmentName || undefined,
               imageAttachment,
               variables: templateValues,
-              providerToken: session?.provider_token ?? undefined,
             });
             success = true;
             break;
@@ -184,7 +183,6 @@ export function useSender({
         attachmentName: attachmentName || undefined,
         imageAttachment,
         variables: templateValues,
-        providerToken: session?.provider_token ?? undefined,
       });
       alert("Đã gửi email test thành công đến: " + targetEmail);
     } catch (error) {

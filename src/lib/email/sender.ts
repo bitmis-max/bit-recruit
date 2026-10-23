@@ -13,7 +13,6 @@ export type SendEmailPayload = {
   variables?: Record<string, string>;
   recipientId?: string;
   campaignId?: string;
-  providerToken?: string;
   clubId?: string;
 };
 

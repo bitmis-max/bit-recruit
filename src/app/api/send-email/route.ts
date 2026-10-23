@@ -1,6 +1,8 @@
 import * as nodemailer from "nodemailer";
+import { createClient } from "@supabase/supabase-js";
 import type { EmailAttachment } from "../../../lib/email/template";
 import { createSupabaseServerClient } from "../../../lib/supabase/server";
+import { decryptGoogleRefreshToken } from "../../../lib/email/google-token";
 
 export const runtime = "nodejs";
 
@@ -22,7 +24,6 @@ type SendRequest = {
   driveId?: string;
   attachmentName?: string;
   imageAttachment?: EmailAttachment;
-  providerToken?: string;
   clubId?: string;
 };
 
@@ -46,16 +47,49 @@ export async function POST(request: Request) {
     if (!supabase || !user || !body.clubId) return Response.json({ ok: false, error: "Cần đăng nhập và chọn CLB." }, { status: 401 });
     const { data: membership } = await supabase.from("club_members").select("role").eq("user_id", user.id).eq("club_id", body.clubId).eq("is_active", true).limit(1).maybeSingle();
     if (!membership || !["owner", "admin"].includes(membership.role)) return Response.json({ ok: false, error: "Bạn không có quyền gửi mail cho CLB này." }, { status: 403 });
-    const providerToken = body.providerToken?.trim();
-
-    if (!providerToken) {
-      debugLog("Missing Google providerToken");
-      return Response.json(
-        { ok: false, error: "Yêu cầu đăng nhập Google để thực hiện thao tác này." },
-        { status: 401 }
-      );
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+    const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    if (!supabaseUrl || !serviceKey || !googleClientId || !googleClientSecret) {
+      return Response.json({ ok: false, error: "Máy chủ chưa cấu hình kết nối Gmail." }, { status: 503 });
+    }
+    const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data: storedToken, error: tokenError } = await admin.from("google_mail_tokens")
+      .select("encrypted_refresh_token").eq("user_id", user.id).maybeSingle();
+    if (tokenError) {
+      debugLog("Could not load stored Google token", tokenError.message);
+      return Response.json({ ok: false, error: "Không tải được kết nối Gmail. Hãy kết nối lại Google." }, { status: 500 });
+    }
+    if (!storedToken?.encrypted_refresh_token) {
+      return Response.json({ ok: false, error: "Hãy kết nối Gmail bằng nút Kết nối / làm mới quyền Gmail trước khi gửi." }, { status: 401 });
     }
 
+    let refreshToken: string;
+    try {
+      refreshToken = decryptGoogleRefreshToken(storedToken.encrypted_refresh_token);
+    } catch (error) {
+      debugLog("Could not decrypt Google refresh token", error instanceof Error ? error.message : "Unknown error");
+      return Response.json({ ok: false, error: "Không đọc được kết nối Gmail. Hãy kết nối lại Google." }, { status: 500 });
+    }
+
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: googleClientId,
+        client_secret: googleClientSecret,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }),
+      cache: "no-store",
+    });
+    const tokenResult = await tokenResponse.json() as { access_token?: string; error?: string; error_description?: string };
+    if (!tokenResponse.ok || !tokenResult.access_token) {
+      debugLog("Google token refresh failed", { status: tokenResponse.status, error: tokenResult.error });
+      return Response.json({ ok: false, error: "Không làm mới được quyền Gmail. Hãy kết nối lại Google." }, { status: 401 });
+    }
+    const providerToken = tokenResult.access_token;
     const to = body.to?.trim();
     const from = body.from?.trim();
     const subject = body.subject?.trim();

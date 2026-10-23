@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { EmailEditor } from "./email/EmailEditor";
 import { VariableSidebar } from "./email/VariableSidebar";
+import { ConnectGoogleMailButton } from "./email/ConnectGoogleMailButton";
 import { ImportPanel } from "./data/ImportPanel";
 import { RecipientsTable } from "./data/RecipientsTable";
 import { SendControls } from "./campaign/SendControls";
@@ -205,6 +206,7 @@ export function MailMergeApp() {
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">BIT MAIL</h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <ConnectGoogleMailButton />
           <select
             className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700 shadow-sm outline-none transition focus:border-indigo-400 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
             value={selectedTemplate ?? ""}
