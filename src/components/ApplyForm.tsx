@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getSupabaseClient } from "../lib/supabase/client";
 import type { FormQuestion } from "../lib/recruitment/types";
 import { formatInterviewRange } from "../lib/recruitment/interview-time";
+import { OTHER_OPTION } from "./admin/recruitment/QuestionFields";
 
 type InterviewSession = { id: string; start_time: string; end_time: string };
 type Props = { position: { id: string; name: string }; questions: FormQuestion[]; interviewSessions: InterviewSession[] };
@@ -24,6 +25,7 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(
     () => Object.fromEntries(activeQuestions.map((q) => [q.id, q.question_type === "multi_choice" ? [] : ""])),
   );
+  const [otherAnswers, setOtherAnswers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -105,6 +107,18 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
       return;
     }
 
+    const missingOther = activeQuestions.find((question) => {
+      if (!(question.options ?? []).includes(OTHER_OPTION)) return false;
+      const value = result.data.answers[question.id];
+      const selected = Array.isArray(value) ? value.includes(OTHER_OPTION) : value === OTHER_OPTION;
+      return selected && !otherAnswers[question.id]?.trim();
+    });
+    if (missingOther) {
+      setFieldErrors((current) => ({ ...current, [missingOther.id]: "Vui lòng nhập câu trả lời cho mục khác" }));
+      setLoading(false);
+      return;
+    }
+
     const supabase = getSupabaseClient();
     if (!supabase) {
       setSubmitError("Chưa cấu hình kết nối Supabase. Vui lòng báo ban quản trị.");
@@ -119,9 +133,12 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
         return { question_id: question.id, text: selectedSession ? formatInterviewRange(selectedSession.start_time, selectedSession.end_time) : null, json: selectedSession ? [selectedSession.id] : [] };
       }
       if (question.question_type === "multi_choice") {
-        return { question_id: question.id, text: null, json: value ?? [] };
+        const selected = (value ?? []) as string[];
+        const json = selected.map((item) => item === OTHER_OPTION ? `Khác: ${otherAnswers[question.id].trim()}` : item);
+        return { question_id: question.id, text: null, json };
       }
-      return { question_id: question.id, text: value == null || value === "" ? null : String(value), json: null };
+      const text = value === OTHER_OPTION ? `Khác: ${otherAnswers[question.id].trim()}` : value == null || value === "" ? null : String(value);
+      return { question_id: question.id, text, json: null };
     });
 
     const { data, error } = await supabase.rpc("submit_application", {
@@ -170,10 +187,13 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
               <fieldset className="mt-3 space-y-2">
                 <legend className="sr-only">{question.question_text}</legend>
                 {(question.options ?? []).map((option) => (
-                  <label key={option} className="recruitment-option flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2.5">
-                    <input type="radio" name={`q-${question.id}`} value={option} checked={answers[question.id] === option} onChange={() => updateAnswer(question.id, option)} className="accent-sky-700" />
-                    <span className="text-sm">{option}</span>
-                  </label>
+                  <div key={option}>
+                    <label className="recruitment-option flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2.5">
+                      <input type="radio" name={`q-${question.id}`} value={option} checked={answers[question.id] === option} onChange={() => updateAnswer(question.id, option)} className="accent-sky-700" />
+                      <span className="text-sm">{option === OTHER_OPTION ? "Mục khác:" : option}</span>
+                    </label>
+                    {option === OTHER_OPTION && answers[question.id] === OTHER_OPTION && <input type="text" aria-label="Câu trả lời khác" placeholder="Nhập câu trả lời của bạn" value={otherAnswers[question.id] ?? ""} onChange={(event) => { setOtherAnswers((current) => ({ ...current, [question.id]: event.target.value })); setFieldErrors((current) => ({ ...current, [question.id]: "" })); }} className={inputClass} />}
+                  </div>
                 ))}
               </fieldset>
             ) : question.question_type === "multi_choice" ? (
@@ -182,11 +202,11 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
                 {(question.options ?? []).map((option) => {
                   const selected = Array.isArray(answers[question.id]) ? answers[question.id] as string[] : [];
                   return (
-                    <label key={option} className="recruitment-option flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2.5">
+                    <div key={option}><label className="recruitment-option flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2.5">
                       <input type="checkbox" checked={selected.includes(option)} onChange={(event) => updateAnswer(question.id, event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} className="size-4 accent-sky-700" />
-                      <span className="text-sm">{option}</span>
+                      <span className="text-sm">{option === OTHER_OPTION ? "Mục khác:" : option}</span>
                     </label>
-                  );
+                    {option === OTHER_OPTION && selected.includes(OTHER_OPTION) && <input type="text" aria-label="Câu trả lời khác" placeholder="Nhập câu trả lời của bạn" value={otherAnswers[question.id] ?? ""} onChange={(event) => { setOtherAnswers((current) => ({ ...current, [question.id]: event.target.value })); setFieldErrors((current) => ({ ...current, [question.id]: "" })); }} className={inputClass} />}</div>);
                 })}
               </fieldset>
             ) : (

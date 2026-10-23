@@ -20,6 +20,7 @@ export function useSender({
   subject,
   html,
   importedImage,
+  variableValues,
 }: {
   session: Session | null;
   supabaseConfigured: boolean;
@@ -28,6 +29,7 @@ export function useSender({
   subject: string;
   html: string;
   importedImage: EmailImageAsset | null;
+  variableValues: Record<string, string>;
 }) {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -59,6 +61,8 @@ export function useSender({
         const cleanRecipient = Object.fromEntries(
           Object.entries(recipient).filter(([key]) => !key.startsWith("__"))
         ) as Record<string, string>;
+        const overrides = Object.fromEntries(Object.entries(variableValues).filter(([, value]) => value !== ""));
+        const templateValues = { ...cleanRecipient, ...overrides };
 
         const attachmentUrl =
           cleanRecipient.attachment_url ??
@@ -90,13 +94,13 @@ export function useSender({
             await sendEmail({
               to: emailValue,
               from: session?.user?.email ?? undefined,
-              subject: interpolateTemplate(subject, cleanRecipient),
-              html: interpolateTemplate(html, cleanRecipient),
+              subject: interpolateTemplate(subject, templateValues),
+              html: interpolateTemplate(html, templateValues),
               attachmentUrl: attachmentUrl || undefined,
               driveId: driveId || undefined,
               attachmentName: attachmentName || undefined,
               imageAttachment,
-              variables: cleanRecipient,
+              variables: templateValues,
               providerToken: session?.provider_token ?? undefined,
             });
             success = true;
@@ -129,7 +133,7 @@ export function useSender({
 
       setSending(false);
     },
-    [html, importedImage, rows, subject, session, supabaseConfigured, setRows]
+    [html, importedImage, rows, subject, session, supabaseConfigured, setRows, variableValues]
   );
 
   const handleSendBulk = useCallback(() => {
@@ -151,6 +155,8 @@ export function useSender({
           Object.entries(selectedRecipient).filter(([key]) => !key.startsWith("__"))
         ) as Record<string, string>)
       : {};
+    const overrides = Object.fromEntries(Object.entries(variableValues).filter(([, value]) => value !== ""));
+    const templateValues = { ...cleanRecipient, ...overrides };
 
     const attachmentUrl =
       cleanRecipient.attachment_url ??
@@ -171,13 +177,13 @@ export function useSender({
       await sendEmail({
         to: targetEmail,
         from: session?.user?.email ?? undefined,
-        subject: "[TEST] " + interpolateTemplate(subject, cleanRecipient),
-        html: interpolateTemplate(html, cleanRecipient),
+        subject: "[TEST] " + interpolateTemplate(subject, templateValues),
+        html: interpolateTemplate(html, templateValues),
         attachmentUrl: attachmentUrl || undefined,
         driveId: driveId || undefined,
         attachmentName: attachmentName || undefined,
         imageAttachment,
-        variables: cleanRecipient,
+        variables: templateValues,
         providerToken: session?.provider_token ?? undefined,
       });
       alert("Đã gửi email test thành công đến: " + targetEmail);
@@ -187,7 +193,7 @@ export function useSender({
     } finally {
       setSending(false);
     }
-  }, [html, importedImage, subject, session]);
+  }, [html, importedImage, subject, session, variableValues]);
 
   return {
     sending,

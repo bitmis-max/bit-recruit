@@ -45,6 +45,7 @@ export function MailMergeApp() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importingApplications, setImportingApplications] = useState(false);
   const [importedImage, setImportedImage] = useState<EmailImageAsset | null>(null);
+  const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [insertVariable, setInsertVariable] = useState<
     (variable: string) => void
   >(() => () => undefined);
@@ -64,6 +65,7 @@ export function MailMergeApp() {
     subject,
     html,
     importedImage,
+    variableValues,
   });
 
   const lastError = authError || sendingError;
@@ -172,13 +174,15 @@ export function MailMergeApp() {
 
   const previewHtml = useMemo(() => {
     if (!selectedRecipient) return html;
-    return interpolateTemplate(html, selectedRecipient);
-  }, [html, selectedRecipient]);
+    const overrides = Object.fromEntries(Object.entries(variableValues).filter(([, value]) => value !== ""));
+    return interpolateTemplate(html, { ...selectedRecipient, ...overrides });
+  }, [html, selectedRecipient, variableValues]);
 
   const previewSubject = useMemo(() => {
     if (!selectedRecipient) return subject;
-    return interpolateTemplate(subject, selectedRecipient);
-  }, [subject, selectedRecipient]);
+    const overrides = Object.fromEntries(Object.entries(variableValues).filter(([, value]) => value !== ""));
+    return interpolateTemplate(subject, { ...selectedRecipient, ...overrides });
+  }, [subject, selectedRecipient, variableValues]);
 
   const variables = useMemo(() => {
     const sample = rows[0];
@@ -276,7 +280,7 @@ export function MailMergeApp() {
         </section>
 
         <section className="flex min-w-0 flex-col gap-6">
-          <VariableSidebar variables={variables} onInsert={insertVariable} />
+          <VariableSidebar variables={variables} dataValues={selectedRecipient ?? {}} values={variableValues} onValuesChange={setVariableValues} onInsert={insertVariable} />
           <ImportPanel
             onDataParsed={handleDataParsed}
             onImageParsed={handleImageParsed}
