@@ -122,17 +122,43 @@ export function ApplicationsManager() {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json<ImportRow>(sheet);
-      if (!json.length) throw new Error("File Excel không có dữ liệu.");
-      const headers = Object.keys(json[0]);
-      setImportData({ headers, rows: json });
+
+      // Đọc dạng mảng: giữ nguyên mọi cột, ô rỗng => ""
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+        header: 1,
+        defval: "",
+        blankrows: false,
+        raw: false, // lấy giá trị đã định dạng (ngày, số điện thoại, mã SV giữ số 0 đầu...)
+      });
+      if (matrix.length < 2) throw new Error("File Excel không có dữ liệu.");
+
+      // Số cột = số cột rộng nhất trong toàn bộ sheet (không phụ thuộc dòng đầu)
+      const colCount = Math.max(...matrix.map((r) => r.length));
+
+      // Tạo tên cột: bù tên cho cột tiêu đề trống, đánh số cho tên bị trùng
+      const seen = new Map<string, number>();
+      const headers = Array.from({ length: colCount }, (_, i) => {
+        const base = String(matrix[0][i] ?? "").trim() || `Cột ${i + 1}`;
+        const count = seen.get(base) ?? 0;
+        seen.set(base, count + 1);
+        return count ? `${base} (${count + 1})` : base;
+      });
+
+      const rows: ImportRow[] = matrix
+        .slice(1)
+        .filter((r) => r.some((cell) => String(cell ?? "").trim() !== "")) // bỏ dòng trống hoàn toàn
+        .map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ""])));
+
+      if (!rows.length) throw new Error("File Excel không có dữ liệu.");
+
+      setImportData({ headers, rows });
       setMapping(Object.fromEntries(headers.map((h) => [h, ""])));
       setImportModalOpen(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Không đọc được file Excel.");
     } finally {
       setBusy(false);
-      input.value = ""; // cho phép chọn lại cùng một file
+      input.value = "";
     }
   }
 
@@ -178,7 +204,11 @@ export function ApplicationsManager() {
         questionMappings[col] = q.id;
       }
 
-      const getVal = (val: unknown) => (val !== undefined && val !== null) ? String(val).trim() : null;
+      const getVal = (val: unknown) => {
+        if (val === undefined || val === null) return null;
+        const s = String(val).trim();
+        return s === "" ? null : s;
+      };
 
       for (const rowData of importData.rows) {
         const m = (key: string) => {
