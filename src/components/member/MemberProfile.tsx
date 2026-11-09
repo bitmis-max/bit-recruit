@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseClient } from "../../lib/supabase/client";
 import { facebookUrlPattern, roleLabel } from "../admin/roles";
+import { MyTasks } from "./MyTasks";
 
 type Membership = { id: string; club_id: string; team_id: string | null; full_name: string; role: string; title: string | null; phone: string | null; facebook_url: string | null; email: string | null };
 type Profile = Membership & { clubName: string; teamName: string | null };
@@ -48,6 +49,7 @@ function ProfileCard({ profile, onSaved }: { profile: Profile; onSaved: (clubId:
     </header>
     <dl className="mt-6 grid gap-4 sm:grid-cols-2">{info.map((item) => <div key={item.label} className="rounded-xl bg-[#f7f8f6] px-4 py-3"><dt className="text-xs font-medium text-zinc-500">{item.label}</dt><dd className="mt-1 break-words text-sm font-semibold text-zinc-900">{item.value}</dd></div>)}</dl>
     {canManage && <p className="mt-4 text-sm"><Link href="/manage-clubs" className="font-semibold text-emerald-800 hover:underline">Vào trang quản trị CLB →</Link></p>}
+    <MyTasks memberId={profile.id} />
     <form onSubmit={save} className="mt-8 space-y-4 border-t border-zinc-100 pt-6">
       <div><h3 className="font-semibold text-zinc-900">Thông tin liên hệ</h3><p className="mt-1 text-xs text-zinc-500">Bạn chỉ sửa được số điện thoại và link Facebook. Thông tin khác do Ban chủ chốt quản lý.</p></div>
       <label className="block text-sm font-medium text-zinc-800">Số điện thoại<input type="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} className={inputClass} /></label>

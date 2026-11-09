@@ -1,90 +1,79 @@
-# Hợp đồng: Đợt 0 (bảo mật) + Đợt 1 (vai trò, nhiệm kỳ, kết nạp)
+# Hợp đồng Đợt 2: giao việc, nhắc hạn, đóng góp
 
-Mọi agent làm theo đúng tên ở đây. Muốn đổi tên hay chữ ký hàm thì báo lead, không tự đổi.
+Mọi agent làm theo đúng tên ở đây. Muốn đổi tên hay chữ ký thì báo lead, không tự đổi. Hợp đồng Đợt 1 (vai trò, nhiệm kỳ, kết nạp) nằm ở `docs/CONTRACT-1.md` và vẫn có hiệu lực.
 
-## 1. Vai trò
+Vai trò: `owner` = Ban chủ nhiệm, `admin` = Ban chủ chốt, `member` = Thành viên. "Admin của CLB" = `is_club_admin(club_id)` (owner hoặc admin).
 
-| Giá trị enum `club_role` | Hiển thị | Quyền |
-|---|---|---|
-| `owner` | Ban chủ nhiệm | Toàn quyền, quản lý nhiệm kỳ, sửa owner khác |
-| `admin` | Ban chủ chốt | Quản trị CLB (tuyển, thành viên, mail...), xem nhiệm kỳ |
-| `member` (đổi tên từ `organizer`) | Thành viên | Chỉ vào `/me`, xem và sửa hồ sơ của mình |
+## 1. Database (migration mới `supabase/migrations/20261111000000_tasks.sql`)
 
-Ứng viên **không phải vai trò**: vẫn là dòng `applications`, không có tài khoản. Khi đơn ở trạng thái `passed` (đã qua vòng cuối), Ban chủ chốt bấm "Kết nạp" để tạo dòng `club_members` vai trò `member`.
-
-`club_members.title` là **chức danh** (vd. "Chủ nhiệm", "Phó chủ nhiệm", "Trưởng ban Truyền thông"), chỉ để hiển thị, không ảnh hưởng quyền.
-
-## 2. Database (migration mới `supabase/migrations/20261110000000_member_roles_terms.sql`)
-
-### 2.1. Thay đổi bảng
-- `alter type club_role rename value 'organizer' to 'member'`.
-- `club_members` thêm: `email text`, `phone text`, `facebook_url text`, `title text`. Unique một phần `(club_id, lower(email)) where email is not null`.
-- `applications` thêm: `facebook_url text`, `admitted_member_id uuid references club_members(id) on delete set null`.
-- `field_key` của `form_questions` và `form_template_questions` cho phép thêm `'facebook_url'`. `submit_application` lưu `facebook_url` vào `applications.facebook_url`.
-
-### 2.2. Bảng mới
+### 1.1. Bảng
 ```
-club_terms (
-  id uuid pk, club_id uuid fk clubs cascade, name text not null,
-  start_date date, end_date date,
-  status text not null default 'draft' check in ('draft','active','ended'),
-  activated_at timestamptz, activated_by uuid, created_at timestamptz default now()
-)  -- tối đa 1 term 'active' mỗi CLB (unique index một phần)
+clubs: thêm cột mail_sender_user_id uuid null references auth.users(id) on delete set null
+       (KHÔNG grant update cho authenticated; chỉ service-role ghi)
 
-club_term_roles (
-  term_id uuid fk club_terms cascade, member_id uuid fk club_members cascade,
-  role club_role not null check (role in ('owner','admin')),
-  title text, team_id uuid null fk teams set null,
-  primary key (term_id, member_id)
-)  -- member và team phải cùng CLB với term (trigger)
+tasks (
+  id uuid pk default gen_random_uuid(),
+  club_id uuid not null fk clubs cascade,
+  title text not null check (length(btrim(title)) between 1 and 200),
+  description text,
+  due_at timestamptz not null,
+  status text not null default 'open' check (status in ('open','closed')),
+  created_by uuid null fk club_members(id) set null,
+  created_at timestamptz default now(), updated_at timestamptz default now()  -- trigger set_updated_at
+)
+
+task_assignees (
+  task_id uuid fk tasks cascade, member_id uuid fk club_members cascade,
+  status text not null default 'pending' check (status in ('pending','done','missed')),
+  completed_at timestamptz,          -- trigger: đặt now() khi status chuyển sang 'done', null khi rời 'done'
+  note text,                         -- ghi chú của Ban chủ chốt
+  reminded_before_at timestamptz,    -- đã gửi nhắc trước hạn
+  reminded_overdue_at timestamptz,   -- đã gửi nhắc quá hạn
+  primary key (task_id, member_id)
+)  -- trigger: member phải cùng CLB với task
 ```
-RLS: owner/admin của CLB đọc; chỉ owner insert/update/delete, và chỉ khi term còn `draft`.
+Index: `tasks (club_id, due_at)`, `task_assignees (member_id)`.
 
-### 2.3. Hàm
-- `is_club_owner(p_club_id uuid) returns boolean`: tương tự `is_club_admin`, chỉ role `owner`.
-- `activate_term(p_term_id uuid) returns void`: chỉ owner của CLB; term phải `draft`; danh sách phải có ít nhất 1 `owner` là thành viên đang hoạt động **có `user_id`**. Trong một transaction:
-  1. Term `active` cũ chuyển `ended` (nếu `end_date` null thì đặt bằng hôm nay).
-  2. Mọi thành viên đang hoạt động của CLB **không có** trong danh sách: `role = 'member'`, `title = null`.
-  3. Thành viên trong danh sách: cập nhật `role`, `title`, `team_id` (nếu khác null), `is_active = true`.
-  4. Term chuyển `active`, ghi `activated_at`, `activated_by`.
-- `admit_applications(p_application_ids uuid[]) returns jsonb` → `{ "admitted": n, "skipped": m }`. Người gọi phải là admin của CLB chứa đơn. Chỉ nhận đơn `status = 'passed'` và `admitted_member_id is null`. Tạo `club_members` (role `member`, `team_id` lấy từ `recruitment_positions.team_id`, copy `full_name`, `student_code`, `class_name`, `email`, `phone`, `facebook_url`). Nếu trùng `(club_id, student_code)` hoặc trùng email trong CLB thì gắn vào thành viên sẵn có. Ghi `admitted_member_id`. Chạy lại cũng không tạo trùng.
-- `update_my_member_profile(p_club_id uuid, p_phone text, p_facebook_url text) returns void`: chỉ sửa dòng `club_members` của chính `auth.uid()` trong CLB đó. `facebook_url` rỗng thì đặt null; nếu có thì phải khớp `^https://(www\.|m\.|web\.)?(facebook|fb)\.com/.+`. Lỗi trả bằng tiếng Việt.
-- Trigger bảo vệ (constraint trigger, deferred): sau update/delete trên `club_members`, CLB (nếu còn tồn tại) phải còn ít nhất 1 owner `is_active` có `user_id`. Nếu không thì báo lỗi "CLB phải còn ít nhất một thành viên Ban chủ nhiệm có tài khoản."
+### 1.2. RLS và grant
+- `tasks`: SELECT cho admin của CLB, hoặc thành viên có dòng `task_assignees` của chính mình (theo `club_members.user_id = auth.uid()`). INSERT/UPDATE/DELETE: admin của CLB. Grant update theo cột: `title, description, due_at, status`.
+- `task_assignees`: SELECT cho admin của CLB chứa task, hoặc dòng của chính mình. INSERT/DELETE: admin. UPDATE: admin, grant theo cột `status, note` (các cột `reminded_*`, `completed_at` chỉ trigger/service-role ghi).
+- Tránh đệ quy RLS giữa hai bảng: dùng hàm `security definer` phụ nếu cần (vd `is_task_assignee(p_task_id uuid)`, `task_club_id(p_task_id uuid)`).
 
-### 2.4. RLS siết lại
-- `applications`, `application_answers`, `interview_assignments`: chỉ `is_club_admin` được SELECT (bỏ quyền đọc của mọi thành viên). Quyền ghi giữ nguyên (admin).
-- Admin được update `applications.status` (đã có policy `admin update applications`, giữ nguyên).
-- `club_members`: giữ nguyên (đọc dòng của mình + admin đọc tất cả).
+### 1.3. Hàm (security definer, `set search_path = public`, revoke from public, anon; grant execute cho authenticated, service_role; lỗi tiếng Việt)
+- `create_task(p_club_id uuid, p_title text, p_description text, p_due_at timestamptz, p_member_ids uuid[], p_team_id uuid) returns uuid`: chỉ admin của CLB. `p_due_at` phải sau thời điểm hiện tại (lỗi "Hạn chót phải ở tương lai."). Người nhận = các `p_member_ids` + mọi thành viên đang hoạt động của `p_team_id` (nếu khác null), đều phải thuộc CLB và đang hoạt động; phải có ít nhất 1 người nhận. `created_by` = dòng `club_members` của người gọi. Trả id task.
+- `set_my_task_done(p_task_id uuid, p_done boolean) returns void`: người gọi phải là người nhận và đang hoạt động (`is_active`); task phải `open`. `true` → `done`; `false` → `pending`. Không đổi được dòng đang `missed` (báo lỗi "Việc này đã bị đánh dấu chưa hoàn thành, hãy liên hệ Ban chủ chốt.").
+- `club_contribution(p_club_id uuid, p_from timestamptz, p_to timestamptz) returns table (member_id uuid, full_name text, team_id uuid, role club_role, is_active boolean, assigned int, done_on_time int, done_late int, missed int, pending int)`: chỉ admin. Tính trên task có `due_at` trong `[p_from, p_to)`. Trả MỌI thành viên của CLB (kể cả 0 việc). `done_on_time` = done và `completed_at <= due_at`; `done_late` = done và trễ; `missed` = status `missed` HOẶC (`pending` và `due_at < now()` và task `open`); `pending` = pending, task `open` và chưa tới hạn. Dòng `pending` của task `closed` (việc bị hủy/ngừng theo dõi) KHÔNG được đếm ở bất kỳ cột nào. `assigned` = tổng bốn số.
 
-## 3. API (`src/app/api`, `src/lib`)
+## 2. API (`src/app/api`, `src/lib`)
 
-Định dạng trả về giữ như route hiện có. Lỗi bằng tiếng Việt.
+Trả `{ ok: true, data }` hoặc `{ error }`, lỗi tiếng Việt. Service-role chỉ dùng phía server.
 
-- `src/lib/security/safe-fetch.ts`:
-  - `export function isPrivateIp(ip: string): boolean`: chặn IPv4 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12, 192.168/16, 198.18/15, 224/4 trở lên; IPv6 `::`, `::1`, `fc00::/7`, `fe80::/10`, `ff00::/8`, IPv4-mapped `::ffff:x.x.x.x` (xét theo phần IPv4).
-  - `export async function assertPublicHttpsUrl(url: string): Promise<URL>`: phải là `https:`, không có user/password, cổng rỗng hoặc 443, mọi IP mà DNS trả về đều không private. Sai thì throw `Error` có message tiếng Việt.
-  - `export async function fetchPublicFile(url: string, opts: { maxBytes: number; maxRedirects?: number }): Promise<{ buffer: Buffer; contentType: string | null; finalUrl: string }>`: dùng `redirect: "manual"`, kiểm tra lại từng bước chuyển hướng (tối đa 3), đọc stream và dừng khi vượt `maxBytes`.
-  - File chỉ import module chuẩn của Node, không import file nội bộ khác, để test chạy bằng `node --test` không cần build.
-- `POST /api/send-email`: dùng `fetchPublicFile` cho `attachmentUrl`/`driveId`.
-- `PATCH /api/admin/accounts`: từ chối đổi email nếu tài khoản đó có membership ở CLB khác (403).
-- `POST /api/admin/accounts` thêm `mode: "create"`: `auth.admin.createUser({ email, email_confirm: true, user_metadata: { full_name } })`, **không gửi mail**. Thành viên đăng nhập bằng Google cùng email. Nếu email đã có tài khoản thì gắn tài khoản đó (giống `link`).
-- `POST /api/admin/accounts/bulk` body `{ clubId, memberIds: string[] }`: với từng thành viên đang hoạt động, có `email`, chưa có `user_id` thì làm như `mode: "create"`. Trả `{ ok: true, data: { results: [{ memberId, status: "created" | "linked" | "skipped" | "error", message? }] } }`. Chỉ owner/admin. Không xử lý thành viên `owner` nếu người gọi không phải owner.
-- `/api/admin/club-members`: role hợp lệ là `owner|admin|member`, mặc định `member`. Nhận và trả thêm `email`, `phone`, `facebook_url`, `title`. Kiểm tra định dạng email và link Facebook (regex như mục 2.3).
-- `src/proxy.ts`: matcher thêm `/me` và `/me/:path*`.
+- `src/lib/email/gmail.ts` (tách từ `send-email/route.ts`, route đó dùng lại):
+  - `getGmailAccessToken(admin: SupabaseClient, userId: string): Promise<string>` (đọc `google_mail_tokens`, giải mã, đổi refresh token; lỗi thì throw Error tiếng Việt).
+  - `sendGmail(accessToken: string, mail: { from?: string; to: string; subject: string; html: string; attachments?: [...] }): Promise<{ id: string }>`.
+- `src/lib/tasks/reminders.ts` (thuần TS, KHÔNG import gì, để chạy `node --test`):
+  - `type ReminderRow = { taskId: string; memberId: string; title: string; dueAt: string; email: string | null; fullName: string; remindedBeforeAt: string | null; remindedOverdueAt: string | null }`
+  - `pickReminders(rows: ReminderRow[], now: Date): { before: ReminderRow[]; overdue: ReminderRow[] }`: bỏ dòng không có email. `before` = `now < dueAt <= now + 36 giờ` và `remindedBeforeAt` null. `overdue` = `dueAt <= now` và `dueAt > now - 7 ngày` và `remindedOverdueAt` null.
+  - `buildReminderEmail(fullName: string, clubName: string, before: ReminderRow[], overdue: ReminderRow[], baseUrl: string): { subject: string; html: string }`: một mail gộp cho một người; escape HTML mọi chuỗi; có link `${baseUrl}/me`; giờ hiển thị theo `Asia/Ho_Chi_Minh`.
+- `GET /api/cron/task-reminders`: yêu cầu header `Authorization: Bearer ${CRON_SECRET}` (thiếu biến môi trường → 503; sai → 401; so sánh an toàn thời gian). Dùng service-role: với mỗi CLB có `mail_sender_user_id`, lấy các dòng `pending` của task `open`, gọi `pickReminders`, gửi mỗi người một mail gộp qua Gmail của người gửi, rồi ghi `reminded_before_at` / `reminded_overdue_at`. Một người lỗi không làm hỏng cả lượt. Trả `{ ok: true, data: { clubs, sent, failed, skippedNoSender } }`. Luôn chạy một truy vấn DB (giữ Supabase Free không bị tạm dừng).
+  - Người gửi hợp lệ = `mail_sender_user_id` là thành viên `is_active` của CLB với role `owner`/`admin`; không hợp lệ thì coi như chưa có người gửi (đếm `skippedNoSender`; `GET /api/admin/mail-sender` trả `configured: false`).
+  - Chống gửi trùng: trước khi gửi cho một người, "giữ chỗ" bằng update có điều kiện (`reminded_before_at`/`reminded_overdue_at` đang null → đặt now(), trả về dòng đã giữ); chỉ gửi các dòng giữ được; gửi lỗi thì trả mốc về null.
+  - Nạp người nhận theo lô (≤ 100 task id mỗi truy vấn, có `.range()` phân trang) để không bị cắt ở giới hạn 1000 dòng.
+- `GET /api/admin/mail-sender?clubId=`: owner/admin. Trả `{ ok: true, data: { configured: boolean, isMe: boolean, senderName: string | null } }`.
+- `POST /api/admin/mail-sender` body `{ clubId }`: owner/admin; người gọi phải đã kết nối Gmail (có dòng `google_mail_tokens`), nếu chưa → 400 "Bạn chưa kết nối Gmail. Vào mục Gửi mail để kết nối trước.". Đặt `clubs.mail_sender_user_id` = người gọi.
+- `POST /api/admin/tasks/remind` body `{ clubId, taskId }`: owner/admin; gửi ngay mail nhắc cho mọi người `pending` có email của task đó (bỏ qua mốc `reminded_*`, sau đó vẫn ghi mốc phù hợp). Trả `{ ok: true, data: { sent, failed, noEmail } }`. CLB chưa có người gửi → 400.
+- `vercel.json`: `{ "crons": [{ "path": "/api/cron/task-reminders", "schedule": "0 1 * * *" }] }` (08:00 giờ Việt Nam; gói Hobby chỉ cho cron mỗi ngày một lần).
+- Biến môi trường mới: `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL` (tùy chọn; thiếu thì dùng origin của request). Ghi vào README mục cấu hình.
 
-## 4. Giao diện
+## 3. Giao diện
 
-- `/register`: trang chỉ `redirect("/login")`.
-- `/manage-clubs` (layout): chỉ tính membership `owner`/`admin`. Người chỉ có membership `member` thì chuyển sang `/me`.
-- `/me` (trang mới): hồ sơ thành viên (tên, CLB, ban, chức danh, vai trò), sửa SĐT và link Facebook qua `update_my_member_profile`.
-- `/manage-clubs/terms` (màn hình mới): danh sách nhiệm kỳ, tạo nhiệm kỳ nháp, chọn Ban chủ nhiệm/Ban chủ chốt + chức danh + ban, nút "Kích hoạt nhiệm kỳ" (có hộp xác nhận, gọi `activate_term`). Admin chỉ xem.
-- Thành viên: nhãn vai trò tiếng Việt, thêm email/SĐT/Facebook/chức danh, nút "Tạo tài khoản cho thành viên có email" (gọi bulk API).
-- Đơn ứng tuyển: đổi trạng thái từng đơn; chọn nhiều đơn `passed` rồi bấm "Kết nạp" (gọi `admit_applications`); nhãn "Đã kết nạp" khi có `admitted_member_id`; hiện link Facebook.
-- Phỏng vấn: ghi `result` (`pending|pass|fail|consider`) và `score` cho từng ứng viên trong ca; hiện số vòng.
-- Form builder: thêm lựa chọn field_key `facebook_url` (nhãn "Link Facebook").
-- Navbar công khai: owner/admin thấy "Quản trị", member thấy "Trang thành viên".
+- `/manage-clubs/tasks` (màn hình mới, `src/components/admin/tasks/TasksManager.tsx`): tạo việc (tiêu đề, mô tả, hạn `datetime-local`, chọn nhiều thành viên và/hoặc cả ban) qua `rpc("create_task")`; danh sách việc (lọc Đang mở / Đã đóng, sắp theo hạn, nhãn "Quá hạn"); mở một việc thấy bảng người nhận với trạng thái Chờ / Xong / Chưa hoàn thành, Ban chủ chốt đổi trạng thái và ghi chú (update `task_assignees.status, note`); nút "Gửi nhắc ngay" (`POST /api/admin/tasks/remind`); đóng/mở lại việc; xóa việc (có xác nhận). Khung "Gmail gửi nhắc việc": hiện trạng thái từ `GET /api/admin/mail-sender`, nút "Dùng Gmail của tôi để gửi nhắc".
+- `/manage-clubs/contribution` (màn hình mới, `src/components/admin/tasks/ContributionBoard.tsx`): chọn khoảng thời gian (mặc định 90 ngày gần nhất), gọi `rpc("club_contribution")`; bảng: thành viên, ban, được giao, đúng hạn, trễ, bỏ lỡ, đang chờ, tỉ lệ hoàn thành = (đúng hạn + trễ) / (được giao − đang chờ); sắp xếp theo tỉ lệ; nhãn "Cần nhắc nhở" khi đã có ≥ 3 việc tới hạn và tỉ lệ < 50%; lọc "chỉ người cần nhắc nhở"; link sang Quản lý thành viên để Ban chủ chốt xử lý (đặt ngừng hoạt động). Không tự động phạt ai.
+- `/me`: thêm mục "Việc của tôi" (`src/components/member/MyTasks.tsx`): việc đang chờ (sắp theo hạn, nhãn "Còn N ngày" / "Quá hạn"), nút "Đánh dấu đã xong" / "Bỏ đánh dấu" qua `rpc("set_my_task_done")`; việc đã xong và việc bị đánh dấu chưa hoàn thành hiển thị riêng.
+- `AdminShell`: thêm mục "Giao việc" và "Đóng góp".
 
-## 5. Test
+## 4. Test
 
-- `npm test` = `node --test "tests/unit/**/*.test.ts"` (Node 24 chạy TypeScript trực tiếp, không thêm dependency; truyền thư mục không chạy trên Windows).
-- Test DB dạng pgTAP trong `supabase/tests/`, chạy bằng Supabase local (`npx supabase start`, `npx supabase test db`). Không chạy lên database thật.
+- Unit: `tests/unit/reminders.test.ts` cho `pickReminders` (biên 36 giờ, 7 ngày, đã nhắc rồi, không email) và `buildReminderEmail` (escape HTML, có link `/me`).
+- pgTAP: `supabase/tests/tasks.test.sql`: quyền `create_task` (member bị chặn, admin CLB khác bị chặn, người nhận ngoài CLB bị lỗi, giao theo ban); member chỉ thấy việc của mình và không thấy người nhận khác; member không update trực tiếp được `task_assignees`; `set_my_task_done` (đúng người, task đóng, dòng missed); admin không ghi được `reminded_*`; `completed_at` do trigger; `club_contribution` đúng số với dữ liệu mẫu và chặn member; authenticated không update được `clubs.mail_sender_user_id`.
+- Lệnh: `npm test`, `npx supabase db reset` → `npx supabase test db` (chỉ Supabase local).

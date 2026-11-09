@@ -43,3 +43,6 @@ next-env.d.ts
 
 # playwright-cli artifacts
 .playwright-cli/
+
+# local DB backups (contain personal data)
+backup/

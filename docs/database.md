@@ -21,6 +21,9 @@ erDiagram
     clubs ||--o{ club_members : has
     clubs ||--o{ teams : has
     clubs ||--o{ club_terms : has
+    clubs ||--o{ tasks : assigns
+    tasks ||--o{ task_assignees : "assigned to"
+    club_members ||--o{ task_assignees : receives
     club_terms ||--o{ club_term_roles : lists
     club_members ||--o{ club_term_roles : appointed
     club_members ||--o{ applications : admitted_from
@@ -59,6 +62,8 @@ erDiagram
 | | `club_members` | Danh sách thành viên (có thể không có tài khoản), kèm vai trò |
 | | `club_terms` | Nhiệm kỳ của CLB (`draft`, `active`, `ended`) |
 | | `club_term_roles` | Danh sách Ban chủ nhiệm/Ban chủ chốt của một nhiệm kỳ |
+| Giao việc | `tasks` | Việc Ban chủ chốt giao (tiêu đề, hạn, `open`/`closed`) |
+| | `task_assignees` | Người nhận việc, trạng thái, ghi chú, mốc nhắc |
 | tuyển gen | `recruitment_campaigns` | Đợt tuyển |
 | | `recruitment_positions` | Vị trí tuyển trong đợt |
 | | `form_templates` | Mẫu biểu mẫu có thể tái sử dụng |
@@ -73,7 +78,7 @@ erDiagram
 
 ## 4. Script SQL
 
-Schema gốc, RLS, function và seed tối thiểu nằm trong migration baseline `supabase/migrations/20261023000000_init.sql`. Vai trò thành viên, nhiệm kỳ và kết nạp được thêm bởi `supabase/migrations/20261110000000_member_roles_terms.sql` (các khối SQL bên dưới đã phản ánh trạng thái sau migration này). Các script tăng dần trước đây chỉ còn giá trị tham khảo trong `supabase/migration/legacy/` và không cần chạy trên database mới. Hướng dẫn bootstrap owner đầu tiên nằm trong `README.md`.
+Schema gốc, RLS, function và seed tối thiểu nằm trong migration baseline `supabase/migrations/20261023000000_init.sql`. Vai trò thành viên, nhiệm kỳ và kết nạp được thêm bởi `supabase/migrations/20261110000000_member_roles_terms.sql` (các khối SQL bên dưới đã phản ánh trạng thái sau migration này). Giao việc, nhắc hạn và đóng góp được thêm bởi `supabase/migrations/20261111000000_tasks.sql` (xem mục 6.4). Các script tăng dần trước đây chỉ còn giá trị tham khảo trong `supabase/migration/legacy/` và không cần chạy trên database mới. Hướng dẫn bootstrap owner đầu tiên nằm trong `README.md`.
 
 ### 4.1. Enum
 
@@ -114,6 +119,7 @@ create table clubs (
   name text not null,
   description text,
   created_at timestamptz not null default now()
+  -- + mail_sender_user_id uuid (migration 20261111000000, xem mục 6.4)
 );
 
 ```
@@ -625,6 +631,67 @@ where not exists (
 `update_my_member_profile(p_club_id uuid, p_phone text, p_facebook_url text) returns void`: chỉ sửa dòng `club_members` đang hoạt động của chính `auth.uid()` trong CLB đó. Giá trị rỗng thành `null`; `facebook_url` phải khớp regex ở trên.
 
 Các hàm `activate_term`, `admit_applications`, `update_my_member_profile`, `is_club_owner` đều `security definer`, `set search_path = public`, thu hồi quyền của `public` và chỉ cấp `execute` cho `authenticated` (và `service_role`).
+
+### 6.4. Giao việc, nhắc hạn, đóng góp (migration `20261111000000_tasks.sql`)
+
+```sql
+-- clubs: thêm cột (xem "Quyền trên clubs" bên dưới)
+alter table clubs add column mail_sender_user_id uuid references auth.users(id) on delete set null;
+
+create table tasks (
+  id uuid primary key default gen_random_uuid(),
+  club_id uuid not null references clubs(id) on delete cascade,
+  title text not null check (length(btrim(title)) between 1 and 200),
+  description text,
+  due_at timestamptz not null,
+  status text not null default 'open' check (status in ('open', 'closed')),
+  created_by uuid references club_members(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()      -- trigger set_updated_at
+);
+create index on tasks (club_id, due_at);
+
+create table task_assignees (
+  task_id uuid not null references tasks(id) on delete cascade,
+  member_id uuid not null references club_members(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'done', 'missed')),
+  completed_at timestamptz,          -- do trigger
+  note text,                         -- ghi chú của Ban chủ chốt
+  reminded_before_at timestamptz,    -- đã gửi nhắc trước hạn (service-role ghi)
+  reminded_overdue_at timestamptz,   -- đã gửi nhắc quá hạn (service-role ghi)
+  primary key (task_id, member_id)
+);
+create index on task_assignees (member_id);
+```
+
+Trigger:
+
+- `task_assignees_club_check` (`enforce_task_assignee_club`): người nhận phải cùng CLB với việc.
+- `task_assignees_completed_at` (`set_task_assignee_completed_at`): đặt `completed_at = now()` khi `status` chuyển sang `done`, về `null` khi rời `done`; đang `done` thì giữ nguyên.
+
+RLS và grant (`authenticated`; `service_role` có toàn quyền):
+
+| Bảng | Đọc | Ghi |
+|---|---|---|
+| `tasks` | admin của CLB, hoặc người nhận việc (`is_task_assignee(id)`) | admin của CLB (insert/update/delete). Grant insert `(club_id, title, description, due_at)`, update `(title, description, due_at, status)`; `created_by` chỉ do `create_task` ghi |
+| `task_assignees` | admin của CLB chứa việc (`task_club_id(task_id)`), hoặc dòng của chính mình | admin của CLB. Grant insert `(task_id, member_id)`, update `(status, note)`. `completed_at` do trigger, `reminded_*` chỉ service-role (cron, gửi nhắc ngay) |
+
+Hàm phụ `task_club_id(p_task_id)` và `is_task_assignee(p_task_id)` là `security definer` để hai bảng không gọi RLS của nhau (tránh đệ quy).
+
+Hàm nghiệp vụ (đều `security definer`, `set search_path = public`, thu hồi quyền của `public`/`anon`, cấp `execute` cho `authenticated` và `service_role`, lỗi tiếng Việt):
+
+- `create_task(p_club_id, p_title, p_description, p_due_at, p_member_ids uuid[], p_team_id) returns uuid`: chỉ admin của CLB. `p_due_at` phải sau thời điểm hiện tại (lỗi "Hạn chót phải ở tương lai."). Người nhận = `p_member_ids` + mọi thành viên đang hoạt động của `p_team_id`; ai trong `p_member_ids` cũng phải thuộc CLB và đang hoạt động; phải có ít nhất một người nhận. `created_by` = dòng `club_members` của người gọi. Tạo task và các dòng `task_assignees` trong một transaction.
+- `set_my_task_done(p_task_id, p_done boolean) returns void`: người gọi phải là người nhận đang hoạt động (`is_active`) và task phải `open`. `true` thành `done`, `false` thành `pending`; dòng `missed` không đổi được ("Việc này đã bị đánh dấu chưa hoàn thành, hãy liên hệ Ban chủ chốt.").
+- `club_contribution(p_club_id, p_from, p_to) returns table (member_id, full_name, team_id, role, is_active, assigned, done_on_time, done_late, missed, pending)`: chỉ admin. Tính trên task có `due_at` trong `[p_from, p_to)`, trả mọi thành viên của CLB kể cả khi 0 việc. Dòng `pending` của task `closed` không tính ở cột nào (kể cả `assigned`); dòng `done`/`missed` của task `closed` vẫn tính. `done_on_time` = `done` và `completed_at <= due_at`; `done_late` = `done` còn lại; `missed` = `missed` hoặc (`pending`, task `open` và `due_at < now()`); `pending` = `pending` và chưa tới hạn; `assigned` = tổng bốn số.
+
+Quyền trên `clubs`: `anon` đọc được `clubs` (policy "public read club overview") nên cột `mail_sender_user_id` (uuid tài khoản) không được lộ. Migration thu hồi mọi quyền của `public`, `anon`, `authenticated` trên `clubs` rồi chỉ cấp `select (id, name, description, created_at)` cho `anon`/`authenticated`. Hệ quả: `select("*")` trên `clubs` từ client sẽ báo thiếu quyền, phải liệt kê cột. Chỉ `service_role` đọc/ghi `mail_sender_user_id`.
+
+Luồng giao việc, nhắc hạn, đóng góp:
+
+1. Ban chủ chốt tạo việc qua `create_task` (chọn thành viên và/hoặc cả ban, đặt hạn). Có thể sửa/đóng/mở lại/xóa việc, sửa `status` và `note` của từng người nhận bằng update trực tiếp (RLS).
+2. Thành viên xem việc của mình ở `/me` (RLS chỉ cho thấy việc và dòng của chính mình), tự đánh dấu xong/bỏ đánh dấu qua `set_my_task_done`. Ban chủ chốt có thể đặt `missed`.
+3. Nhắc hạn: CLB đặt `clubs.mail_sender_user_id` (service-role, qua API) là tài khoản Gmail dùng để gửi. Cron hằng ngày (service-role) đọc các dòng `pending` của task `open`, gửi mail gộp cho mỗi người rồi ghi `reminded_before_at` (trước hạn, trong 36 giờ) hoặc `reminded_overdue_at` (quá hạn, trong 7 ngày) để không nhắc lặp. "Gửi nhắc ngay" bỏ qua mốc nhưng vẫn ghi mốc.
+4. Đóng góp: `club_contribution` tổng hợp theo khoảng thời gian; tỉ lệ hoàn thành và nhãn "Cần nhắc nhở" do giao diện tính, hệ thống không tự phạt.
 
 ## Phụ lục: policy đọc CLB cho quản trị
 
