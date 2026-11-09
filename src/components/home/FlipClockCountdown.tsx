@@ -22,10 +22,10 @@ export function FlipClockCountdown({ deadline }: FlipClockCountdownProps) {
           hideOnComplete={false}
           stopOnHiddenVisibility
           labels={["Ngày", "Giờ", "Phút", "Giây"]}
-          labelStyle={{ color: "#637887", fontSize: 11, fontWeight: 750, letterSpacing: "0.1em", textTransform: "uppercase" }}
+          labelStyle={{ color: "#516879", fontSize: 12, fontWeight: 750, letterSpacing: "0.1em", textTransform: "uppercase" }}
           digitBlockStyle={{ width: "clamp(25px, 7.5vw, 50px)", height: "clamp(48px, 13vw, 74px)", fontSize: "clamp(22px, 6vw, 40px)", color: "#ffffff", background: "#173953", borderRadius: 9, boxShadow: "0 10px 20px rgb(13 42 65 / 19%)" }}
           dividerStyle={{ color: "rgb(255 255 255 / 38%)", height: 1 }}
-          separatorStyle={{ color: "#0789d1", size: 5 }}
+          separatorStyle={{ color: "#0677b8", size: 5 }}
           spacing={{ clock: "clamp(6px, 2vw, 16px)", digitBlock: 3 }}
           duration={0.6}
           aria-label="Đếm ngược đến khi kết thúc đợt tuyển"

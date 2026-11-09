@@ -10,7 +10,7 @@ export type FormQuestion = {
   id: string;
   question_text: string;
   question_type: QuestionType;
-  field_key: "full_name" | "email" | "phone" | "student_code" | "class_name" | null;
+  field_key: "full_name" | "email" | "phone" | "student_code" | "class_name" | "facebook_url" | null;
   options: string[] | null;
   is_required: boolean;
   order_index: number;

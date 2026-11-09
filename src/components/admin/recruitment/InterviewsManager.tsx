@@ -5,13 +5,15 @@ import { getSupabaseClient } from "../../../lib/supabase/client";
 import { getNearestCampaignId } from "../../../lib/recruitment/campaign-selection";
 import { normalizeSearchText } from "../../../lib/recruitment/search";
 import { useCurrentAdminClub } from "../AdminClubContext";
+import { roleLabel } from "../roles";
 import { ApplicantAnswersModal } from "./ApplicantAnswersModal";
 
 type Campaign = { id: string; name: string; status: string; start_date: string | null; end_date: string | null; created_at: string };
 type Position = { id: string; campaign_id: string; name: string; team_id: string | null };
 type Application = { id: string; campaign_id: string; position_id: string; full_name: string | null; email: string | null; phone: string | null; student_code: string | null; class_name: string | null };
 type Session = { id: string; campaign_id: string; position_id: string | null; round: number; start_time: string; end_time: string; location: string | null; meeting_link: string | null; capacity: number | null; note: string | null };
-type Assignment = { id: string; session_id: string; application_id: string; comment: string | null };
+type Assignment = { id: string; session_id: string; application_id: string; comment: string | null; result: string; score: number | null };
+const resultLabel: Record<string, string> = { pending: "Chờ", pass: "Đạt", fail: "Không đạt", consider: "Cân nhắc" };
 type SupportAssignment = { session_id: string; member_id: string; duty: string | null };
 type Member = { id: string; full_name: string; student_code: string | null; role: string; is_active: boolean; team_id: string | null };
 type FormAnswer = { application_id: string; question_id: string; question_text: string; answer_text: string | null; answer_json: unknown };
@@ -67,6 +69,8 @@ export function InterviewsManager() {
   const [answersLoaded, setAnswersLoaded] = useState<string[]>([]);
   const [answersLoading, setAnswersLoading] = useState(false);
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+  const [draftResults, setDraftResults] = useState<Record<string, string>>({});
+  const [draftScores, setDraftScores] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -104,7 +108,7 @@ export function InterviewsManager() {
     if (sessionRows.length) {
       const sessionIds = sessionRows.map((session) => session.id);
       const [assignmentResult, supportResult] = await Promise.all([
-        supabase.from("interview_assignments").select("id,session_id,application_id,comment").in("session_id", sessionIds),
+        supabase.from("interview_assignments").select("id,session_id,application_id,comment,result,score").in("session_id", sessionIds),
         supabase.from("interview_session_members").select("session_id,member_id,duty").in("session_id", sessionIds),
       ]);
       if (assignmentResult.error || supportResult.error) setError(assignmentResult.error?.message ?? supportResult.error?.message ?? "Không tải được dữ liệu ca phỏng vấn.");
@@ -112,6 +116,8 @@ export function InterviewsManager() {
       const supportRows = (supportResult.data ?? []) as SupportAssignment[];
       setAssignments(assignmentRows); setSupport(supportRows);
       setDraftNotes(Object.fromEntries(assignmentRows.map((row) => [row.id, row.comment ?? ""])));
+      setDraftResults(Object.fromEntries(assignmentRows.map((row) => [row.id, row.result])));
+      setDraftScores(Object.fromEntries(assignmentRows.map((row) => [row.id, row.score == null ? "" : String(row.score)])));
       const selected: Record<string, string[]> = {};
       for (const row of supportRows) selected[row.session_id] = [...(selected[row.session_id] ?? []), row.member_id];
       setSupportSelection(selected);
@@ -215,12 +221,17 @@ export function InterviewsManager() {
   async function saveNote(assignment: Assignment) {
     if (!supabase || !canWrite) return;
     const comment = draftNotes[assignment.id] ?? assignment.comment ?? "";
+    const result = draftResults[assignment.id] ?? assignment.result;
+    const scoreText = (draftScores[assignment.id] ?? "").trim();
+    const score = scoreText === "" ? null : Number(scoreText);
+    if (score !== null && (!Number.isFinite(score) || score < 0 || score > 99.99)) { setError("Điểm phải nằm trong khoảng từ 0 đến 99,99."); return; }
     setBusy(true); setError(""); setNotice("");
-    const { error: updateError } = await supabase.from("interview_assignments").update({ comment: comment.trim() || null }).eq("id", assignment.id);
+    const { data: updated, error: updateError } = await supabase.from("interview_assignments").update({ comment: comment.trim() || null, result, score }).eq("id", assignment.id).select("id");
     setBusy(false);
     if (updateError) { setError(updateError.message); return; }
-    setAssignments((current) => current.map((row) => row.id === assignment.id ? { ...row, comment: comment.trim() || null } : row));
-    setNotice("Đã lưu ghi chú ứng viên.");
+    if (!updated?.length) { setError("Không lưu được đánh giá. Ứng viên có thể đã bị gỡ khỏi ca hoặc bạn không có quyền."); return; }
+    setAssignments((current) => current.map((row) => row.id === assignment.id ? { ...row, comment: comment.trim() || null, result, score } : row));
+    setNotice("Đã lưu đánh giá ứng viên.");
   }
 
   async function addCandidate(event: FormEvent<HTMLFormElement>, sessionId: string) {
@@ -312,7 +323,7 @@ export function InterviewsManager() {
       </div>
       <button disabled={busy || !campaigns.length} className="mt-4 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Tạo ca</button>
     </form>}
-    {!selectedSession && !canWrite && <p className="mb-5 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Bạn có quyền xem ca phỏng vấn. Owner/Admin có thể tạo ca và gán người hỗ trợ.</p>}
+    {!selectedSession && !canWrite && <p className="mb-5 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Bạn có quyền xem ca phỏng vấn. Ban chủ nhiệm và Ban chủ chốt có thể tạo ca và gán người hỗ trợ.</p>}
     {!selectedSession && <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border bg-white p-4"><label htmlFor="interview-campaign-filter" className="text-sm font-semibold">Lọc đợt tuyển</label><select id="interview-campaign-filter" value={campaignFilter} onChange={(event) => { setCampaignFilter(event.target.value); setPositionFilter("all"); }} className="min-w-52 rounded-lg border bg-white px-3 py-2 text-sm">{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}</select><label htmlFor="interview-position-filter" className="text-sm font-semibold">Lọc vị trí</label><select id="interview-position-filter" value={positionFilter} onChange={(event) => setPositionFilter(event.target.value)} className="min-w-52 rounded-lg border bg-white px-3 py-2 text-sm"><option value="all">Tất cả vị trí</option>{positions.filter((position) => position.campaign_id === campaignFilter).map((position) => <option key={position.id} value={position.id}>{position.name}</option>)}</select><span className="text-sm text-zinc-500">{visibleSessions.length} ca</span></div>}
     {loading ? <p className="rounded-xl border bg-white p-8 text-sm text-zinc-500">Đang tải ca phỏng vấn…</p> : selectedSession ? (() => {
       const session = sessions.find((item) => item.id === selectedSession);
@@ -367,7 +378,7 @@ export function InterviewsManager() {
         <div className="flex flex-col gap-6 border-t p-5">
           <section className="order-2"><h3 className="font-semibold">Ứng viên trong ca</h3>{canWrite && candidates.length > 0 && <form onSubmit={(event) => void addCandidate(event, session.id)} className="mt-3 grid gap-2 rounded-lg border bg-zinc-50 p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"><label className="text-sm">Tìm ứng viên<input type="search" value={candidateSearch} onChange={(event) => setCandidateSearch(event.target.value)} placeholder="Họ tên, mã sinh viên hoặc lớp" className={inputClass} /></label><label className="text-sm">Ứng viên<select required value={candidateSelection[session.id] ?? ""} onChange={(event) => setCandidateSelection((current) => ({ ...current, [session.id]: event.target.value }))} className={inputClass}><option value="" disabled>Chọn ứng viên</option>{filteredCandidates.map((application) => <option key={application.id} value={application.id}>{application.full_name} · {application.student_code || "Chưa có MSSV"} · {application.class_name || "Chưa có lớp"}</option>)}</select></label><button disabled={busy || !filteredCandidates.length} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Thêm vào ca</button>{candidateSearch && !filteredCandidates.length && <p className="text-sm text-zinc-500 sm:col-span-3">Không tìm thấy ứng viên phù hợp.</p>}</form>}
             {session.meeting_link && <a href={session.meeting_link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-emerald-800 underline">Mở đường dẫn họp</a>}{session.note && <p className="mt-2 text-sm text-zinc-600">Ghi chú ca: {session.note}</p>}
-            {sessionAssignments.length ? <><label className="mt-3 block max-w-md text-sm font-medium">Tìm ứng viên trong ca<input type="search" value={sessionApplicantSearch} onChange={(event) => setSessionApplicantSearch(event.target.value)} placeholder="Họ tên, mã sinh viên hoặc lớp" className={inputClass} /></label><div className="mt-3 overflow-x-auto rounded-lg border"><table className="w-full min-w-[950px] text-left text-sm"><thead className="bg-zinc-50 text-xs uppercase text-zinc-500"><tr><th className="px-4 py-3">Ứng viên</th><th className="w-28 px-2 py-3">Vị trí</th><th className="px-4 py-3">Câu trả lời trong form</th><th className="px-4 py-3">Ghi chú</th></tr></thead><tbody className="divide-y">{filteredSessionAssignments.map((assignment) => {
+            {sessionAssignments.length ? <><label className="mt-3 block max-w-md text-sm font-medium">Tìm ứng viên trong ca<input type="search" value={sessionApplicantSearch} onChange={(event) => setSessionApplicantSearch(event.target.value)} placeholder="Họ tên, mã sinh viên hoặc lớp" className={inputClass} /></label><div className="mt-3 overflow-x-auto rounded-lg border"><table className="w-full min-w-[1100px] text-left text-sm"><thead className="bg-zinc-50 text-xs uppercase text-zinc-500"><tr><th className="px-4 py-3">Ứng viên</th><th className="w-28 px-2 py-3">Vị trí</th><th className="px-4 py-3">Câu trả lời trong form</th><th className="px-4 py-3">Kết quả / điểm</th><th className="px-4 py-3">Ghi chú</th></tr></thead><tbody className="divide-y">{filteredSessionAssignments.map((assignment) => {
               const applicant = applicationById.get(assignment.application_id);
               if (!applicant) return null;
               const position = positionById.get(applicant.position_id);
@@ -375,12 +386,13 @@ export function InterviewsManager() {
                 <td className="px-4 py-2"><p className="font-medium">{applicant.full_name}</p><p className="text-xs text-zinc-600">{applicant.email}</p><p className="text-xs text-zinc-600">{applicant.phone || "Chưa có số điện thoại"}</p><p className="text-xs text-zinc-500">{applicant.student_code || ""}</p></td>
                 <td className="w-28 max-w-28 px-2 py-2"><span className="block truncate" title={position?.name ?? "Vị trí"}>{position?.name ?? "Vị trí"}</span></td>
                 <td className="px-4 py-2">{answersLoading && !answersLoaded.includes(applicant.id) ? <span className="text-xs text-zinc-500">Đang tải…</span> : <ApplicantAnswersModal applicantName={applicant.full_name ?? "Ứng viên"} answers={answers[applicant.id] ?? []} />}</td>
-                <td className="min-w-[260px] px-4 py-2">{canWrite ? <><label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Ghi chú<textarea rows={2} value={draftNotes[assignment.id] ?? ""} onChange={(event) => setDraftNotes((current) => ({ ...current, [assignment.id]: event.target.value }))} className={inputClass} placeholder="Nhận xét sau phỏng vấn" /></label><button disabled={busy} onClick={() => void saveNote(assignment)} className="mt-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-50">Lưu ghi chú</button></> : <p className="whitespace-pre-wrap text-zinc-700">{assignment.comment || "—"}</p>}</td>
+                <td className="min-w-[150px] px-4 py-2">{canWrite ? <><label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Kết quả<select value={draftResults[assignment.id] ?? assignment.result} onChange={(event) => setDraftResults((current) => ({ ...current, [assignment.id]: event.target.value }))} className={inputClass}>{Object.entries(resultLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="mt-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Điểm<input type="number" min="0" max="99.99" step="0.01" inputMode="decimal" value={draftScores[assignment.id] ?? ""} onChange={(event) => setDraftScores((current) => ({ ...current, [assignment.id]: event.target.value }))} className={inputClass} /></label></> : <><p className="font-medium">{resultLabel[assignment.result] ?? assignment.result}</p><p className="text-xs text-zinc-500">Điểm: {assignment.score ?? "—"}</p></>}</td>
+                <td className="min-w-[260px] px-4 py-2">{canWrite ? <><label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Ghi chú<textarea rows={2} value={draftNotes[assignment.id] ?? ""} onChange={(event) => setDraftNotes((current) => ({ ...current, [assignment.id]: event.target.value }))} className={inputClass} placeholder="Nhận xét sau phỏng vấn" /></label><button disabled={busy} onClick={() => void saveNote(assignment)} className="mt-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-50">{busy ? "Đang lưu…" : "Lưu đánh giá"}</button></> : <p className="whitespace-pre-wrap text-zinc-700">{assignment.comment || "—"}</p>}</td>
               </tr>;
             })}</tbody></table></div>{!filteredSessionAssignments.length && <p className="mt-2 text-sm text-zinc-500">Không tìm thấy ứng viên phù hợp.</p>}</> : <p className="mt-2 text-sm text-zinc-500">Chưa có ứng viên được xếp vào ca.</p>}
           </section>
           <section className="order-1"><h3 className="font-semibold">Thành viên hỗ trợ phỏng vấn</h3>
-            {!teamId ? <p className="mt-2 text-sm text-amber-800">Vị trí này chưa gắn ban nên không thể chọn thành viên hỗ trợ theo ban.</p> : canWrite ? <><label className="mt-3 block max-w-md text-sm font-medium">Tìm thành viên hỗ trợ<input type="search" value={supportSearch} onChange={(event) => setSupportSearch(event.target.value)} placeholder="Họ tên hoặc mã sinh viên" className={inputClass} /></label><div className="mt-3 grid gap-2 sm:grid-cols-2">{filteredSupportMembers.map((member) => <label key={member.id} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><input type="checkbox" checked={currentSupport.includes(member.id)} onChange={() => toggleSupport(session.id, member.id)} /><span>{member.full_name}</span><span className="ml-auto text-xs text-zinc-400">{member.role}{member.is_active ? "" : " · đã ngừng"}</span></label>)}</div>{!filteredSupportMembers.length && <p className="mt-2 text-sm text-zinc-500">{hasActiveSupportMembers ? "Không tìm thấy thành viên phù hợp." : "Ban này chưa có thành viên đang hoạt động."}</p>}<button disabled={busy} onClick={() => void saveSupport(session)} className="mt-3 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Lưu người hỗ trợ</button></> : <ul className="mt-3 space-y-2">{helpers.map((row) => <li key={row.member_id} className="rounded-lg border p-3 text-sm">{members.find((member) => member.id === row.member_id)?.full_name ?? "Thành viên CLB"}{row.duty ? ` · ${row.duty}` : ""}</li>)}{!helpers.length && <li className="text-sm text-zinc-500">Chưa gán người hỗ trợ.</li>}</ul>}
+            {!teamId ? <p className="mt-2 text-sm text-amber-800">Vị trí này chưa gắn ban nên không thể chọn thành viên hỗ trợ theo ban.</p> : canWrite ? <><label className="mt-3 block max-w-md text-sm font-medium">Tìm thành viên hỗ trợ<input type="search" value={supportSearch} onChange={(event) => setSupportSearch(event.target.value)} placeholder="Họ tên hoặc mã sinh viên" className={inputClass} /></label><div className="mt-3 grid gap-2 sm:grid-cols-2">{filteredSupportMembers.map((member) => <label key={member.id} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><input type="checkbox" checked={currentSupport.includes(member.id)} onChange={() => toggleSupport(session.id, member.id)} /><span>{member.full_name}</span><span className="ml-auto text-xs text-zinc-400">{roleLabel(member.role)}{member.is_active ? "" : " · đã ngừng"}</span></label>)}</div>{!filteredSupportMembers.length && <p className="mt-2 text-sm text-zinc-500">{hasActiveSupportMembers ? "Không tìm thấy thành viên phù hợp." : "Ban này chưa có thành viên đang hoạt động."}</p>}<button disabled={busy} onClick={() => void saveSupport(session)} className="mt-3 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Lưu người hỗ trợ</button></> : <ul className="mt-3 space-y-2">{helpers.map((row) => <li key={row.member_id} className="rounded-lg border p-3 text-sm">{members.find((member) => member.id === row.member_id)?.full_name ?? "Thành viên CLB"}{row.duty ? ` · ${row.duty}` : ""}</li>)}{!helpers.length && <li className="text-sm text-zinc-500">Chưa gán người hỗ trợ.</li>}</ul>}
           </section>
         </div>
       </article>;

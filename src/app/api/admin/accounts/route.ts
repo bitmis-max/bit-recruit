@@ -1,19 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 import { getClubAdminContext } from "../../../../lib/admin/api";
+import { createOrLinkMemberAccount, EMAIL_PATTERN, findUserByEmail, isLinkableUser, UNVERIFIED_ACCOUNT_MESSAGE } from "../../../../lib/admin/accounts";
 
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
-
-async function findUserByEmail(admin: SupabaseClient, email: string) {
-  for (let page = 1; page <= 25; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) throw new Error(error.message);
-    const match = data.users.find((user: { email?: string }) => user.email?.toLowerCase() === email.toLowerCase());
-    if (match) return match;
-    if (data.users.length < 1000) break;
-  }
-  return null;
-}
 
 export async function GET(request: NextRequest) {
   const clubId = request.nextUrl.searchParams.get("clubId") ?? "";
@@ -42,17 +32,34 @@ export async function POST(request: NextRequest) {
   if (context.error) return context.error;
   const memberId = text(body?.memberId);
   const email = text(body?.email).toLowerCase();
-  if (!memberId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: "Chọn thành viên và nhập email hợp lệ." }, { status: 400 });
-  const { data: member, error: memberError } = await context.admin.from("club_members").select("id,full_name,user_id")
+  if (!memberId || !EMAIL_PATTERN.test(email)) return NextResponse.json({ error: "Chọn thành viên và nhập email hợp lệ." }, { status: 400 });
+  const { data: member, error: memberError } = await context.admin.from("club_members").select("id,full_name,user_id,role")
     .eq("id", memberId).eq("club_id", clubId).maybeSingle();
   if (memberError || !member) return NextResponse.json({ error: "Thành viên không thuộc CLB này." }, { status: 404 });
+  if (member.role === "owner" && context.role !== "owner") {
+    return NextResponse.json({ error: "Chỉ owner mới có thể gán tài khoản cho thành viên owner." }, { status: 403 });
+  }
+  if (member.role === "admin" && context.role !== "owner") {
+    return NextResponse.json({ error: "Chỉ Ban chủ nhiệm mới có thể gán tài khoản cho Ban chủ chốt." }, { status: 403 });
+  }
   if (member.user_id) return NextResponse.json({ error: "Thành viên này đã được gán tài khoản." }, { status: 409 });
+
+  if (body?.mode === "create") {
+    // Không gửi mail: thành viên đăng nhập bằng Google cùng email. Email đã có tài khoản thì gắn như mode link.
+    try {
+      const result = await createOrLinkMemberAccount(context.admin, { clubId, memberId, fullName: member.full_name, email });
+      if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.httpStatus });
+      return NextResponse.json({ ok: true, invited: false, data: { status: result.status } }, { status: 201 });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Không tạo được tài khoản." }, { status: 500 });
+    }
+  }
 
   let account: User | null = null;
   try {
     if (body?.mode === "invite") {
       const requestOrigin = new URL(request.url).origin;
-      const redirectTo = new URL("/auth/callback?next=%2Fadmin", requestOrigin).toString();
+      const redirectTo = new URL("/auth/callback?next=%2Fmanage-clubs", requestOrigin).toString();
       const { data, error } = await context.admin.auth.admin.inviteUserByEmail(email, {
         data: { full_name: member.full_name },
         redirectTo,
@@ -62,6 +69,7 @@ export async function POST(request: NextRequest) {
     } else if (body?.mode === "link") {
       account = await findUserByEmail(context.admin, email);
       if (!account) return NextResponse.json({ error: "Không tìm thấy tài khoản có email này." }, { status: 404 });
+      if (!isLinkableUser(account)) return NextResponse.json({ error: UNVERIFIED_ACCOUNT_MESSAGE }, { status: 409 });
     } else {
       return NextResponse.json({ error: "Thao tác tài khoản không hợp lệ." }, { status: 400 });
     }
@@ -93,10 +101,23 @@ export async function PATCH(request: NextRequest) {
   const accountId = text(body?.accountId);
   const email = text(body?.email).toLowerCase();
   const fullName = text(body?.fullName);
-  const { data: assignment } = await context.admin.from("club_members").select("id")
+  const { data: assignment } = await context.admin.from("club_members").select("id,role")
     .eq("club_id", clubId).eq("user_id", accountId).maybeSingle();
   if (!assignment) return NextResponse.json({ error: "Tài khoản không được gán trong CLB này." }, { status: 404 });
-  if (!accountId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !fullName) return NextResponse.json({ error: "Tên hoặc email không hợp lệ." }, { status: 400 });
+  if (assignment.role === "owner" && context.role !== "owner") {
+    return NextResponse.json({ error: "Chỉ owner mới có thể sửa tài khoản owner." }, { status: 403 });
+  }
+  if (assignment.role === "admin" && context.role !== "owner") {
+    return NextResponse.json({ error: "Chỉ owner mới có thể sửa tài khoản Ban chủ chốt." }, { status: 403 });
+  }
+  // Email và tên là của tài khoản dùng chung, nên không cho sửa nếu tài khoản còn thuộc CLB khác.
+  const { data: otherMembership, error: otherError } = await context.admin.from("club_members").select("id")
+    .eq("user_id", accountId).neq("club_id", clubId).limit(1).maybeSingle();
+  if (otherError) return NextResponse.json({ error: "Không kiểm tra được tài khoản. Vui lòng thử lại." }, { status: 500 });
+  if (otherMembership) {
+    return NextResponse.json({ error: "Tài khoản này còn thuộc CLB khác nên không thể đổi email hoặc tên tại đây." }, { status: 403 });
+  }
+  if (!accountId || !EMAIL_PATTERN.test(email) || !fullName) return NextResponse.json({ error: "Tên hoặc email không hợp lệ." }, { status: 400 });
   const { error } = await context.admin.auth.admin.updateUserById(accountId, { email, user_metadata: { full_name: fullName } });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
@@ -108,9 +129,12 @@ export async function DELETE(request: NextRequest) {
   const context = await getClubAdminContext(clubId);
   if (context.error) return context.error;
   if (accountId === context.user.id) return NextResponse.json({ error: "Không thể tự gỡ tài khoản đang quản trị CLB." }, { status: 400 });
-  const { data: assignment } = await context.admin.from("club_members").select("id,user_id")
+  const { data: assignment } = await context.admin.from("club_members").select("id,user_id,role")
     .eq("club_id", clubId).eq("user_id", accountId).maybeSingle();
   if (!assignment) return NextResponse.json({ error: "Tài khoản không được gán trong CLB này." }, { status: 404 });
+  if (assignment.role === "owner" && context.role !== "owner") {
+    return NextResponse.json({ error: "Chỉ owner mới có thể gỡ tài khoản owner." }, { status: 403 });
+  }
   const { error } = await context.admin.from("club_members").update({ user_id: null }).eq("id", assignment.id).eq("club_id", clubId);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });

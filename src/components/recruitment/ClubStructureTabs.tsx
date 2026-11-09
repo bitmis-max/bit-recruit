@@ -32,7 +32,6 @@ export function ClubStructureTabs({ teams, loadError }: { teams: Team[]; loadErr
           {activeTeam && (
             <div key={activeTeam.id} id={`team-panel-${activeTeam.id}`} role="tabpanel" aria-labelledby={`team-tab-${activeTeam.id}`} className="club-team-panel">
               <div className="club-team-description">
-                <p className="clubs-section-eyebrow">CÁC BAN CỦA BIT</p>
                 <h2>{activeTeam.name}</h2>
                 {activeTeam.description?.trim() ? (
                   <p className="club-team-copy">{activeTeam.description}</p>

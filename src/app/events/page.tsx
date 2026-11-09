@@ -75,7 +75,7 @@ async function EventsLoadedSections() {
       </section>
 
       <section className="about-cta events-cta">
-        <div className="about-cta-heading"><p className="about-eyebrow">Bạn đã sẵn sàng?</p><h2>Hẹn gặp bạn tại BIT.</h2></div>
+        <div className="about-cta-heading"><h2><span className="about-cta-lead">Bạn đã sẵn sàng?</span> Hẹn gặp bạn tại BIT.</h2></div>
         <FlipClockCountdown deadline={deadline} />
       </section>
     </>

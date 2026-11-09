@@ -2,13 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "../../../lib/supabase/server";
 import { encryptGoogleRefreshToken } from "../../../lib/email/google-token";
+import { safeNextPath } from "../../../lib/auth/safe-next";
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const connectGmail = requestUrl.searchParams.get("connect_gmail") === "1";
   const requestedNext = requestUrl.searchParams.get("next");
-  const next = requestedNext?.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/";
+  const next = safeNextPath(requestedNext, "/");
   const supabase = await createSupabaseServerClient();
 
   if (code && supabase) {

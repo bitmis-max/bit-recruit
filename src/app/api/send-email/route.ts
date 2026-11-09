@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { EmailAttachment } from "../../../lib/email/template";
 import { createSupabaseServerClient } from "../../../lib/supabase/server";
 import { decryptGoogleRefreshToken } from "../../../lib/email/google-token";
+import { fetchPublicFile } from "../../../lib/security/safe-fetch";
 
 export const runtime = "nodejs";
 
@@ -97,14 +98,15 @@ export async function POST(request: Request) {
     const driveId = body.driveId?.trim();
     const attachmentName = body.attachmentName?.trim();
 
+    const rawAttachmentUrl = typeof body.attachmentUrl === "string" ? body.attachmentUrl.trim() : "";
     const attachmentUrl =
-      body.attachmentUrl ??
-      (driveId ? `https://drive.google.com/uc?export=download&id=${driveId}` : "");
+      rawAttachmentUrl ||
+      (driveId ? `https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveId)}` : "");
 
     if (!to || !from || !subject || !html) {
       debugLog("Invalid payload", { to, from, subject });
       return Response.json(
-        { ok: false, error: "Invalid payload" },
+        { ok: false, error: "Thiếu người nhận, người gửi, tiêu đề hoặc nội dung." },
         { status: 400 }
       );
     }
@@ -115,35 +117,19 @@ export async function POST(request: Request) {
 
     if (attachmentUrl) {
       debugLog("Fetching attachment", { url: attachmentUrl });
-      const fileResponse = await fetch(attachmentUrl);
-      if (!fileResponse.ok) {
-        const errorText = await fileResponse.text();
-        debugLog("Attachment download failed", {
-          status: fileResponse.status,
-          errorText,
+      try {
+        const file = await fetchPublicFile(attachmentUrl, { maxBytes: MAX_ATTACHMENT_BYTES });
+        attachments.push({
+          filename: attachmentName || getFileNameFromUrl(file.finalUrl),
+          content: file.buffer,
+          contentType: file.contentType ?? undefined,
         });
-        return Response.json(
-          { ok: false, error: "Attachment download failed" },
-          { status: 400 }
-        );
+      } catch (error) {
+        // fetchPublicFile chỉ ném lỗi tiếng Việt, an toàn để trả về cho người dùng.
+        const message = error instanceof Error ? error.message : "Không tải được tệp đính kèm.";
+        debugLog("Attachment download failed", { message });
+        return Response.json({ ok: false, error: message }, { status: 400 });
       }
-
-      const arrayBuffer = await fileResponse.arrayBuffer();
-      if (arrayBuffer.byteLength > MAX_ATTACHMENT_BYTES) {
-        debugLog("Attachment too large", {
-          size: arrayBuffer.byteLength,
-        });
-        return Response.json(
-          { ok: false, error: "Attachment too large" },
-          { status: 400 }
-        );
-      }
-
-      attachments.push({
-        filename: attachmentName || getFileNameFromUrl(attachmentUrl),
-        content: Buffer.from(arrayBuffer),
-        contentType: fileResponse.headers.get("content-type") ?? undefined,
-      });
     }
 
     if (body.imageAttachment) {
@@ -198,7 +184,7 @@ export async function POST(request: Request) {
         errorText,
       });
       return Response.json(
-        { ok: false, error: `Gmail API error: ${errorText}` },
+        { ok: false, error: "Gmail từ chối gửi thư. Hãy kiểm tra quyền Gmail hoặc kết nối lại Google." },
         { status: gmailResponse.status }
       );
     }
@@ -209,6 +195,6 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     debugLog("Unhandled error", { message });
-    return Response.json({ ok: false, error: message }, { status: 500 });
+    return Response.json({ ok: false, error: "Không gửi được email. Vui lòng thử lại." }, { status: 500 });
   }
 }

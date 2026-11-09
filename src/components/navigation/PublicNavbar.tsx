@@ -16,6 +16,7 @@ export function PublicNavbar() {
   const supabase = useMemo(() => getSupabaseClient(), []);
   const [user, setUser] = useState<User | null>(null);
   const [managedClubs, setManagedClubs] = useState<ClubOption[]>([]);
+  const [hasMembership, setHasMembership] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -26,11 +27,14 @@ export function PublicNavbar() {
       setUser(nextUser);
       if (!nextUser) {
         setManagedClubs([]);
+        setHasMembership(false);
         return;
       }
       const { data } = await supabase.from("club_members").select("role,club_id")
         .eq("user_id", nextUser.id).eq("is_active", true);
-      const clubs = ((data ?? []) as Membership[]).filter(({ role }) => ["owner", "organizer", "admin"].includes(role));
+      const memberships = (data ?? []) as Membership[];
+      if (active) setHasMembership(memberships.length > 0);
+      const clubs = memberships.filter(({ role }) => ["owner", "admin"].includes(role));
       if (!active || !clubs.length) { if (active) setManagedClubs([]); return; }
       const { data: clubRows } = await supabase.from("clubs").select("id,name").in("id", clubs.map(({ club_id }) => club_id));
       if (active) setManagedClubs((clubRows ?? []) as ClubOption[]);
@@ -81,7 +85,8 @@ export function PublicNavbar() {
                 <span className="account-name">{name}</span><span className="account-chevron" aria-hidden="true">⌄</span>
               </button>
               {menuOpen && <div className="account-menu">
-                {managedClubs.length > 0 && <div className="account-menu-section"><span className="account-menu-label">Đi tới CLB</span>{managedClubs.map((club) => <button key={club.id} onClick={() => visitClub(club.id)}>{club.name}<span aria-hidden="true">↗</span></button>)}</div>}
+                {managedClubs.length > 0 && <div className="account-menu-section"><span className="account-menu-label">Quản trị</span>{managedClubs.map((club) => <button key={club.id} onClick={() => visitClub(club.id)}>{club.name}<span aria-hidden="true">↗</span></button>)}</div>}
+                {hasMembership && <button onClick={() => { setMenuOpen(false); router.push("/me"); }}>Trang thành viên</button>}
                 <button onClick={() => void signOut()}>Đăng xuất</button>
               </div>}
             </div>
@@ -90,7 +95,7 @@ export function PublicNavbar() {
         <button className="mobile-menu-button" aria-label="Mở menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>☰</button>
         {menuOpen && <div className="mobile-nav-menu">
           <Link href="/">Trang chủ</Link><Link href="/clubs">Giới thiệu</Link><Link href="/events">Sự kiện</Link>
-          {user ? <>{managedClubs.map((club) => <button key={club.id} onClick={() => visitClub(club.id)}>Đi tới {club.name}</button>)}<button onClick={() => void signOut()}>Đăng xuất</button></> : null}
+          {user ? <>{managedClubs.map((club) => <button key={club.id} onClick={() => visitClub(club.id)}>Quản trị {club.name}</button>)}{hasMembership && <Link href="/me">Trang thành viên</Link>}<button onClick={() => void signOut()}>Đăng xuất</button></> : null}
         </div>}
       </nav>
     </header>

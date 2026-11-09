@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../hooks/useAuth";
+import { safeNextPath } from "../../lib/auth/safe-next";
 import { LoginGate } from "../../components/auth/LoginGate";
 import { SetupGuide } from "../../components/auth/SetupGuide";
 
@@ -19,8 +20,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!loading && session) {
       // Clear URL parameters to hide sensitive tokens
-      const requestedNext = new URLSearchParams(window.location.search).get("next");
-      const destination = requestedNext?.startsWith("/manage-clubs") && !requestedNext.startsWith("//") ? requestedNext : "/manage-clubs";
+      const destination = safeNextPath(new URLSearchParams(window.location.search).get("next"));
       window.history.replaceState({}, document.title, destination);
       router.replace(destination);
     }

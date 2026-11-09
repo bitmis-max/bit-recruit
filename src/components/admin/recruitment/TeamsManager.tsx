@@ -118,6 +118,7 @@ export function TeamsManager() {
     setIsCreating(false);
     setNotice(isCreating ? "Đã tạo ban." : "Đã lưu thay đổi.");
     setImageFile(null);
+    window.dispatchEvent(new Event("bit:teams-changed"));
   }
 
   async function deleteTeam() {
@@ -147,6 +148,7 @@ export function TeamsManager() {
     setTeams(rows);
     setSelectedId(rows[0]?.id ?? "");
     setNotice("Đã xóa ban.");
+    window.dispatchEvent(new Event("bit:teams-changed"));
   }
 
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">

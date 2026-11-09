@@ -5,8 +5,11 @@ Nền tảng: **Supabase (PostgreSQL)**
 ## 1. Nguyên tắc thiết kế
 
 - **Ứng viên không cần tài khoản.** Thông tin cá nhân lưu thẳng trong `applications`.
-- **Thành viên CLB (`club_members`) không nhất thiết có tài khoản.** Họ chỉ được gán vào ca phỏng vấn để hỗ trợ.
-- **Chỉ ban quản trị mới đăng nhập.** Dùng `auth.users` của Supabase, bảng `profiles` để lưu thông tin thêm, cột `club_members.role` để phân quyền theo từng CLB.
+- **Thành viên CLB (`club_members`) không nhất thiết có tài khoản.** Thành viên có tài khoản (`user_id`) đăng nhập được; vai trò `member` chỉ vào trang cá nhân `/me`.
+- **Vai trò theo từng CLB** nằm ở `club_members.role`: `owner` (Ban chủ nhiệm), `admin` (Ban chủ chốt), `member` (Thành viên). `club_members.title` là chức danh hiển thị, không ảnh hưởng quyền.
+- **Ứng viên không phải vai trò.** Đơn `passed` được Ban chủ chốt "kết nạp" thành dòng `club_members` vai trò `member` (hàm `admit_applications`).
+- **Nhiệm kỳ** (`club_terms`, `club_term_roles`): Ban chủ nhiệm soạn danh sách Ban chủ nhiệm/Ban chủ chốt cho nhiệm kỳ mới ở trạng thái nháp, rồi kích hoạt (`activate_term`) để đổi vai trò hàng loạt.
+- Dùng `auth.users` của Supabase, bảng `profiles` để lưu thông tin thêm.
 - **Không dùng bộ 4 bảng RBAC** (`roles`, `permissions`, `role_permissions`, `user_roles`). Vai trò là enum, quyền được kiểm soát bằng **RLS policy**.
 - **Đánh giá đơn giản:** điểm, nhận xét, kết quả nằm trực tiếp trong `interview_assignments`.
 - **Hỗ trợ nhiều CLB** dùng chung hệ thống (hầu hết bảng truy ngược được về `club_id`).
@@ -17,6 +20,10 @@ Nền tảng: **Supabase (PostgreSQL)**
 erDiagram
     clubs ||--o{ club_members : has
     clubs ||--o{ teams : has
+    clubs ||--o{ club_terms : has
+    club_terms ||--o{ club_term_roles : lists
+    club_members ||--o{ club_term_roles : appointed
+    club_members ||--o{ applications : admitted_from
     teams ||--o{ club_members : groups
     clubs ||--o{ recruitment_campaigns : runs
 
@@ -49,7 +56,9 @@ erDiagram
 | Tài khoản & quyền | `profiles` | Thông tin mở rộng của `auth.users` |
 | CLB | `clubs` | Câu lạc bộ |
 | | `teams` | Các ban trong CLB |
-| | `club_members` | Danh sách thành viên (có thể không có tài khoản) |
+| | `club_members` | Danh sách thành viên (có thể không có tài khoản), kèm vai trò |
+| | `club_terms` | Nhiệm kỳ của CLB (`draft`, `active`, `ended`) |
+| | `club_term_roles` | Danh sách Ban chủ nhiệm/Ban chủ chốt của một nhiệm kỳ |
 | tuyển gen | `recruitment_campaigns` | Đợt tuyển |
 | | `recruitment_positions` | Vị trí tuyển trong đợt |
 | | `form_templates` | Mẫu biểu mẫu có thể tái sử dụng |
@@ -64,10 +73,13 @@ erDiagram
 
 ## 4. Script SQL
 
+Schema gốc, RLS, function và seed tối thiểu nằm trong migration baseline `supabase/migrations/20261023000000_init.sql`. Vai trò thành viên, nhiệm kỳ và kết nạp được thêm bởi `supabase/migrations/20261110000000_member_roles_terms.sql` (các khối SQL bên dưới đã phản ánh trạng thái sau migration này). Các script tăng dần trước đây chỉ còn giá trị tham khảo trong `supabase/migration/legacy/` và không cần chạy trên database mới. Hướng dẫn bootstrap owner đầu tiên nằm trong `README.md`.
+
 ### 4.1. Enum
 
 ```sql
-create type club_role as enum ('owner', 'admin', 'organizer');
+-- 'member' đổi tên từ 'organizer' ở migration 20261110000000
+create type club_role as enum ('owner', 'admin', 'member');
 
 create type campaign_status as enum ('draft', 'open', 'closed', 'done');
 
@@ -123,13 +135,47 @@ create table club_members (
   club_id uuid not null references clubs(id) on delete cascade,
   team_id uuid references teams(id) on delete set null,
   user_id uuid references auth.users(id) on delete set null, -- không bắt buộc
-  role club_role not null default 'organizer',
+  role club_role not null default 'member',
   student_code text,
   full_name text not null,
   class_name text,
+  email text,
+  phone text,
+  facebook_url text check (facebook_url is null or facebook_url ~ '^https://(www\.|m\.|web\.)?(facebook|fb)\.com/.+'),
+  title text,                                  -- chức danh hiển thị (vd. "Phó chủ nhiệm"), không ảnh hưởng quyền
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  unique (club_id, student_code)
+  unique (club_id, student_code),
+  unique (club_id, user_id)
+);
+
+-- Một email chỉ thuộc một thành viên trong CLB
+create unique index club_members_club_email_unique
+  on club_members (club_id, lower(email)) where email is not null;
+
+-- Nhiệm kỳ: tối đa một nhiệm kỳ 'active' mỗi CLB
+create table club_terms (
+  id uuid primary key default gen_random_uuid(),
+  club_id uuid not null references clubs(id) on delete cascade,
+  name text not null,
+  start_date date,
+  end_date date,
+  status text not null default 'draft' check (status in ('draft', 'active', 'ended')),
+  activated_at timestamptz,
+  activated_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  check (start_date is null or end_date is null or end_date >= start_date)
+);
+create unique index club_terms_one_active_idx on club_terms (club_id) where status = 'active';
+
+-- Danh sách Ban chủ nhiệm/Ban chủ chốt của nhiệm kỳ (trigger: member và team cùng CLB với term)
+create table club_term_roles (
+  term_id uuid not null references club_terms(id) on delete cascade,
+  member_id uuid not null references club_members(id) on delete cascade,
+  role club_role not null check (role in ('owner', 'admin')),
+  title text,
+  team_id uuid references teams(id) on delete set null,
+  primary key (term_id, member_id)
 );
 ```
 
@@ -173,7 +219,7 @@ create table form_template_questions (
   template_id uuid not null references form_templates(id) on delete cascade,
   question_text text not null,
   question_type question_type not null default 'text',
-  field_key text check (field_key is null or field_key in ('full_name', 'email', 'phone', 'student_code', 'class_name')),
+  field_key text check (field_key is null or field_key in ('full_name', 'email', 'phone', 'student_code', 'class_name', 'facebook_url')),
   options jsonb,
   is_required boolean not null default false,
   order_index int not null default 0,
@@ -195,14 +241,14 @@ create table form_questions (
   form_id uuid not null references application_forms(id) on delete cascade,
   question_text text not null,
   question_type question_type not null default 'text',
-  field_key text check (field_key is null or field_key in ('full_name', 'email', 'phone', 'student_code', 'class_name')),
+  field_key text check (field_key is null or field_key in ('full_name', 'email', 'phone', 'student_code', 'class_name', 'facebook_url')),
   options jsonb,                         -- danh sách lựa chọn cho single/multi_choice
   is_required boolean not null default false,
   order_index int not null default 0,
   created_at timestamptz not null default now()
 );
 
-`field_key` ánh xạ một câu hỏi vào đúng một cột hồ sơ ứng viên: `full_name`, `email`, `phone`, `student_code` hoặc `class_name`. Giá trị `NULL` dành cho câu hỏi tùy chỉnh và câu trả lời được lưu trong `application_answers`. Mỗi `field_key` chỉ xuất hiện một lần trong cùng form/mẫu. Khi tạo form, mọi câu hỏi mẫu (kể cả câu hỏi thông tin ứng viên) được sao chép sang `form_questions`.
+`field_key` ánh xạ một câu hỏi vào đúng một cột hồ sơ ứng viên: `full_name`, `email`, `phone`, `student_code`, `class_name` hoặc `facebook_url` (phải là link `https://facebook.com/...` hoặc `https://fb.com/...`). Giá trị `NULL` dành cho câu hỏi tùy chỉnh và câu trả lời được lưu trong `application_answers`. Mỗi `field_key` chỉ xuất hiện một lần trong cùng form/mẫu. Khi tạo form, mọi câu hỏi mẫu (kể cả câu hỏi thông tin ứng viên) được sao chép sang `form_questions`.
 
 
 create table applications (
@@ -216,8 +262,10 @@ create table applications (
   phone text,
   student_code text,
   class_name text,
+  facebook_url text check (facebook_url is null or facebook_url ~ '^https://(www\.|m\.|web\.)?(facebook|fb)\.com/.+'),
 
   status application_status not null default 'submitted',
+  admitted_member_id uuid references club_members(id) on delete set null, -- có giá trị = đã kết nạp
   tracking_token text not null unique default encode(gen_random_bytes(16), 'hex'),
   submitted_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -295,6 +343,9 @@ create index on applications (position_id);
 create index on application_answers (application_id);
 create index on interview_sessions (position_id, start_time);
 create index on interview_assignments (session_id);
+create index on club_terms (club_id);
+create index on club_term_roles (member_id);
+create index on applications (admitted_member_id) where admitted_member_id is not null;
 ```
 
 ## 5. Bảo mật với Supabase (RLS)
@@ -316,9 +367,11 @@ alter table application_answers enable row level security;
 alter table interview_sessions enable row level security;
 alter table interview_assignments enable row level security;
 alter table interview_session_members enable row level security;
+alter table club_terms enable row level security;
+alter table club_term_roles enable row level security;
 ```
 
-Mẫu là dữ liệu dùng chung toàn hệ thống; owner/admin của ít nhất một CLB được quản lý mẫu trong trang **Quản lý biểu mẫu**. Chỉ nhóm này có quyền đọc và ghi mẫu qua RLS. Khi tạo form, quản trị viên chọn template; ứng dụng tạo `application_forms` với `source_template_id` rồi sao chép toàn bộ câu hỏi (kể cả `field_key`) cùng câu hỏi chọn ca phỏng vấn trong một RPC/transaction. Các thay đổi ở template chỉ áp dụng cho lần khởi tạo form tiếp theo. Triển khai luồng này trong `supabase/migration/create_application_form_from_template.sql`.
+Mẫu là dữ liệu dùng chung toàn hệ thống; owner/admin của ít nhất một CLB được quản lý mẫu trong trang **Quản lý biểu mẫu**. Chỉ nhóm này có quyền đọc và ghi mẫu qua RLS. Khi tạo form, quản trị viên chọn template; ứng dụng tạo `application_forms` với `source_template_id` rồi sao chép toàn bộ câu hỏi (kể cả `field_key`) cùng câu hỏi chọn ca phỏng vấn trong một RPC/transaction. Các thay đổi ở template chỉ áp dụng cho lần khởi tạo form tiếp theo. Luồng này được triển khai trong function `create_application_form_from_template` của migration baseline.
 
 ```sql
 insert into form_questions (
@@ -366,7 +419,26 @@ as $$
       and role in ('owner', 'admin')
   );
 $$;
+
+-- Có phải owner (Ban chủ nhiệm) của CLB không?
+create or replace function is_club_owner(p_club_id uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from club_members
+    where user_id = auth.uid()
+      and club_id = p_club_id
+      and is_active
+      and role = 'owner'
+  );
+$$;
 ```
+
+Lưu ý: `is_club_member` (và `is_club_staff`, bằng `is_club_member`) đúng với **mọi** thành viên đang hoạt động, kể cả vai trò `member`. Các bảng dữ liệu tuyển dụng nhạy cảm dùng `is_club_admin`.
 
 ### 5.2. Policy mẫu
 
@@ -382,12 +454,13 @@ create policy "admin write campaigns" on recruitment_campaigns
 create policy "public read open campaigns" on recruitment_campaigns
   for select to anon using (status = 'open');
 
--- Ban quản trị xem đơn ứng tuyển của CLB mình
-create policy "staff read applications" on applications
-  for select using (
+-- Chỉ admin/owner xem đơn ứng tuyển của CLB mình (thành viên thường không đọc được).
+-- Cùng quy tắc cho application_answers và interview_assignments.
+create policy "admins read applications" on applications
+  for select to authenticated using (
     exists (
       select 1 from recruitment_campaigns c
-      where c.id = applications.campaign_id and is_club_member(c.club_id)
+      where c.id = applications.campaign_id and is_club_admin(c.club_id)
     )
   );
 ```
@@ -445,15 +518,26 @@ create policy "public read open form questions" on form_questions
   );
 ```
 
-Làm tương tự policy staff/admin cho `form_questions`, `teams`, `recruitment_positions`, `interview_sessions`, `interview_assignments`, `interview_session_members`.
+Làm tương tự policy staff/admin cho `form_questions`, `teams`, `recruitment_positions`, `interview_sessions`, `interview_session_members`. Riêng `applications`, `application_answers`, `interview_assignments` chỉ cho `is_club_admin` đọc (policy `admins read ...`).
+
+Policy cho nhiệm kỳ:
+
+| Bảng | Đọc | Ghi |
+|---|---|---|
+| `club_terms` | `is_club_admin(club_id)` | `is_club_owner(club_id)` và chỉ khi `status = 'draft'` (insert/update/delete). Cột `status`, `activated_*` chỉ đổi qua `activate_term` |
+| `club_term_roles` | admin của CLB chứa term | `is_club_owner` và term còn `draft` |
+
+`club_members`: giữ nguyên (đọc dòng của mình; admin đọc cả CLB). Mọi thay đổi do server (service role) hoặc RPC thực hiện; thành viên tự sửa hồ sơ qua `update_my_member_profile`.
 
 ### 5.3. Luồng của ứng viên (anon)
 
 **Không cho `anon` `INSERT` hoặc `SELECT` trực tiếp trên `applications`.** Thay vào đó dùng RPC chạy `security definer`:
 
-Client chỉ gửi `p_position_id` và `p_answers` (`[{ "question_id": "...", "text": "...", "json": {...} }]`) tới `submit_application(uuid, jsonb)`. RPC kiểm tra campaign/form/câu hỏi, xác thực trường bắt buộc và kiểu dữ liệu; `field_key` khác `NULL` được lưu vào cột tương ứng của `applications`, còn câu hỏi thường được ghi vào `application_answers`. Toàn bộ thao tác nằm trong một transaction của RPC. Triển khai cụ thể có trong `supabase/migration/migrate_application_system_fields.sql`; áp dụng sau migration form templates và `migrate_interview_sessions_to_positions.sql`.
+Client chỉ gửi `p_position_id` và `p_answers` (`[{ "question_id": "...", "text": "...", "json": {...} }]`) tới `submit_application(uuid, jsonb)`. RPC kiểm tra campaign/form/câu hỏi, xác thực trường bắt buộc và kiểu dữ liệu; `field_key` khác `NULL` được lưu vào cột tương ứng của `applications`, còn câu hỏi thường được ghi vào `application_answers`. Với lựa chọn "Mục khác", client gửi nội dung tự nhập (không kèm tiền tố) và RPC chỉ chấp nhận khi câu hỏi có option `__other__`. Toàn bộ thao tác nằm trong một transaction của RPC.
 
-Form Builder lưu toàn bộ nội dung và thứ tự câu hỏi qua `save_application_form_questions(uuid, jsonb)`, để quyền được kiểm tra một lần và cập nhật chạy theo lô. Triển khai trong `supabase/migration/save_application_form_questions.sql` sau migration quyền CLB và trường hệ thống.
+`facebook_url` được kiểm tra bằng regex `^https://(www\.|m\.|web\.)?(facebook|fb)\.com/.+` (cả trong RPC lẫn check constraint) để tránh lưu link độc hại.
+
+Form Builder lưu toàn bộ nội dung và thứ tự câu hỏi qua `save_application_form_questions(uuid, jsonb)`, để quyền được kiểm tra một lần và cập nhật chạy theo lô. Cả hai function nằm trong migration baseline.
 
 ```sql
 -- Xem lại trạng thái đơn bằng token (chỉ trả về thông tin cần thiết)
@@ -501,6 +585,47 @@ grant execute on function get_application_by_token to anon;
 8. Chốt kết quả: cập nhật `applications.status` thành `passed` hoặc `failed`.
 9. Ứng viên xem kết quả qua `get_application_by_token`.
 
+### 6.1. Kết nạp ứng viên
+
+`admit_applications(p_application_ids uuid[]) returns jsonb` (`{ "admitted": n, "skipped": m }`), `security definer`, người gọi phải là `is_club_admin` của CLB chứa đơn (sai thì báo lỗi, không xử lý một phần).
+
+- Chỉ nhận đơn `status = 'passed'` và `admitted_member_id is null`; đơn khác (không tồn tại, chưa đạt, đã kết nạp) tính vào `skipped`.
+- Tạo `club_members` vai trò `member`, `team_id` lấy từ `recruitment_positions.team_id`, sao chép `full_name`, `student_code`, `class_name`, `email`, `phone`, `facebook_url`. Đơn thiếu họ tên được ghi "Chưa rõ họ tên".
+- Nếu trùng `(club_id, student_code)` hoặc email (không phân biệt hoa thường) trong CLB thì gắn vào thành viên sẵn có (không sửa dữ liệu của họ). Đơn được ghi `admitted_member_id`. Chạy lại không tạo trùng.
+- Thành viên mới chưa có tài khoản; tạo tài khoản qua API (service role) rồi gắn `user_id`.
+
+### 6.2. Đổi nhiệm kỳ
+
+1. Owner tạo `club_terms` (`draft`) và thêm `club_term_roles` (chỉ `owner`/`admin`, kèm `title`, `team_id`).
+2. `activate_term(p_term_id uuid) returns void` (chỉ owner của CLB, term phải `draft`, danh sách có ít nhất một `owner` đang hoạt động và có `user_id`), trong một transaction:
+   1. Term `active` cũ thành `ended` (`end_date` null thì đặt hôm nay).
+   2. Mọi thành viên của CLB (kể cả đang nghỉ) không có trong danh sách: `role = 'member'`, `title = null`.
+   3. Thành viên trong danh sách: cập nhật `role`, `title`, `team_id` (nếu khác null), `is_active = true`.
+   4. Term thành `active`, ghi `activated_at`, `activated_by`.
+3. Constraint trigger `club_members_keep_owner` (deferred, kiểm tra lúc commit): sau khi một owner đang hoạt động có `user_id` bị sửa/xóa, CLB (nếu còn tồn tại) phải còn ít nhất một owner đang hoạt động có `user_id`, nếu không báo "CLB phải còn ít nhất một thành viên Ban chủ nhiệm có tài khoản." Xóa cả CLB (cascade) không bị chặn.
+
+### 6.2.1. Lưu ý vận hành
+
+- **Trước khi áp migration `20261110000000` lên DB đã có dữ liệu**, mỗi CLB phải có ít nhất một owner đang hoạt động có tài khoản. Câu SQL kiểm tra (phải trả về 0 dòng):
+
+```sql
+select c.id, c.name
+from clubs c
+where not exists (
+  select 1 from club_members m
+  where m.club_id = c.id and m.role = 'owner' and m.is_active and m.user_id is not null
+);
+```
+
+- **Không xóa được tài khoản `auth.users` của owner cuối cùng**: xóa tài khoản làm `club_members.user_id` thành null và constraint trigger `club_members_keep_owner` chặn lúc commit. Hãy chuyển quyền owner cho người khác (kích hoạt nhiệm kỳ mới hoặc cập nhật vai trò) trước.
+- `applications`: `authenticated` chỉ được `update (status)`; `admitted_member_id` chỉ do `admit_applications` ghi.
+
+### 6.3. Hồ sơ thành viên
+
+`update_my_member_profile(p_club_id uuid, p_phone text, p_facebook_url text) returns void`: chỉ sửa dòng `club_members` đang hoạt động của chính `auth.uid()` trong CLB đó. Giá trị rỗng thành `null`; `facebook_url` phải khớp regex ở trên.
+
+Các hàm `activate_term`, `admit_applications`, `update_my_member_profile`, `is_club_owner` đều `security definer`, `set search_path = public`, thu hồi quyền của `public` và chỉ cấp `execute` cho `authenticated` (và `service_role`).
+
 ## Phụ lục: policy đọc CLB cho quản trị
 
 Đăng nhập cần đọc membership của chính tài khoản. Áp dụng các policy dưới đây sau khi bật RLS (không thay đổi schema):
@@ -518,4 +643,4 @@ create policy "members read their clubs" on clubs
   );
 ```
 
-Tài khoản quản trị cần có một dòng `club_members` với `user_id` trỏ tới `auth.users.id` và `is_active = true`. Vai trò theo từng CLB được lưu trực tiếp trong `club_members.role`; role `organizer` chỉ có quyền đọc.
+Tài khoản quản trị cần có một dòng `club_members` với `user_id` trỏ tới `auth.users.id` và `is_active = true`. Vai trò theo từng CLB được lưu trực tiếp trong `club_members.role`: `owner` và `admin` quản trị CLB (`is_club_admin`); `member` chỉ xem và sửa hồ sơ của mình, không đọc được đơn ứng tuyển.
