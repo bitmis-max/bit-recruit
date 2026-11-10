@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const socialLinks = [
-  { name: "Facebook", url: "https://www.facebook.com/BIT.BAV", icon: "f", className: "bg-[#1877f2]" },
+  { name: "Facebook", url: "https://www.facebook.com/BIT.BAV", icon: "f", className: "bg-[#1769d6]" },
   { name: "Instagram", url: "https://www.instagram.com/bit.bav.official", icon: "◎", className: "bg-[#e1306c]" },
   { name: "TikTok", url: "https://www.tiktok.com/@humansofbitbav", icon: "♪", className: "bg-[#111827]" },
 ];

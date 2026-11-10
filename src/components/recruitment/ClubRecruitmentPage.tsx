@@ -80,7 +80,6 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
           {[...grouped.values()].map(({ campaign, teams }) => (
             <section key={campaign.id} className="recruitment-campaign-card">
               <header className="recruitment-campaign-heading">
-                <p className="recruitment-eyebrow">ĐỢT TUYỂN</p>
                 <h2>{campaign.name}</h2>
                 {campaign.description && <p>{campaign.description}</p>}
               </header>
@@ -92,7 +91,6 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
                   <Image src="/logo.png" alt="" width={48} height={48} className="recruitment-team-logo" unoptimized />
                 </span>
                 <div>
-                  <p className="recruitment-eyebrow">BAN ĐANG TUYỂN</p>
                   <h2>{team.teamName}</h2>
                 </div>
               </div>

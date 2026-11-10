@@ -58,6 +58,22 @@ export function RecruitmentManager() {
     return () => { cancelled = true; };
   }, [supabase, clubId]);
 
+  const refreshTeams = useCallback(async () => {
+    if (!supabase || !clubId) return;
+    const { data } = await supabase.from("teams").select("id,name").eq("club_id", clubId).order("name");
+    if (data) setTeams(data as Team[]);
+  }, [supabase, clubId]);
+
+  useEffect(() => {
+    const handleTeamsChanged = () => { void refreshTeams(); };
+    window.addEventListener("bit:teams-changed", handleTeamsChanged);
+    window.addEventListener("focus", handleTeamsChanged);
+    return () => {
+      window.removeEventListener("bit:teams-changed", handleTeamsChanged);
+      window.removeEventListener("focus", handleTeamsChanged);
+    };
+  }, [refreshTeams]);
+
   useEffect(() => {
     let cancelled = false;
     async function loadPositions() {

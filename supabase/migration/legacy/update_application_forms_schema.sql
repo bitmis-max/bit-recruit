@@ -1,3 +1,8 @@
+-- KHÔNG CHẠY FILE NÀY. Đã bị thay thế bởi supabase/upgrade/20261110_legacy_to_baseline.sql
+-- và các migration trong supabase/migrations/ (mỗi vị trí tuyển một biểu mẫu, position_id).
+-- Chạy lại sẽ xóa application_forms.position_id và làm hỏng trang nộp đơn.
+-- Giữ lại chỉ để tham khảo lịch sử (commit 9ee2aae trên main, 2026-10-27).
+
 -- Cập nhật bảng application_forms: Xóa position_id và thêm campaign_id một cách an toàn
 -- Bước 1: Xóa tất cả các policy phụ thuộc vào cột position_id
 drop policy if exists "staff read application forms" on application_forms;

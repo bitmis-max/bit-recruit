@@ -9,6 +9,12 @@ import { EventsManager } from "./EventsManager";
 import { ClubAccountsManager } from "./ClubAccountsManager";
 import { ClubMembersManager } from "./ClubMembersManager";
 import { FormTemplatesManager } from "./FormTemplatesManager";
+import { TermsManager } from "./TermsManager";
+import { TasksManager } from "./tasks/TasksManager";
+import { ContributionBoard } from "./tasks/ContributionBoard";
+import { ScanImport } from "./scan/ScanImport";
+import { FramesManager } from "./frames/FramesManager";
+import { roleLabel } from "./roles";
 import { TeamsManager } from "./recruitment/TeamsManager";
 import { RecruitmentManager } from "./recruitment/RecruitmentManager";
 import { ApplicationsManager } from "./recruitment/ApplicationsManager";
@@ -44,6 +50,11 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
     { href: "/manage-clubs/accounts", label: "Quản lý tài khoản", allowed: canWrite },
     { href: "/manage-clubs/members", label: "Quản lý thành viên", allowed: canWrite },
     { href: "/manage-clubs/teams", label: "Quản lí ban", allowed: canWrite },
+    { href: "/manage-clubs/terms", label: "Nhiệm kỳ", allowed: canWrite },
+    { href: "/manage-clubs/tasks", label: "Giao việc", allowed: canWrite },
+    { href: "/manage-clubs/contribution", label: "Đóng góp", allowed: canWrite },
+    { href: "/manage-clubs/scan", label: "Đối chiếu Facebook", allowed: canWrite },
+    { href: "/manage-clubs/frames", label: "Khung avatar", allowed: canWrite },
     { href: "/manage-clubs/events", label: "Quản lý sự kiện", allowed: canWrite },
     { href: "/manage-clubs/recruitment", label: "Quản lý tuyển gen", allowed: true },
     { href: "/manage-clubs/form-templates", label: "Quản lý biểu mẫu", allowed: canWrite },
@@ -54,6 +65,11 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
     { href: "/manage-clubs/accounts", content: <ClubAccountsManager /> },
     { href: "/manage-clubs/members", content: <ClubMembersManager /> },
     { href: "/manage-clubs/teams", content: <TeamsManager /> },
+    { href: "/manage-clubs/terms", content: <TermsManager /> },
+    { href: "/manage-clubs/tasks", content: <TasksManager /> },
+    { href: "/manage-clubs/contribution", content: <ContributionBoard /> },
+    { href: "/manage-clubs/scan", content: <ScanImport /> },
+    { href: "/manage-clubs/frames", content: <FramesManager /> },
     { href: "/manage-clubs/events", content: <EventsManager /> },
     { href: "/manage-clubs/recruitment", content: <><RecruitmentTabs /><RecruitmentManager /></> },
     { href: "/manage-clubs/recruitment/applications", content: <><RecruitmentTabs /><ApplicationsManager /></> },
@@ -64,10 +80,11 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
   const activeTab = tabViews.find((tab) => tab.href === pathname);
   // Keep visited tab trees mounted so their loaded data and form state survive navigation.
   const visibleTabs = tabViews.filter((tab) => visitedTabs.includes(tab.href) || tab.href === activeTab?.href);
-  return <AdminClubProvider value={{ id: selectedClubId, role: current?.role ?? "organizer" }}><div className="min-h-screen bg-zinc-50 text-zinc-900 md:flex">
+  return <AdminClubProvider value={{ id: selectedClubId, role: current?.role ?? "member" }}><div className="min-h-screen bg-zinc-50 text-zinc-900 md:flex">
     <aside className="flex w-full flex-col border-r bg-white md:min-h-screen md:w-64">
       <div className="border-b p-5"><Link href="/" className="text-xs font-bold uppercase tracking-widest text-emerald-700">BIT · Quản trị</Link><label className="mt-5 block text-xs font-semibold text-zinc-500">CLB hiện tại</label>
         <select aria-label="Chọn CLB" value={selectedClubId} onChange={(e) => void selectClub(e.target.value)} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm">{clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}</select>
+        {current && <p className="mt-2 text-xs text-zinc-500">Vai trò: <span className="font-semibold text-emerald-800">{roleLabel(current.role)}</span></p>}
       </div>
       <nav aria-label="Điều hướng quản trị" className="flex flex-wrap gap-1 p-3 md:flex-col">{links.filter((link) => link.allowed).map((link) => {
         const active = link.href === "/manage-clubs" ? pathname === link.href : pathname === link.href || pathname.startsWith(`${link.href}/`);

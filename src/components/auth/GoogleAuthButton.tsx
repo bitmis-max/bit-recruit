@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { safeNextPath } from "../../lib/auth/safe-next";
 
 export function GoogleAuthButton({ next }: { next?: string }) {
   const [error, setError] = useState<string | null>(null);
@@ -17,11 +18,7 @@ export function GoogleAuthButton({ next }: { next?: string }) {
 
     setLoading(true);
     const requestedNext = new URLSearchParams(window.location.search).get("next");
-    const destination = next ?? (
-      requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
-        ? requestedNext
-        : "/manage-clubs"
-    );
+    const destination = safeNextPath(next ?? requestedNext);
     const callback = new URL("/auth/callback", window.location.origin);
     callback.searchParams.set("next", destination);
     const { error: authError } = await supabase.auth.signInWithOAuth({

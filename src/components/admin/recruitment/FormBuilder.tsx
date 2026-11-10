@@ -63,7 +63,7 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
       onFormChange(savedForm);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Không lưu được biểu mẫu.";
-      onError(message.includes("create_application_form_from_template") ? `${message} Hãy chạy supabase/migration/create_application_form_from_template.sql trên Supabase.` : message);
+      onError(message.includes("create_application_form_from_template") ? `${message} Hãy chạy migration baseline supabase/migrations/20261023000000_init.sql trên Supabase.` : message);
     }
     finally { setSaving(false); }
   }
@@ -118,7 +118,7 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
           order_index: index,
         })),
       });
-      if (failed) onError(failed.message.includes("save_application_form_questions") ? `${failed.message} Hãy chạy supabase/migration/save_application_form_questions.sql trên Supabase.` : failed.message);
+      if (failed) onError(failed.message.includes("save_application_form_questions") ? `${failed.message} Hãy chạy migration baseline supabase/migrations/20261023000000_init.sql trên Supabase.` : failed.message);
       else {
     onQuestionsChange(payload.map(({ question, index, options }) => ({ ...question, question_text: question.question_text.trim(), options, order_index: index })));
         onError("");

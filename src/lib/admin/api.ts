@@ -19,5 +19,5 @@ export async function getClubAdminContext(clubId: string, allowClubStaffRead = f
     return { error: Response.json({ error: "Thiếu SUPABASE_SERVICE_ROLE_KEY để quản lý tài khoản và thành viên." }, { status: 503 }) } as const;
   }
   const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  return { supabase, admin, user, error: null } as const;
+  return { supabase, admin, user, role: membership.role, error: null } as const;
 }

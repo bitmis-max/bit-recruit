@@ -61,9 +61,8 @@ export default function HomePage() {
         <PhotoCarousel photos={heroPhotos} className="hero-carousel" label="Ảnh hoạt động của CLB" />
         <div className="about-hero-shade" />
         <div className="about-hero-copy">
-          <p className="about-eyebrow">Banking Information Technology</p>
           <h1>CLB Tin học Ngân hàng BIT - BAV</h1>
-          <p>Cùng học hỏi, sáng tạo và trưởng thành qua công nghệ.</p>
+          <p>Banking Information Technology: cùng học hỏi, sáng tạo và trưởng thành qua công nghệ.</p>
           <div className="about-hero-actions">
             <Link href="/clubs" className="about-button about-button-primary">Giới thiệu <span aria-hidden="true">↗</span></Link>
           </div>
@@ -72,7 +71,6 @@ export default function HomePage() {
 
       <section id="gioi-thieu" className="about-section about-introduction">
         <div className="section-heading">
-          <p className="about-eyebrow">Chúng mình là ai?</p>
           <h2>Một cộng đồng công nghệ luôn chuyển động</h2>
         </div>
         <div className="about-story-grid">
@@ -100,13 +98,11 @@ export default function HomePage() {
 
       <section className="about-section recruitment-section">
         <div className="section-heading section-heading-centered">
-          <p className="about-eyebrow">Hành trình thành viên</p>
           <h2>Sự kiện tuyển CTV Gen 17</h2>
           <p>Mỗi mùa tuyển thành viên là khởi đầu cho những tình bạn, ý tưởng và trải nghiệm mới tại BIT.</p>
         </div>
         <div className="recruitment-feature">
           <div className="recruitment-copy">
-            <span className="recruitment-index">01 / GẶP GỠ</span>
             <h3>Bắt đầu từ một cuộc gặp</h3>
             <p>Sự kiện tuyển cộng tác viên là dịp để các bạn sinh viên làm quen với BIT, gặp gỡ những người bạn cùng sở thích và tìm hiểu cách CLB học tập, làm việc.</p>
             <p>Từ vòng đơn đến những buổi sinh hoạt đầu tiên, mỗi bước đều mở ra cơ hội để bạn thử sức, đóng góp và phát triển cùng cộng đồng.</p>
@@ -118,13 +114,13 @@ export default function HomePage() {
           </div>
         </div>
         <div className="recruitment-bottom">
-          <div><span className="recruitment-index">02 / ĐỒNG HÀNH</span><h3>Thanh xuân được tạo nên từ những điều cùng làm.</h3></div>
+          <div><h3>Thanh xuân được tạo nên từ những điều cùng làm.</h3></div>
           <p>Được thành lập ngày 28 - 04 - 2010, BIT đã trở thành một phần trong thanh xuân của nhiều thế hệ sinh viên Khoa Công nghệ thông tin và Kinh tế số. Cùng nhau, chúng mình học công nghệ, tổ chức hoạt động và lưu lại những kỷ niệm đáng nhớ.</p>
         </div>
       </section>
 
       <section className="about-cta">
-        <div className="about-cta-heading"><p className="about-eyebrow">Bạn đã sẵn sàng?</p><h2>Hẹn gặp bạn tại BIT.</h2></div>
+        <div className="about-cta-heading"><h2><span className="about-cta-lead">Bạn đã sẵn sàng?</span> Hẹn gặp bạn tại BIT.</h2></div>
         <Suspense fallback={null}><HomeCountdown /></Suspense>
       </section>
     </main>

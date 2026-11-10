@@ -43,6 +43,7 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
         let fieldSchema = z.string();
         if (required) fieldSchema = fieldSchema.trim().min(1, `${question.question_text} là bắt buộc`);
         if (question.field_key === "email") fieldSchema = fieldSchema.refine((value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), "Email không đúng định dạng");
+        if (question.field_key === "facebook_url") fieldSchema = fieldSchema.refine((value) => !value.trim() || /^https:\/\/(www\.|m\.|web\.)?(facebook|fb)\.com\/.+/.test(value.trim()), "Link Facebook phải bắt đầu bằng https://facebook.com/ hoặc https://fb.com/");
         answerShape[question.id] = fieldSchema;
         continue;
       }
@@ -134,10 +135,10 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
       }
       if (question.question_type === "multi_choice") {
         const selected = (value ?? []) as string[];
-        const json = selected.map((item) => item === OTHER_OPTION ? `Khác: ${otherAnswers[question.id].trim()}` : item);
+        const json = selected.map((item) => item === OTHER_OPTION ? (otherAnswers[question.id] ?? "").trim() : item);
         return { question_id: question.id, text: null, json };
       }
-      const text = value === OTHER_OPTION ? `Khác: ${otherAnswers[question.id].trim()}` : value == null || value === "" ? null : String(value);
+      const text = value === OTHER_OPTION ? (otherAnswers[question.id] ?? "").trim() : value == null || value === "" ? null : String(value);
       return { question_id: question.id, text, json: null };
     });
 
@@ -180,7 +181,7 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
                 ))}
               </fieldset>
             ) : question.field_key ? (
-              <input id={`q-${question.id}`} type={question.field_key === "email" ? "email" : question.field_key === "phone" ? "tel" : "text"} autoComplete={question.field_key === "full_name" ? "name" : question.field_key === "email" ? "email" : question.field_key === "phone" ? "tel" : undefined} className={inputClass} value={String(answers[question.id] ?? "")} onChange={(event) => updateAnswer(question.id, event.target.value)} aria-invalid={!!fieldErrors[question.id]} />
+              <input id={`q-${question.id}`} type={question.field_key === "email" ? "email" : question.field_key === "phone" ? "tel" : question.field_key === "facebook_url" ? "url" : "text"} autoComplete={question.field_key === "full_name" ? "name" : question.field_key === "email" ? "email" : question.field_key === "phone" ? "tel" : undefined} className={inputClass} value={String(answers[question.id] ?? "")} onChange={(event) => updateAnswer(question.id, event.target.value)} aria-invalid={!!fieldErrors[question.id]} />
             ) : question.question_type === "long_text" ? (
               <textarea id={`q-${question.id}`} rows={4} className={inputClass} value={String(answers[question.id] ?? "")} onChange={(event) => updateAnswer(question.id, event.target.value)} aria-invalid={!!fieldErrors[question.id]} />
             ) : question.question_type === "single_choice" ? (
