@@ -1,74 +1,57 @@
 # Handoff
 
-Cập nhật: 2026-11-10 (DB thật chờ người dùng chạy nâng cấp; Đợt 2 đang làm ở local)
+Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. DB thật CHƯA nâng cấp (chờ người dùng chạy lệnh). Chưa deploy.
 
-## Trạng thái hiện tại
-- **Code:** Đợt 0 + Đợt 1 xong, commit `4fb4feb` trên nhánh `feat/member-roles-terms` (chưa push, chưa merge vào main). Không commit `.claude/settings.local.json`, `.claude/skills/`, `.mcp.json`.
-  - Test: `npm test` 15/15, `npx supabase test db` 107/107, `tsc` sạch, `next build` sạch. Đã thử trên trình duyệt với Supabase local.
-- **DB thật** (`rftgnkgnyvtehnsjwuhp`): **chưa sửa gì.** Đang ở schema cũ (khớp `supabase/migration/legacy/`: `application_forms.campaign_id`, không trigger, policy cũ cho authenticated insert events…). Code hiện tại KHÔNG chạy đúng trên schema này.
-  - Dữ liệu thật: clubs 1, teams 5, club_members 3, recruitment_campaigns 1, recruitment_positions 4, application_forms 1, form_questions 43, form_templates 1, form_template_questions 12, applications 55, application_answers 2365, interview_sessions 9, interview_assignments 55, events 10, google_mail_tokens 1; auth.users 2; storage.objects 2 (event-images).
-- **Backup** (2026-11-10): `backup/schema.sql`, `backup/data.sql` (gitignored, chứa dữ liệu cá nhân). Số dòng khớp DB thật.
-- **Truy cập DB thật:** MCP `supabase` (theo `.mcp.json`) + Supabase CLI đã `link` bằng phiên đăng nhập CLI của người dùng. Người dùng đã cho toàn quyền.
-- **Script nâng cấp xong và đã kiểm chứng ở local:** `supabase/upgrade/20261110_legacy_to_baseline.sql` + `supabase/upgrade/README.md`. Lead kiểm chứng độc lập trên bản sao từ backup: md5 nội dung 2365 câu trả lời (theo nội dung câu hỏi) trước = sau; 0 câu trả lời trỏ sai vị trí; 4 form × 43 câu hỏi; organizer → member; CLB đã có 1 owner có tài khoản. Agent: dấu vân tay schema sau nâng cấp = DB dựng mới (0 khác biệt), 107/107 test.
-  - `events.event_date` (cột thừa) được giữ ở `legacy_archive.events_event_date`; `interview_sessions.name` gộp vào `note` (cả 9 ca note = name nên không đổi).
-- **Backup ngay trước nâng cấp:** `backup/pre_upgrade_schema.sql`, `backup/pre_upgrade_data.sql` (số dòng khớp, chưa có dữ liệu mới).
-- **Precheck read-only trên DB thật (CLI `db query --remote --read-only`):** 0 CLB thiếu owner, vẫn là schema legacy.
-- **Bị chặn:** chạy script lên DB thật bằng `npx supabase db query --remote --yes -f ...` bị chốt an toàn của Claude Code từ chối (xếp loại Production Deploy). Không lách qua MCP. **Chờ người dùng tự chạy 3 lệnh (xem `supabase/upgrade/README.md` / tin nhắn) hoặc thêm quyền.**
-- `.env.local`: mới có URL và anon key; service-role key và 3 biến Google còn rỗng.
-- Người dùng có dev server riêng ở cổng 3000 (không đụng).
+## Trạng thái
+- **Nhánh `feat/member-roles-terms`** (chưa push, chưa merge `main`):
+  - `4fb4feb` Đợt 0 + 1: bảo mật (SSRF, đóng đăng ký, RLS đơn ứng tuyển, redirect an toàn), vai trò owner/admin/member, nhiệm kỳ, kết quả phỏng vấn, kết nạp, `/me`, tạo tài khoản hàng loạt.
+  - `6e8e521` Đợt 2: giao việc, nhắc Gmail qua Vercel Cron, bảng đóng góp; script nâng cấp DB `supabase/upgrade/`.
+  - `93acf54` Đợt 3: đối chiếu Facebook bằng bookmarklet, khung avatar, `/frames/[id]` công khai.
+  - Không commit (cố ý): `.claude/settings.local.json`, `.claude/skills/`, `.mcp.json`, `backup/` (gitignored, có dữ liệu cá nhân).
+- **Kiểm chứng gần nhất:** `npm test` 98/98, `npx supabase test db` 420/420, `tsc` sạch, eslint sạch ở code mới, `next build` sạch. E2E bằng playwright trên Supabase local (port 3100) cho cả 3 đợt, ảnh desktop + 375px đã xem. Bookmarklet chỉ thử trên trang Facebook GIẢ LẬP (`scratchpad/shots/fb-mock.html`).
+- **Hợp đồng:** `docs/CONTRACT-1.md` (Đợt 1), `docs/CONTRACT-2.md` (Đợt 2), `docs/CONTRACT.md` (Đợt 3, có các dòng "Sửa sau review").
 
-## Đợt 2 đang chạy (bắt đầu 2026-11-10)
-- Hợp đồng: `docs/CONTRACT.md` (Đợt 1 chuyển sang `docs/CONTRACT-1.md`).
-- 4 agent mới chạy song song: db (`supabase/migrations/20261111000000_tasks.sql`), api (gmail lib, cron `/api/cron/task-reminders`, mail-sender, remind, `vercel.json`), frontend (`/manage-clubs/tasks`, `/manage-clubs/contribution`, "Việc của tôi" ở `/me`), tester (`tests/unit/reminders.test.ts`, `supabase/tests/tasks.test.sql`).
-- **Kết quả (2026-11-10):** cả 4 agent xong. `npm test` 29/29, `npx supabase test db` 236/236 (107 + 129), `tsc` + eslint sạch, `next build` sạch. Lead đã thêm `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL` vào `.env.example`.
-  - Đã thử thật ở local (port 3100): cron 401 khi thiếu/sai secret, 200 khi đúng (`skippedNoSender: 1` vì chưa chọn Gmail); admin giao việc cho 1 người + cả ban → 3 người nhận; member đánh dấu xong ở `/me` → `completed_at` được ghi; bảng đóng góp đếm đúng; tiêu đề chứa HTML hiển thị dạng chữ. Ảnh desktop + 375px đã xem.
-  - Chưa thử: gửi Gmail thật (cần token Gmail + `.env.local` đủ key); vì vậy logic "giữ chỗ" chống gửi trùng chỉ được kiểm bằng đọc code + typecheck.
-  - Reviewer: không có lỗi nghiêm trọng. Đã sửa 4 lỗi nên sửa: người gửi phải còn là owner/admin đang hoạt động; việc `closed` không tính pending vào đóng góp; nạp người nhận theo lô + phân trang; giữ chỗ trước khi gửi, hoàn lại khi lỗi; nút "Gửi nhắc ngay" bỏ qua người vừa được nhắc trong 10 phút. Thêm: chặn tạo việc hạn quá khứ, member ngừng hoạt động không tự đánh dấu xong, log lỗi gửi (không lộ email/token).
-  - Sau sửa: `npm test` 29/29, `npx supabase test db` 244/244, `tsc` + eslint sạch, build sạch; thử local: người gửi không hợp lệ → `configured:false`, cron `skippedNoSender`.
-  - Đã commit vào nhánh `feat/member-roles-terms` (cùng `supabase/upgrade/`, docs, `.env.example`).
-- DB thật kiểm tra lại 2026-11-10 (read-only): VẪN legacy, chưa migration nào được ghi nhận. Người dùng cần chạy 3 bước trong `supabase/upgrade/README.md` (bản rút gọn: `db query --remote --yes -f <script>` → `migration repair --remote --status applied 20261023000000` → `db push --remote`). `db push` sẽ áp cả `20261110...` và `20261111...` nếu migration tasks đã có.
-- Không commit (cố ý): `.claude/settings.local.json`, `.claude/skills/`, `.mcp.json`, `backup/` (gitignored).
+## DB thật (`rftgnkgnyvtehnsjwuhp`)
+- **Chưa sửa gì.** Đang ở schema legacy (khớp `supabase/migration/legacy/`). Code hiện tại KHÔNG chạy đúng trên đó.
+- Dữ liệu (đếm 2026-11-10): applications 55, application_answers 2365, form_questions 43, events 10, interview_sessions 9, interview_assignments 55, teams 5, recruitment_positions 4, club_members 3 (1 owner có tài khoản), clubs/campaigns/form_templates/google_mail_tokens 1; auth.users 2; storage 2 ảnh event-images. Không có bảng `supabase_migrations`.
+- Backup: `backup/schema.sql`, `backup/data.sql`, `backup/pre_upgrade_schema.sql`, `backup/pre_upgrade_data.sql`.
+- Script nâng cấp `supabase/upgrade/20261110_legacy_to_baseline.sql` đã kiểm chứng trên bản sao: nội dung 2365 câu trả lời giữ nguyên (md5), 0 câu trỏ sai vị trí, dấu vân tay schema = DB dựng mới.
+- Truy cập: MCP `supabase` + Supabase CLI đã `link`. Lệnh ghi lên DB thật (`db query --remote --yes`) bị chốt an toàn Claude Code chặn (Production Deploy) → **người dùng tự chạy**:
+  1. `npx supabase db query --remote --yes -f supabase/upgrade/20261110_legacy_to_baseline.sql`
+  2. `npx supabase migration repair --remote --status applied 20261023000000` rồi `npx supabase migration list --remote`
+  3. `npx supabase db push --remote --dry-run` (phải liệt kê đúng 3: `20261110000000`, `20261111000000`, `20261112000000`) rồi `npx supabase db push --remote`
+- Sau khi người dùng chạy: lead đếm lại (read-only), chạy `npx supabase db advisors --remote` hoặc MCP `get_advisors`, cập nhật file này.
 
-## Đợt 3 đang chạy (bắt đầu 2026-11-10)
-- Hợp đồng: `docs/CONTRACT.md` (Đợt 2 chuyển sang `docs/CONTRACT-2.md`). Đợt 2 đã commit `6e8e521`.
-- Thiết kế: việc loại `engagement` (gắn link bài viết) và `avatar` (gắn khung) dùng lại `tasks` → có nhắc hạn + đóng góp. Bookmarklet chạy trên trình duyệt Ban chủ chốt, đọc tên + link hồ sơ (+ avatar nhỏ) trong hộp react/bình luận, mở `/manage-clubs/scan#<json>` (dữ liệu không qua máy chủ); trang scan so khớp theo `facebookProfileKey`, gắn alias tay cho người không khớp, rồi `apply_task_scan`. Khung avatar: admin tải PNG; `/frames/<id>` công khai cho thành viên ghép ảnh trên trình duyệt. Kiểm tra đã thay khung = so màu vòng viền avatar nhỏ (thử nghiệm, có thể bị CORS chặn → tick tay).
-- 4 agent mới song song: db (`20261112000000_engagement_frames.sql`), api (`src/lib/facebook/*`, `/api/admin/frames`), frontend (`/manage-clubs/scan`, `/manage-clubs/frames`, `/frames/[id]`, TasksManager, MyTasks), tester (3 unit test + `engagement.test.sql`).
-- **Kết quả (2026-11-10):** 4 agent xong. `npm test` 81/81, `npx supabase test db` 416/416, `tsc` sạch, build sạch. (FE agent lỡ `git stash` rồi pop ngay; lead đã kiểm tra không mất file.)
-  - Quy tắc lead chốt thêm: link Facebook đoạn đầu toàn chữ số (3–25) → `id:<số>`.
-  - E2E local (port 3100) với trang Facebook GIẢ LẬP (scratchpad `shots/fb-mock.html`, route trên URL facebook.com): tải khung qua UI; tạo việc "Thay avatar" (có khung) và "Tương tác bài viết" (có link) cho tất cả; chạy bookmarklet thật lấy từ `/manage-clubs/scan` → popup trang scan, hash bị xóa; quét 3 người (bỏ dialog rỗng, link nhóm/hashtag/bài viết); khớp 2 (username có query, `profile.php?id`), 1 không khớp (`m.facebook.com/<số>`); nhận diện khung: người có vành đỏ "Có vẻ đã thay khung", người không vành "Chưa thấy khung"; xác nhận → 1 người `done`. `/frames/<id>` trên 375px: chọn ảnh → PNG 1080×1080 có vành khung, link tải. Ảnh desktop + mobile đã xem.
-  - Chưa thử: Facebook THẬT (DOM thật, CSP, CORS ảnh fbcdn). Người dùng cần thử một lần và báo lại.
-  - 2026-11-10 ~03:20: cả 4 agent sửa lỗi dừng vì chạm giới hạn sử dụng 5 giờ (reset 07:30). 12:51 lead gửi tin cho 4 agent làm tiếp (chỉ db-agent đã kịp thêm grant theo cột).
-  - **Sửa sau review xong (12:5x):** `npm test` 98/98, `npx supabase test db` 420/420, `tsc` + eslint sạch (chỉ cảnh báo `<img>`), build sạch. Lead gỡ đường lùi clubId-trong-FormData ở `/api/admin/frames` (giờ bắt buộc `?clubId=`, kiểm quyền trước khi đọc body). E2E lại với khung VIỀN MỎNG (vành 0.90–1.0): nhận đúng người có khung, không tick sẵn, có cảnh báo nguồn, nút "Chọn người có vẻ đã thay khung" → 1 người done; tải lại trang vẫn giữ kết quả quét (sessionStorage). Đã commit Đợt 3.
-  - Reviewer Đợt 3: không có lỗi nghiêm trọng. Đã sửa (4 agent cũ, hợp đồng đã cập nhật các dòng "Sửa sau review"): S1 nhận diện link `/p/<slug>-<id>`, `/profile/<id>`, username ≥ 5 ký tự có chữ; S2 chữ ký vành 72 số (3 dải × 8 cung) + coverage của khung để nhận được khung viền mỏng; S3 lưu kết quả quét vào sessionStorage; S4 không tick sẵn + cảnh báo nguồn; S5 danh sách alias có nút gỡ; nhỏ: ẩn `created_by`, giới hạn độ dài URL bookmarklet, kiểm quyền trước khi đọc file, lỗi tiếng Việt, test không đếm tuyệt đối.
-
-## Bước tiếp theo (lead tự làm)
-1. Kiểm chứng script nâng cấp (số dòng trước/sau, answers trỏ đúng form, dấu vân tay schema = DB dựng mới, 107 test).
-2. Chọn owner nếu DB thật chưa có owner đang hoạt động có tài khoản (hỏi người dùng đúng câu này).
-3. Áp lên DB thật: script nâng cấp (một transaction) → `npx supabase migration repair --status applied 20261023000000` → áp `20261110000000_member_roles_terms.sql`. Đếm lại, chạy advisors.
-4. Đợt 2: giao việc + nhắc hạn + đóng góp. Dự kiến: bảng tasks / task_assignees / task_reminders; Ban chủ chốt giao cho người hoặc cả ban, tick xong/chưa; member xem và đánh dấu ở `/me`; nhắc Gmail 24h trước hạn và khi quá hạn (mỗi loại 1 lần), gửi từ Gmail CLB được chọn (`clubs.mail_sender_user_id`); Vercel Cron hằng ngày gọi `/api/cron/task-reminders` có `CRON_SECRET` (cũng giữ Supabase Free không bị tạm dừng); trang đóng góp theo kỳ, đánh dấu người dưới ngưỡng.
-5. Đợt 3: bookmarklet đối chiếu react/comment (so link hồ sơ) + trang tạo avatar khung; thử đọc avatar nhỏ trong danh sách react.
+## Việc tiếp theo
+1. Người dùng chạy 3 lệnh nâng cấp DB (trên).
+2. Cấu hình (người dùng làm, lead hướng dẫn): tắt "Allow new users to sign up"; bật Google provider; bật "Confirm email"; điền `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL` (qua file, không dán vào chat).
+3. Deploy Vercel Hobby (hỏi người dùng trước): đặt biến môi trường, cron `vercel.json` 01:00 UTC.
+4. Thử thật: đăng nhập Google vào tài khoản tạo sẵn; gửi Gmail nhắc việc; bookmarklet trên một bài Facebook thật của CLB (DOM thật, CSP, CORS ảnh fbcdn).
+5. Push nhánh / merge `main` khi người dùng yêu cầu.
 
 ## Quyết định của người dùng
 - Vai trò: owner = Ban chủ nhiệm, admin = Ban chủ chốt, member = Thành viên. Ứng viên không có tài khoản; đơn `passed` được kết nạp.
 - Đổi nhiệm kỳ hằng năm qua màn hình Nhiệm kỳ.
 - Nhắc deadline qua web + Gmail, không Messenger.
-- Ý 3 và 4: làm bằng bookmarklet (đã đồng ý).
+- Ý 3 và 4 làm bằng bookmarklet.
 - Nâng cấp DB thật và giữ dữ liệu.
-- Lead tự lên kế hoạch và làm tiếp; cập nhật HANDOFF thường xuyên.
+- Lead tự lên kế hoạch và làm tiếp, không cần chờ; cập nhật HANDOFF thường xuyên.
 
 ## Quyết định của lead
-- Tài khoản thành viên tạo không gửi mail, đăng nhập bằng Google cùng email (chưa kiểm chứng trên project thật).
+- Tài khoản thành viên tạo không gửi mail, đăng nhập Google cùng email (chưa kiểm chứng trên project thật).
 - Chỉ Ban chủ nhiệm cấp/gỡ vai trò Ban chủ chốt và gán tài khoản cho Ban chủ chốt.
 - Thành viên thường đọc được thông tin đợt tuyển và lịch ca phỏng vấn; không đọc được đơn ứng viên.
-
-## Việc người dùng phải làm trên dashboard
-- Tắt "Allow new users to sign up" (Authentication → Sign In / Providers) — nên làm ngay.
-- Cấu hình Google provider; bật "Confirm email".
-- Điền service-role key và các biến Google vào `.env.local` (qua file, không dán vào chat).
+- Việc `closed` không tính "bỏ lỡ" cho người còn chờ; muốn ghi nhận thì tick "Chưa hoàn thành" trước khi đóng.
+- Email nhận nhắc lấy từ `club_members.email`, không lấy email tài khoản.
+- Link Facebook: đoạn đầu toàn số 3–25 chữ số, `/p/<slug>-<số>`, `/profile/<số>` → `id:`; username 5–80 ký tự có chữ cái.
+- Trang scan không tick sẵn ai; nhận diện khung chỉ là gợi ý.
 
 ## Còn mở / nợ kỹ thuật
-- Chống spam form ứng tuyển (Cloudflare Turnstile?).
+- Chống spam form ứng tuyển (Cloudflare Turnstile, cần tài khoản Cloudflare).
 - SSRF còn khe DNS rebinding (chỉ admin gọi được; `shortcut:` trong `src/lib/security/safe-fetch.ts`).
 - Lưu danh sách nhiệm kỳ không nguyên tử (upsert rồi delete).
-- Lint `react-hooks/set-state-in-effect` có sẵn ở các màn hình admin.
+- Logic giữ chỗ chống gửi trùng mail nhắc chưa chạy thật (cần Gmail).
+- Nhận diện khung trên avatar Facebook thật có thể trượt nếu ảnh nhỏ làm viền lẫn màu.
+- Hết phiên đăng nhập giữa lúc quét: hash dữ liệu quét mất qua trang login (phải quét lại).
+- Lint `react-hooks/set-state-in-effect` có sẵn ở các màn hình admin cũ.
 - `form_templates` dùng chung mọi CLB (chấp nhận khi chỉ có BIT).
