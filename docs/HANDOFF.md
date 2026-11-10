@@ -4,9 +4,9 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 
 ## Trạng thái
 - **Nhánh `feat/member-roles-terms`** (chưa push, chưa merge `main`):
-  - `4fb4feb` Đợt 0 + 1: bảo mật (SSRF, đóng đăng ký, RLS đơn ứng tuyển, redirect an toàn), vai trò owner/admin/member, nhiệm kỳ, kết quả phỏng vấn, kết nạp, `/me`, tạo tài khoản hàng loạt.
-  - `6e8e521` Đợt 2: giao việc, nhắc Gmail qua Vercel Cron, bảng đóng góp; script nâng cấp DB `supabase/upgrade/`.
-  - `93acf54` Đợt 3: đối chiếu Facebook bằng bookmarklet, khung avatar, `/frames/[id]` công khai.
+  - `6c5a613` Đợt 0 + 1: bảo mật (SSRF, đóng đăng ký, RLS đơn ứng tuyển, redirect an toàn), vai trò owner/admin/member, nhiệm kỳ, kết quả phỏng vấn, kết nạp, `/me`, tạo tài khoản hàng loạt.
+  - `9f0d3cf` Đợt 2: giao việc, nhắc Gmail qua Vercel Cron, bảng đóng góp; script nâng cấp DB `supabase/upgrade/`.
+  - `84ee737` Đợt 3: đối chiếu Facebook bằng bookmarklet, khung avatar, `/frames/[id]` công khai.
   - Không commit (cố ý): `.claude/settings.local.json`, `.claude/skills/`, `.mcp.json`, `backup/` (gitignored, có dữ liệu cá nhân).
 - **Kiểm chứng gần nhất:** `npm test` 98/98, `npx supabase test db` 420/420, `tsc` sạch, eslint sạch ở code mới, `next build` sạch. E2E bằng playwright trên Supabase local (port 3100) cho cả 3 đợt, ảnh desktop + 375px đã xem. Bookmarklet chỉ thử trên trang Facebook GIẢ LẬP (`scratchpad/shots/fb-mock.html`).
 - **Hợp đồng:** `docs/CONTRACT-1.md` (Đợt 1), `docs/CONTRACT-2.md` (Đợt 2), `docs/CONTRACT.md` (Đợt 3, có các dòng "Sửa sau review").
@@ -32,8 +32,8 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 
 ## Gộp `main` (2026-11-10)
 - PR báo xung đột: `origin/main` có 4 commit của tài khoản BIT ngày 27/10 (import ứng viên/ca phỏng vấn từ Excel + SQL `update_application_forms_schema.sql` đổi form sang theo `campaign_id`). SQL này là nguồn gốc schema "legacy" trên DB thật. Code khác trên main vẫn dùng `position_id`.
-- Lead đã merge `origin/main` vào nhánh (commit `baefd31`): giữ mô hình form theo vị trí; 2 màn hình xung đột giữ bản nhánh; SQL chuyển vào `supabase/migration/legacy/` với dòng "KHÔNG CHẠY".
-- **Xong (commit `c9ed77d`, đã push):** RPC `import_applications` + giao diện import dùng chung (`ApplicantImportDialog`) ở 2 màn hình; `npm test` 98/98, `npx supabase test db` 522/522, `tsc` sạch, build sạch; thử local: CSV 3 dòng → "Đã import 2, bỏ qua 1 đơn trùng", tạo vị trí mới + ca + câu trả lời đúng. Reviewer rà `baefd31` + `c9ed77d`: 0 nghiêm trọng; đang sửa theo `docs/CONTRACT.md` 5.4 (form mới chép câu hỏi mẫu mặc định; đợt `open` không thêm câu hỏi vào form đã có; cấm tiêu đề câu hỏi chọn ca; dòng × câu ≤ 20000; bỏ savepoint mỗi dòng; kiểm email; so tên vị trí không phân biệt hoa thường; file ≤ 5 MB). Migration `20261114000000` CHƯA áp lên DB thật nên sửa thẳng file. **Đã sửa xong** (cùng file migration 20261114000000): `npm test` 98/98, `npx supabase test db` 552/552, tsc sạch, build sạch; thử local: import vào đợt đang mở tạo form mới đủ câu mẫu (9 câu, 5 có field_key), import lần 2 thêm câu hỏi mới vào form đã có bị chặn với thông báo tiếng Việt và không ghi gì. Đã commit + push. **Người dùng giờ có thể: `npx supabase db push --remote` (1 migration 20261114) → merge PR bằng tài khoản BIT → Vercel.**
+- Lead đã merge `origin/main` vào nhánh (commit `8428c1f`): giữ mô hình form theo vị trí; 2 màn hình xung đột giữ bản nhánh; SQL chuyển vào `supabase/migration/legacy/` với dòng "KHÔNG CHẠY".
+- **Xong (commit `e1f48bb`, đã push):** RPC `import_applications` + giao diện import dùng chung (`ApplicantImportDialog`) ở 2 màn hình; `npm test` 98/98, `npx supabase test db` 522/522, `tsc` sạch, build sạch; thử local: CSV 3 dòng → "Đã import 2, bỏ qua 1 đơn trùng", tạo vị trí mới + ca + câu trả lời đúng. Reviewer rà `8428c1f` + `e1f48bb`: 0 nghiêm trọng; đang sửa theo `docs/CONTRACT.md` 5.4 (form mới chép câu hỏi mẫu mặc định; đợt `open` không thêm câu hỏi vào form đã có; cấm tiêu đề câu hỏi chọn ca; dòng × câu ≤ 20000; bỏ savepoint mỗi dòng; kiểm email; so tên vị trí không phân biệt hoa thường; file ≤ 5 MB). Migration `20261114000000` CHƯA áp lên DB thật nên sửa thẳng file. **Đã sửa xong** (cùng file migration 20261114000000): `npm test` 98/98, `npx supabase test db` 552/552, tsc sạch, build sạch; thử local: import vào đợt đang mở tạo form mới đủ câu mẫu (9 câu, 5 có field_key), import lần 2 thêm câu hỏi mới vào form đã có bị chặn với thông báo tiếng Việt và không ghi gì. Đã commit + push. **Người dùng giờ có thể: `npx supabase db push --remote` (1 migration 20261114) → merge PR bằng tài khoản BIT → Vercel.**
 - Còn mở (cần hỏi người dùng): `xlsx@0.18.5` (có từ trước, dùng cho import và mail merge) có lỗ hổng high chưa vá trên npm (prototype pollution, ReDoS); phương án: bản SheetJS từ CDN chính chủ ≥ 0.20, hoặc chỉ nhận CSV.
 - Kế hoạch đã làm (3 agent mới): RPC `import_applications` (migration `20261114000000`, hợp đồng `docs/CONTRACT.md` mục 5), đưa giao diện import của main vào cả 2 màn hình gọi RPC, pgTAP `import.test.sql`. Sau đó người dùng cần `npx supabase db push --remote` lần nữa.
 - Vercel: repo đã nối với một project Vercel có sẵn; check trên PR lỗi "Git author buiducthinh250506-cell must have access to the project" (gói Hobby chỉ deploy commit của chủ project). Chờ người dùng cho biết ai sở hữu project Vercel.
@@ -71,3 +71,6 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 - Hết phiên đăng nhập giữa lúc quét: hash dữ liệu quét mất qua trang login (phải quét lại).
 - Lint `react-hooks/set-state-in-effect` có sẵn ở các màn hình admin cũ.
 - `form_templates` dùng chung mọi CLB (chấp nhận khi chỉ có BIT).
+
+## Ghi chú git
+- 2026-11-10: theo yêu cầu người dùng, đã viết lại lịch sử nhánh `feat/member-roles-terms` (filter-branch, chỉ bỏ dòng `Co-Authored-By: Claude`, code không đổi) và force-push. Mã commit trong file này là mã mới. Từ nay không thêm ghi công Claude vào commit/PR.
