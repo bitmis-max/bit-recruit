@@ -23,11 +23,19 @@ as $$
 declare
   c_max_rows constant int := 2000;
   c_max_questions constant int := 100;
+  c_max_cells constant int := 20000;     -- số dòng x số câu hỏi riêng
+  c_avail constant text := 'Thời gian có thể tham gia phỏng vấn';
+  c_email_re constant text := '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$';  -- như submit_application
   c_keys constant text[] := array[
     'position', 'session', 'full_name', 'email', 'phone', 'student_code', 'class_name'
   ];
 
   v_club_id uuid;
+  v_status public.campaign_status;
+  v_template_id uuid;
+  v_form_is_new boolean;
+  v_next_order int;
+  v_cur int;                 -- số dòng đang xử lý (cho tiền tố "Dòng N: ")
   v_form_name text := coalesce(nullif(btrim(p_form_name), ''), 'Biểu mẫu import');
   v_form_desc text := nullif(btrim(p_form_description), '');
 
@@ -80,7 +88,7 @@ begin
     raise exception 'Vui lòng chọn đợt tuyển để import';
   end if;
 
-  select c.club_id into v_club_id
+  select c.club_id, c.status into v_club_id, v_status
   from public.recruitment_campaigns c
   where c.id = p_campaign_id;
 
@@ -108,6 +116,9 @@ begin
     if char_length(v_q) > 500 then
       raise exception 'Mỗi câu hỏi tối đa 500 ký tự';
     end if;
+    if lower(v_q) = lower(c_avail) then
+      raise exception 'Không thể dùng "%" làm câu hỏi riêng vì biểu mẫu đã có sẵn câu hỏi này', c_avail;
+    end if;
     if lower(v_q) = any (v_qlow) then
       raise exception 'Câu hỏi bị trùng: %', v_q;
     end if;
@@ -131,10 +142,17 @@ begin
     raise exception 'Tối đa % dòng mỗi lần import (file có % dòng)', c_max_rows, v_total;
   end if;
 
+  if v_total * coalesce(array_length(v_qs, 1), 0) > c_max_cells then
+    raise exception 'Quá nhiều dữ liệu: số dòng x số câu hỏi riêng không được vượt quá % (hiện là % x %)',
+      c_max_cells, v_total, coalesce(array_length(v_qs, 1), 0);
+  end if;
+
   -- Hai lần import cùng đợt tuyển không chạy đồng thời (tránh tạo trùng vị trí/form/ca).
   perform pg_advisory_xact_lock(hashtextextended('import_applications:' || p_campaign_id::text, 0));
 
+  begin
   for v_n in 1..v_total loop
+    v_cur := v_n;
     v_row := p_rows -> (v_n - 1);
 
     -- ---- Kiểm tra dữ liệu dòng ----
@@ -158,6 +176,9 @@ begin
       end if;
       if v_k = 'email' then
         v_txt := lower(v_txt);
+        if v_txt is not null and v_txt !~ c_email_re then
+          raise exception 'Dòng %: email không hợp lệ', v_n;
+        end if;
       end if;
       v_f := v_f || jsonb_build_object(v_k, v_txt);
     end loop;
@@ -191,13 +212,12 @@ begin
     end if;
 
     -- ---- Ghi dữ liệu dòng ----
-    begin
       -- Vị trí
-      v_pos_id := (v_pos_cache ->> v_pos_name)::uuid;
+      v_pos_id := (v_pos_cache ->> lower(v_pos_name))::uuid;
       if v_pos_id is null then
         select p.id into v_pos_id
         from public.recruitment_positions p
-        where p.campaign_id = p_campaign_id and p.name = v_pos_name
+        where p.campaign_id = p_campaign_id and lower(btrim(p.name)) = lower(v_pos_name)
         order by p.created_at, p.id
         limit 1;
 
@@ -207,7 +227,7 @@ begin
           returning id into v_pos_id;
           v_pos_created := v_pos_created + 1;
         end if;
-        v_pos_cache := v_pos_cache || jsonb_build_object(v_pos_name, v_pos_id);
+        v_pos_cache := v_pos_cache || jsonb_build_object(lower(v_pos_name), v_pos_id);
       end if;
 
       -- Đơn trùng (position_id, email): bỏ qua cả dòng (trùng trong file cũng
@@ -227,11 +247,37 @@ begin
         from public.application_forms f
         where f.position_id = v_pos_id;
 
-        if v_form_id is null then
-          insert into public.application_forms (position_id, name, description)
-          values (v_pos_id, v_form_name, v_form_desc)
+        v_form_is_new := v_form_id is null;
+        if v_form_is_new then
+          -- Form mới: chép mẫu mặc định như create_application_form_from_template
+          -- (câu hỏi mẫu kể cả field_key, rồi câu hỏi chọn ca). Không có mẫu mặc
+          -- định thì form trống.
+          select t.id into v_template_id from public.form_templates t where t.is_default limit 1;
+
+          insert into public.application_forms (position_id, source_template_id, name, description)
+          values (v_pos_id, v_template_id, v_form_name, v_form_desc)
           returning id into v_form_id;
           v_form_created := v_form_created + 1;
+
+          if v_template_id is not null then
+            insert into public.form_questions (
+              form_id, question_text, question_type, field_key, options, is_required, order_index
+            )
+            select
+              v_form_id, q.question_text, q.question_type, q.field_key, q.options, q.is_required,
+              row_number() over (order by q.order_index, q.created_at, q.id)::int - 1
+            from public.form_template_questions q
+            where q.template_id = v_template_id
+              and lower(btrim(q.question_text)) <> lower(c_avail);
+
+            select coalesce(max(q.order_index) + 1, 0) into v_next_order
+            from public.form_questions q where q.form_id = v_form_id;
+
+            insert into public.form_questions (
+              form_id, question_text, question_type, field_key, is_required, order_index
+            )
+            values (v_form_id, c_avail, 'long_text', null, true, v_next_order);
+          end if;
         end if;
         v_form_cache := v_form_cache || jsonb_build_object(v_pos_id::text, v_form_id);
 
@@ -246,6 +292,9 @@ begin
           limit 1;
 
           if v_qid is null then
+            if not v_form_is_new and v_status = 'open' then
+              raise exception 'Đợt tuyển đang mở: không thể thêm câu hỏi mới vào biểu mẫu đang nhận đơn của vị trí "%". Hãy đóng đợt tuyển trước hoặc bỏ các cột câu hỏi riêng chưa có trong biểu mẫu.', v_pos_name;
+            end if;
             insert into public.form_questions (form_id, question_text, question_type, is_required, order_index)
             select v_form_id, v_qs[v_i], 'text', false, coalesce(max(q.order_index) + 1, 0)
             from public.form_questions q
@@ -305,11 +354,17 @@ begin
       end if;
 
       v_imported := v_imported + 1;
-    exception
-      when others then
-        raise exception 'Dòng %: %', v_n, sqlerrm;
-    end;
   end loop;
+  exception
+    when others then
+      -- Một khối bắt lỗi cho cả vòng lặp (không savepoint mỗi dòng). Lỗi đã có
+      -- số dòng hoặc là lỗi đợt đang mở thì giữ nguyên; lỗi từ DB/trigger thì
+      -- thêm tiền tố "Dòng N: ".
+      if v_cur is null or sqlerrm like 'Dòng %' or sqlerrm like 'Đợt tuyển đang mở%' then
+        raise;
+      end if;
+      raise exception 'Dòng %: %', v_cur, sqlerrm;
+  end;
 
   return jsonb_build_object(
     'imported', v_imported,

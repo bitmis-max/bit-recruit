@@ -102,7 +102,15 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
             <label className="text-sm font-medium">Tên biểu mẫu (không bắt buộc)<input autoFocus type="text" className={inputClass} value={formMeta.name} onChange={(event) => setFormMeta({ ...formMeta, name: event.target.value })} placeholder="Ví dụ: Đơn nhập từ Excel Gen 17" /></label>
             <label className="text-sm font-medium">Mô tả biểu mẫu (không bắt buộc)<input type="text" className={inputClass} value={formMeta.description} onChange={(event) => setFormMeta({ ...formMeta, description: event.target.value })} placeholder="Mô tả ngắn gọn" /></label>
           </div>
-          <p className="text-sm text-zinc-600">Biểu mẫu chỉ được tạo cho vị trí chưa có biểu mẫu. Vị trí, ca phỏng vấn chưa tồn tại sẽ được tạo mới; đơn trùng email trong cùng vị trí sẽ bị bỏ qua. Số dòng được tính không kể dòng tiêu đề.</p>
+          {data.sheetCount > 1 && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ đọc sheet &ldquo;{data.sheetName}&rdquo;. {data.sheetCount - 1} sheet còn lại bị bỏ qua.</p>}
+          <div className="space-y-1 text-sm text-zinc-600">
+            <p>Biểu mẫu chỉ được tạo cho vị trí chưa có biểu mẫu. Vị trí, ca phỏng vấn chưa tồn tại sẽ được tạo mới. Số dòng được tính không kể dòng tiêu đề.</p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>Ca phỏng vấn tạo mới có giờ tạm thời; hãy sửa giờ ở màn hình Phỏng vấn.</li>
+              <li>Đơn trùng email trong cùng vị trí sẽ bị bỏ qua. Dòng không có email thì không được lọc trùng.</li>
+              <li>Khi đợt tuyển đang mở, không thể thêm câu hỏi mới vào biểu mẫu đã có của vị trí. Hãy đóng đợt tuyển hoặc bỏ các cột câu hỏi riêng chưa có trong biểu mẫu.</li>
+            </ul>
+          </div>
           <div>
             <p className="text-sm font-semibold text-zinc-700">Ánh xạ cột dữ liệu</p>
             <div className="mt-2 grid grid-cols-2 gap-3 text-xs font-bold uppercase text-zinc-500"><span>Cột trong file</span><span>Ghép với</span></div>

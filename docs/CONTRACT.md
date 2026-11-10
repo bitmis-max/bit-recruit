@@ -115,3 +115,13 @@ Bối cảnh: `main` (2026-10-27) có tính năng import ứng viên/ca phỏng 
 
 ### 5.3. Test
 - pgTAP `supabase/tests/import.test.sql`: quyền (member, admin CLB khác, anon bị chặn); tạo vị trí/form/câu hỏi/ca mới; dùng lại vị trí/form/câu hỏi/ca có sẵn; đơn trùng email (trong DB và trong file) bị bỏ qua; câu trả lời gắn đúng câu hỏi thuộc form của đúng vị trí; dữ liệu sai ở dòng 3 → lỗi chứa "Dòng 3" và không ghi gì; giới hạn 2000 dòng / 100 câu hỏi.
+
+### 5.4. Sửa sau review (bắt buộc trước khi áp lên DB thật)
+- Form MỚI tạo trong lúc import: tạo giống `create_application_form_from_template` với mẫu mặc định (`form_templates.is_default`) — chép đủ câu hỏi mẫu (kể cả field_key) và câu hỏi chọn ca nếu hàm đó có thêm — rồi mới thêm các câu hỏi riêng còn thiếu. Không có mẫu mặc định → tạo form trống như cũ.
+- Đợt tuyển đang `open`: KHÔNG thêm câu hỏi mới vào form ĐÃ CÓ của vị trí. Nếu import cần thêm câu hỏi vào form như vậy → raise "Đợt tuyển đang mở: không thể thêm câu hỏi mới vào biểu mẫu đang nhận đơn của vị trí \"<tên>\". Hãy đóng đợt tuyển trước hoặc bỏ các cột câu hỏi riêng chưa có trong biểu mẫu." (không ghi gì).
+- Cấm câu hỏi riêng có tiêu đề (so `lower(btrim())`) = "thời gian có thể tham gia phỏng vấn" → lỗi rõ (cả SQL và client).
+- Giới hạn `số dòng × số câu hỏi riêng ≤ 20000` (cả SQL và client).
+- Bỏ khối bắt lỗi mỗi dòng (savepoint/dòng): dùng biến số dòng hiện tại và MỘT khối exception bao ngoài để thêm tiền tố "Dòng N: " (hoặc đưa số dòng thẳng vào từng thông báo lỗi).
+- Email (khác null) phải khớp regex email mà `submit_application` dùng; sai → "Dòng N: email không hợp lệ".
+- Tên vị trí so khớp `lower(btrim(name))` trong cùng đợt.
+- Client: file tối đa 5 MB; file nhiều sheet → báo "Chỉ đọc sheet <tên>"; ghi chú trong hộp thoại: ca phỏng vấn tạo mới có giờ tạm (sửa ở màn hình Phỏng vấn), dòng không có email không được lọc trùng.

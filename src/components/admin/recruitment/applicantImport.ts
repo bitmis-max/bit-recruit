@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 
 export type ImportRow = Record<string, unknown>;
-export type ImportData = { headers: string[]; rows: ImportRow[] };
+export type ImportData = { headers: string[]; rows: ImportRow[]; sheetName: string; sheetCount: number };
 /** Giá trị rỗng = bỏ qua cột; còn lại là một khóa trong `mappingOptions`. */
 export type ColumnMapping = Record<string, string>;
 export type ImportPayloadRow = {
@@ -19,6 +19,10 @@ export type ImportResult = { imported?: number; skipped_duplicates?: number };
 
 export const MAX_IMPORT_ROWS = 2000;
 export const MAX_IMPORT_QUESTIONS = 100;
+export const MAX_IMPORT_CELLS = 20000; // số dòng x số câu hỏi riêng
+export const MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024;
+/** Câu hỏi này do form tự có (chọn ca phỏng vấn), không cho tạo trùng tên từ file. */
+const RESERVED_QUESTION = "thời gian có thể tham gia phỏng vấn";
 const MAX_QUESTION_LENGTH = 500;
 const MAX_NAME_LENGTH = 200;
 
@@ -43,12 +47,14 @@ function cleanCell(value: unknown) {
 
 /** Đọc sheet đầu tiên của file .xlsx/.xls/.csv. Dòng 1 là tiêu đề. */
 export async function readApplicantFile(file: File): Promise<ImportData> {
+  if (file.size > MAX_IMPORT_FILE_BYTES) throw new Error("File lớn hơn 5 MB. Hãy tách thành nhiều file nhỏ hơn.");
   const isCsv = /\.csv$/i.test(file.name);
   // CSV đọc dưới dạng chuỗi để giữ đúng tiếng Việt UTF-8.
   const workbook = isCsv
     ? XLSX.read(await file.text(), { type: "string" })
     : XLSX.read(await file.arrayBuffer());
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
   if (!sheet) throw new Error("File không có dữ liệu.");
 
   // Đọc dạng mảng, ô rỗng = "", raw:false để giữ mã sinh viên và số điện thoại có số 0 đầu.
@@ -70,7 +76,7 @@ export async function readApplicantFile(file: File): Promise<ImportData> {
     .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])));
   if (!rows.length) throw new Error("File không có dữ liệu.");
   if (rows.length > MAX_IMPORT_ROWS) throw new Error(`File có ${rows.length} dòng dữ liệu, vượt giới hạn ${MAX_IMPORT_ROWS} dòng mỗi lần import. Hãy tách thành nhiều file.`);
-  return { headers, rows };
+  return { headers, rows, sheetName, sheetCount: workbook.SheetNames.length };
 }
 
 /** Dựng `p_questions` và `p_rows` cho RPC `import_applications`. Ném lỗi tiếng Việt nếu ghép cột chưa hợp lệ. */
@@ -87,6 +93,9 @@ export function buildImportPayload(data: ImportData, mapping: ColumnMapping): Im
   if (questions.length > MAX_IMPORT_QUESTIONS) throw new Error(`Có ${questions.length} cột "Câu hỏi riêng", vượt giới hạn ${MAX_IMPORT_QUESTIONS}. Hãy bỏ bớt cột.`);
   const longQuestion = questions.find((question) => question.length > MAX_QUESTION_LENGTH);
   if (longQuestion) throw new Error(`Tiêu đề cột "${longQuestion.slice(0, 40)}…" dài quá ${MAX_QUESTION_LENGTH} ký tự.`);
+
+  if (questions.some((question) => question.trim().toLocaleLowerCase("vi") === RESERVED_QUESTION)) throw new Error('Không dùng "Thời gian có thể tham gia phỏng vấn" làm câu hỏi riêng. Hãy chọn "Bỏ qua" hoặc "Ca phỏng vấn" cho cột này.');
+  if (data.rows.length * questions.length > MAX_IMPORT_CELLS) throw new Error(`Số dòng (${data.rows.length}) nhân số câu hỏi riêng (${questions.length}) vượt giới hạn ${MAX_IMPORT_CELLS}. Hãy bỏ bớt cột câu hỏi riêng hoặc tách file.`);
 
   const sessionColumn = columnsOf("session")[0];
   const fieldValue = (row: ImportRow, field: string) => {
