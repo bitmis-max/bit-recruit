@@ -92,3 +92,26 @@ Các hàm dưới đây phải **tự đóng gói** (self-contained): không tha
   - `tests/unit/bookmarklet.test.ts`: `facebookProfileKey`, `ringSignature`, `scanFacebookPage` đều chạy được khi dựng lại từ `toString()` bằng `new Function` (chứng minh tự đóng gói); `buildBookmarklet` bắt đầu bằng `javascript:` và giải mã ra code có `siteOrigin`; `parseScanPayload` nhận đúng và từ chối dữ liệu sai (key sai, quá 3000 item, sig sai độ dài, JSON hỏng).
   - `tests/unit/frame-signature.test.ts`: ảnh tổng hợp có vòng màu đỏ vs vòng xanh → khoảng cách lớn; cùng vòng + nhiễu nhỏ → dưới ngưỡng; pixel trong suốt bị bỏ qua.
 - pgTAP `supabase/tests/engagement.test.sql`: ràng buộc kind/post_url/frame_id; `create_task` với `p_all_members`, với frame CLB khác bị lỗi; gọi kiểu cũ (không tham số mới) vẫn chạy; `apply_task_scan` (quyền, chỉ pending → done, không đụng missed/done, task closed bị lỗi, trả đúng số); alias (admin CLB khác bị chặn, fb_key sai định dạng bị lỗi, member khác CLB bị lỗi); anon đọc được `avatar_frames`, không ghi được.
+
+## 5. (Bổ sung sau khi gộp `main`) Import ứng viên từ Excel trên mô hình form theo vị trí
+
+Bối cảnh: `main` (2026-10-27) có tính năng import ứng viên/ca phỏng vấn từ Excel ở `ApplicationsManager` và `InterviewsManager` (xem `git show origin/main:<file>`), ghi thẳng từ trình duyệt và tạo **một form theo đợt tuyển** (`campaign_id`). DB hiện dùng **một form cho mỗi vị trí** và không cho client insert `applications`/`application_answers`. Chuyển toàn bộ việc ghi vào một RPC chạy trong một transaction.
+
+### 5.1. DB (migration mới `supabase/migrations/20261114000000_import_applications.sql`)
+`import_applications(p_campaign_id uuid, p_form_name text, p_form_description text, p_questions text[], p_rows jsonb) returns jsonb` — security definer, `set search_path = public`, revoke from public, anon; grant execute cho authenticated, service_role.
+- Người gọi phải là admin của CLB chứa đợt tuyển (`is_club_admin`). Lỗi tiếng Việt.
+- `p_questions`: tiêu đề câu hỏi riêng (cột "Câu hỏi riêng" trong Excel), theo thứ tự; trim; bỏ rỗng; không trùng; tối đa 100 câu, mỗi câu ≤ 500 ký tự.
+- `p_rows`: mảng tối đa 2000 object `{ position, session, full_name, email, phone, student_code, class_name, answers }`; `position` bắt buộc (≤ 200 ký tự); `session` tùy chọn (≤ 200); các trường còn lại chuỗi hoặc null (trim, rỗng → null; email viết thường); `answers` là object `{ "<tiêu đề câu hỏi>": "<giá trị>" }` chỉ dùng các khóa có trong `p_questions`. Dữ liệu sai → raise "Dòng N: …" (N bắt đầu từ 1) và không ghi gì.
+- Với mỗi tên vị trí: tìm `recruitment_positions` theo `(campaign_id, name)`, không có thì tạo (team_id null).
+- Với mỗi vị trí được dùng: lấy form theo `position_id`; chưa có thì tạo `application_forms(position_id, name = coalesce(nullif(trim(p_form_name),''), 'Biểu mẫu import'), description)`. Với mỗi câu trong `p_questions`: dùng câu cùng `question_text` (field_key null) trong form đó, chưa có thì thêm (`question_type 'text'`, `is_required false`, `order_index` nối tiếp).
+- `session` có giá trị: tìm `interview_sessions` theo `(campaign_id, position_id, note = session)`, không có thì tạo (`round 1`, `start_time now()`, `end_time now() + 1 giờ`, `note = session`).
+- Thêm `applications` (campaign_id, position_id, các trường, status mặc định). Trùng `(position_id, email)` (email khác null, đã có trong DB hoặc lặp trong chính file) → bỏ qua dòng đó, đếm `skipped_duplicates`.
+- Thêm `application_answers` (answer_text) cho từng câu có giá trị không rỗng; có ca thì thêm `interview_assignments`.
+- Trả `{ "imported": n, "skipped_duplicates": n, "positions_created": n, "forms_created": n, "sessions_created": n }`.
+
+### 5.2. Giao diện
+- Đưa giao diện import từ `origin/main` (nút chọn file, đọc Excel/CSV bằng `xlsx`, hộp ghép cột với các lựa chọn vị trí / ca / họ tên / email / SĐT / MSSV / lớp / câu hỏi riêng / bỏ qua, tên + mô tả biểu mẫu) vào **cả hai** màn hình hiện có (`ApplicationsManager`, `InterviewsManager`) — GIỮ NGUYÊN mọi tính năng hiện có của nhánh (đổi trạng thái, kết nạp, kết quả/điểm phỏng vấn…).
+- Gom phần dùng chung vào `src/components/admin/recruitment/applicantImport.ts` (kiểu dữ liệu, danh sách lựa chọn cột, đọc file, dựng `p_questions` + `p_rows`). Nút Import gọi `supabase.rpc("import_applications", {...})` một lần, hiện kết quả "Đã import X, bỏ qua Y đơn trùng" và tải lại danh sách. Không còn insert trực tiếp vào bảng nào.
+
+### 5.3. Test
+- pgTAP `supabase/tests/import.test.sql`: quyền (member, admin CLB khác, anon bị chặn); tạo vị trí/form/câu hỏi/ca mới; dùng lại vị trí/form/câu hỏi/ca có sẵn; đơn trùng email (trong DB và trong file) bị bỏ qua; câu trả lời gắn đúng câu hỏi thuộc form của đúng vị trí; dữ liệu sai ở dòng 3 → lỗi chứa "Dòng 3" và không ghi gì; giới hạn 2000 dòng / 100 câu hỏi.

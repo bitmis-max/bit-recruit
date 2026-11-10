@@ -30,6 +30,12 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 - Đang chờ: người dùng merge PR, tạo project Vercel từ repo, nhập biến môi trường trên dashboard Vercel, cấu hình Supabase Auth (Site URL, Redirect URL, Google provider, tắt signup).
 - Lưu ý: `google_mail_tokens` trên DB thật có 1 token mã hóa bằng `GOOGLE_TOKEN_ENCRYPTION_KEY` cũ; nếu dùng key mới thì người đó phải kết nối lại Gmail.
 
+## Gộp `main` (2026-11-10)
+- PR báo xung đột: `origin/main` có 4 commit của tài khoản BIT ngày 27/10 (import ứng viên/ca phỏng vấn từ Excel + SQL `update_application_forms_schema.sql` đổi form sang theo `campaign_id`). SQL này là nguồn gốc schema "legacy" trên DB thật. Code khác trên main vẫn dùng `position_id`.
+- Lead đã merge `origin/main` vào nhánh (commit `baefd31`): giữ mô hình form theo vị trí; 2 màn hình xung đột giữ bản nhánh; SQL chuyển vào `supabase/migration/legacy/` với dòng "KHÔNG CHẠY".
+- Đang làm (3 agent mới): RPC `import_applications` (migration `20261114000000`, hợp đồng `docs/CONTRACT.md` mục 5), đưa giao diện import của main vào cả 2 màn hình gọi RPC, pgTAP `import.test.sql`. Sau đó người dùng cần `npx supabase db push --remote` lần nữa.
+- Vercel: repo đã nối với một project Vercel có sẵn; check trên PR lỗi "Git author buiducthinh250506-cell must have access to the project" (gói Hobby chỉ deploy commit của chủ project). Chờ người dùng cho biết ai sở hữu project Vercel.
+
 ## Việc tiếp theo
 1. Người dùng chạy 3 lệnh nâng cấp DB (trên).
 2. Cấu hình (người dùng làm, lead hướng dẫn): tắt "Allow new users to sign up"; bật Google provider; bật "Confirm email"; điền `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL` (qua file, không dán vào chat).

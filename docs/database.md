@@ -756,6 +756,21 @@ Luồng đối chiếu và avatar khung:
 4. Ban chủ chốt xác nhận danh sách rồi gọi `apply_task_scan`; mỗi lần quét chỉ thêm "xong", quét nhiều lần (react, rồi bình luận) được.
 5. Việc `avatar`: thành viên ghép ảnh với khung ngay trên trình duyệt (trang công khai `/frames/<id>`, đọc `avatar_frames` và bucket công khai). Kiểm tra ai đã thay avatar chỉ là thử nghiệm (so màu vòng viền), luôn được xác nhận lại bằng tay.
 
+### 6.6. Import ứng viên từ Excel/CSV (migration `20261114000000_import_applications.sql`)
+
+Không đổi bảng. Client không insert trực tiếp vào `applications`, `application_answers`, `application_forms`... khi import; mọi việc ghi nằm trong một RPC chạy trong một transaction (lỗi ở bất kỳ dòng nào thì không ghi gì).
+
+`import_applications(p_campaign_id uuid, p_form_name text, p_form_description text, p_questions text[], p_rows jsonb) returns jsonb`: `security definer`, `set search_path = public`, thu hồi quyền của `public`/`anon`, cấp `execute` cho `authenticated` và `service_role`. Người gọi phải là admin (`owner`/`admin`) của CLB chứa đợt tuyển (`is_club_admin`). Lỗi tiếng Việt; lỗi theo dòng có dạng `Dòng N: ...` (N từ 1).
+
+- `p_questions`: tiêu đề câu hỏi riêng theo thứ tự; trim, bỏ rỗng; trùng (không phân biệt hoa thường) thì báo lỗi; tối đa 100 câu, mỗi câu tối đa 500 ký tự.
+- `p_rows`: mảng JSON tối đa 2000 phần tử (mảng rỗng bị từ chối). Mỗi phần tử là object `{ position, session, full_name, email, phone, student_code, class_name, answers }`. `position` bắt buộc, `position`/`session` tối đa 200 ký tự, các trường còn lại tối đa 500; giá trị là chuỗi hoặc null (số, boolean, object... bị từ chối), được trim, rỗng thành null, `email` viết thường. `answers` là object `{ "<tiêu đề câu hỏi>": "<giá trị>" }`, khóa phải nằm trong `p_questions` (so khớp không phân biệt hoa thường), mỗi giá trị tối đa 10000 ký tự.
+- Vị trí: tìm `recruitment_positions` theo `(campaign_id, name)` (lấy cái tạo sớm nhất nếu trùng tên), chưa có thì tạo với `team_id` null.
+- Form (một form cho mỗi vị trí, `application_forms.position_id` unique): chưa có thì tạo với tên `p_form_name` (rỗng thì `Biểu mẫu import`) và mô tả `p_form_description`. Form đã có thì giữ nguyên tên/mô tả. Mỗi câu trong `p_questions`: dùng lại câu cùng nội dung (không phân biệt hoa thường, `field_key` null) của form đó, chưa có thì thêm (`text`, không bắt buộc, `order_index` nối tiếp). Form và câu hỏi chỉ được tạo khi vị trí có ít nhất một dòng không trùng.
+- Ca: dòng có `session` thì tìm `interview_sessions` theo `(campaign_id, position_id, note = session)`, chưa có thì tạo (`round 1`, `start_time = now()`, `end_time = now() + 1 giờ`, `note = session`), rồi thêm `interview_assignments`. Ca có `capacity` đã đầy thì cả lần import lỗi `Dòng N: Ca phỏng vấn đã đủ sức chứa`.
+- Đơn: thêm `applications` (trạng thái mặc định). Trùng `(position_id, email)` (đã có trong DB hoặc lặp lại trong chính file; email null không bị coi là trùng) thì bỏ qua cả dòng, không tạo ca/câu trả lời cho dòng đó. Câu trả lời rỗng không được lưu.
+- Hai lần import cùng một đợt tuyển được tuần tự hóa bằng `pg_advisory_xact_lock`, để không tạo trùng vị trí/form/ca.
+- Trả về `{ "imported", "skipped_duplicates", "positions_created", "forms_created", "sessions_created" }`.
+
 ## Phụ lục: policy đọc CLB cho quản trị
 
 Đăng nhập cần đọc membership của chính tài khoản. Áp dụng các policy dưới đây sau khi bật RLS (không thay đổi schema):

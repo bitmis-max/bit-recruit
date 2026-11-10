@@ -7,6 +7,7 @@ import { normalizeSearchText } from "../../../lib/recruitment/search";
 import { useCurrentAdminClub } from "../AdminClubContext";
 import { roleLabel } from "../roles";
 import { ApplicantAnswersModal } from "./ApplicantAnswersModal";
+import { ApplicantImportDialog } from "./ApplicantImportDialog";
 
 type Campaign = { id: string; name: string; status: string; start_date: string | null; end_date: string | null; created_at: string };
 type Position = { id: string; campaign_id: string; name: string; team_id: string | null };
@@ -306,7 +307,7 @@ export function InterviewsManager() {
   }
 
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
-    {!selectedSession && <header className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-emerald-700">Lịch phỏng vấn</p><h1 className="mt-1 text-3xl font-bold">Quản lý phỏng vấn</h1><p className="mt-2 text-sm text-zinc-600">Câu trả lời và ghi chú ứng viên được hiển thị khi mở từng ca.</p></div><button type="button" onClick={() => void load()} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Làm mới</button></header>}
+    {!selectedSession && <header className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-emerald-700">Lịch phỏng vấn</p><h1 className="mt-1 text-3xl font-bold">Quản lý phỏng vấn</h1><p className="mt-2 text-sm text-zinc-600">Câu trả lời và ghi chú ứng viên được hiển thị khi mở từng ca.</p></div><div className="flex flex-wrap gap-2">{canWrite && <ApplicantImportDialog campaignId={campaignFilter} campaignName={campaignName.get(campaignFilter) ?? ""} disabled={busy || loading} onError={setError} onImported={async (message) => { setError(""); setNotice(message); await load(); }} />}<button type="button" onClick={() => void load()} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Làm mới</button></div></header>}
     {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}{notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
     {!selectedSession && canWrite && <form onSubmit={(event) => void createSession(event)} className="mb-6 rounded-xl border bg-white p-5">
       <h2 className="mb-4 font-semibold">Tạo ca phỏng vấn</h2>
