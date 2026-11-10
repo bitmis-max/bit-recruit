@@ -82,3 +82,15 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 
 ## Ghi chú git
 - 2026-11-10: theo yêu cầu người dùng, đã viết lại lịch sử nhánh `feat/member-roles-terms` (filter-branch, chỉ bỏ dòng `Co-Authored-By: Claude`, code không đổi) và force-push. Mã commit trong file này là mã mới. Từ nay không thêm ghi công Claude vào commit/PR.
+
+## Production (2026-11-10 14:3x) — ĐÃ LÊN
+- PR #1 đã merge vào `main` bởi `bitmis-max` (commit `d1c2322`). Project Vercel `bit-bav` không tự gắn tên miền cho bản production mới → người dùng đã Redeploy (nhận `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL`) + Promote. `bit-bav.vercel.app` = deployment 14:29 (`bit-2uf9bskbw`).
+- Lead kiểm tra read-only: `/`, `/login`, `/positions`, `/events` 200; `/register` → `/login`; `/me`, `/manage-clubs/*` → login; cron không/sai secret → 401 (có `CRON_SECRET`); không lỗi JS trên trang công khai. `/positions` trống vì đợt "Tuyển thành viên đợt 1 năm học 2026–2027" hết hạn 2026-11-07 (đúng thiết kế).
+- Lệnh `vercel redeploy/promote` bị chốt an toàn chặn → người dùng làm trên dashboard. Nên bật Settings → Environments → Production → "Auto-assign Custom Production Domains" để lần sau tự cập nhật.
+- Commit docs sau merge (`dff374c` trở đi) nằm trên nhánh `feat/member-roles-terms`, chưa vào `main` (chỉ tài liệu).
+
+## Còn mở sau khi lên production
+- Thử thật: đăng nhập Google vào tài khoản tạo sẵn; Gmail nhắc việc (chọn Gmail gửi ở màn Giao việc rồi "Gửi nhắc ngay"); bookmarklet trên bài Facebook thật.
+- Kiểm Supabase Auth → URL Configuration: Site URL `https://bit-bav.vercel.app`, Redirect `https://bit-bav.vercel.app/auth/callback`; tắt "Allow new users to sign up".
+- Quyết định về `xlsx@0.18.5` (lỗ hổng high chưa vá trên npm).
+- Khuyến nghị bật 2FA cho tài khoản Vercel BIT.
