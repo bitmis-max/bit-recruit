@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   const clubId = text(form.get("clubId"));
   const eventId = text(form.get("eventId"));
   const file = form.get("file");
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "events" });
   if (context.error) return context.error;
   if (!uuidPattern.test(eventId)) return NextResponse.json({ error: "Mã sự kiện không hợp lệ." }, { status: 400 });
   if (!(file instanceof File)) return NextResponse.json({ error: "Chưa chọn ảnh." }, { status: 400 });
@@ -39,7 +39,7 @@ export async function DELETE(request: NextRequest) {
   if (!body) return NextResponse.json({ error: "Dữ liệu gửi lên không hợp lệ." }, { status: 400 });
   const clubId = text(body.clubId);
   const imageUrl = text(body.imageUrl);
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "events" });
   if (context.error) return context.error;
 
   let path: string;

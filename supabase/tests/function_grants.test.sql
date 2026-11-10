@@ -1,5 +1,5 @@
 begin;
-select plan(5);
+select plan(7);
 
 -- anon may only execute the two public applicant functions.
 select is(
@@ -31,6 +31,7 @@ select ok(
      'is_club_admin', 'is_club_member', 'is_club_owner', 'is_task_assignee', 'task_club_id',
      'team_belongs_to_club', 'can_delete_empty_interview_session',
      'create_task', 'apply_task_scan', 'club_contribution', 'set_my_task_done',
+     'is_club_head', 'has_club_permission', 'my_club_team',
      'activate_term', 'admit_applications', 'update_my_member_profile',
      'create_application_form_from_template', 'save_application_form_questions')),
   'authenticated vẫn gọi được các hàm ứng dụng và RLS cần'
@@ -38,6 +39,12 @@ select ok(
 
 select ok(has_function_privilege('anon', 'public.submit_application(uuid, jsonb)', 'execute'), 'anon vẫn nộp đơn được');
 select ok(not has_function_privilege('anon', 'public.is_club_admin(uuid)', 'execute'), 'anon không gọi is_club_admin');
+
+select ok(not has_function_privilege('anon', 'public.is_club_head(uuid)', 'execute'), 'anon không gọi is_club_head');
+select ok(
+  not has_function_privilege('anon', 'public.has_club_permission(uuid, text)', 'execute')
+  and not has_function_privilege('anon', 'public.my_club_team(uuid)', 'execute'),
+  'anon không gọi has_club_permission / my_club_team');
 
 select * from finish();
 rollback;

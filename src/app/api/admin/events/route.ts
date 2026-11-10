@@ -26,7 +26,7 @@ function parseEventFields(body: Record<string, unknown>) {
 
 export async function GET(request: NextRequest) {
   const clubId = request.nextUrl.searchParams.get("clubId") ?? "";
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "events" });
   if (context.error) return context.error;
   const { data, error } = await context.admin.from("events").select(eventFields)
     .eq("club_id", clubId).order("sort_order", { ascending: true }).order("created_at", { ascending: false });
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ error: "Dữ liệu gửi lên không hợp lệ." }, { status: 400 });
   const clubId = text(body.clubId);
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "events" });
   if (context.error) return context.error;
   const parsed = parseEventFields(body);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
@@ -62,7 +62,7 @@ export async function PATCH(request: NextRequest) {
   const clubId = text(body.clubId);
   const eventId = text(body.id);
   const orderedEventIds = body.orderedEventIds;
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "events" });
   if (context.error) return context.error;
   if (Array.isArray(orderedEventIds)) {
     const isValidId = (id: unknown): id is string => typeof id === "string"
@@ -102,7 +102,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const clubId = request.nextUrl.searchParams.get("clubId") ?? "";
   const eventId = request.nextUrl.searchParams.get("id") ?? "";
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "events" });
   if (context.error) return context.error;
   if (!eventId) return NextResponse.json({ error: "Thiếu sự kiện cần xóa." }, { status: 400 });
   const { data, error } = await context.admin.from("events").delete()

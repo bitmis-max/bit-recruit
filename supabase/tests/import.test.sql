@@ -79,6 +79,10 @@ insert into public.club_members (id, club_id, user_id, team_id, role, full_name,
   ('00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000a3', null, 'member', 'Member 1', true, 'MEM1'),
   ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000b1', null, 'owner',  'Owner B',  true, 'OB1');
 
+-- Đợt 4: import cần quyền recruitment; admin fixture được cấp đủ 5 quyền, e1/f1 là Chủ nhiệm.
+update public.club_members set permissions = array['events', 'recruitment', 'members', 'mail', 'facebook'] where role = 'admin';
+update public.club_members set is_head = true where id in ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f1');
+
 -- ca01: đợt của CLB A (đã có dữ liệu). ca02: CLB B. ca03: owner A import. ca04: thử dữ liệu sai (phải luôn rỗng). ca05: thử biên 2000 dòng / 100 câu.
 insert into public.recruitment_campaigns (id, club_id, name) values
   ('00000000-0000-0000-0000-00000000ca01', '00000000-0000-0000-0000-0000000000c1', 'Đợt 1 CLB A'),

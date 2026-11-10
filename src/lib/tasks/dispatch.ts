@@ -1,6 +1,7 @@
 // Chỉ dùng phía server (service-role): nạp người nhận nhắc việc và gửi mail gộp qua Gmail của người gửi.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getGmailAccessToken, GmailError, sendGmail } from "../email/gmail";
+import { hasPermission } from "../admin/permissions";
 import { buildReminderEmail, type ReminderRow } from "./reminders";
 
 export type TaskInfo = { id: string; title: string; due_at: string };
@@ -54,17 +55,17 @@ export async function loadPendingRows(admin: SupabaseClient, tasks: TaskInfo[]):
   return rows;
 }
 
-/** Người gửi hợp lệ = thành viên đang hoạt động của CLB với vai trò owner/admin. Trả về null nếu không hợp lệ. */
+/** Người gửi hợp lệ = thành viên đang hoạt động của CLB là owner, hoặc admin có quyền `mail`. Trả về null nếu không hợp lệ. */
 export async function findValidSender(
   admin: SupabaseClient,
   clubId: string,
   senderUserId: string | null,
 ): Promise<{ fullName: string } | null> {
   if (!senderUserId) return null;
-  const { data } = await admin.from("club_members").select("full_name")
+  const { data } = await admin.from("club_members").select("full_name,role,permissions")
     .eq("club_id", clubId).eq("user_id", senderUserId).eq("is_active", true)
     .in("role", ["owner", "admin"]).limit(1).maybeSingle();
-  return data ? { fullName: data.full_name } : null;
+  return data && hasPermission(data.role, data.permissions, "mail") ? { fullName: data.full_name } : null;
 }
 
 export type ClubSender = { accessToken: string; from: string };

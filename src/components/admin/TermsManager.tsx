@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { getSupabaseClient } from "../../lib/supabase/client";
 import { useCurrentAdminClub } from "./AdminClubContext";
 import { roleLabel } from "./roles";
+import { CLUB_PERMISSIONS, isClubPermission } from "../../lib/admin/permissions";
 
 type Term = { id: string; name: string; start_date: string | null; end_date: string | null; status: "draft" | "active" | "ended"; activated_at: string | null; created_at: string };
-type TermRole = { member_id: string; role: "owner" | "admin"; title: string; team_id: string };
-type Member = { id: string; full_name: string; role: string; user_id: string | null; team_id: string | null; title: string | null; is_active: boolean };
+type TermRole = { member_id: string; role: "owner" | "admin"; title: string; team_id: string; permissions: string[]; is_head: boolean };
+type Member = { id: string; full_name: string; role: string; user_id: string | null; team_id: string | null; title: string | null; is_active: boolean; permissions: string[] | null; is_head: boolean | null };
 type Team = { id: string; name: string };
 const statusLabel: Record<Term["status"], string> = { draft: "Nháp", active: "Đang áp dụng", ended: "Đã kết thúc" };
 const statusClass: Record<Term["status"], string> = { draft: "bg-amber-50 text-amber-800", active: "bg-emerald-50 text-emerald-800", ended: "bg-zinc-100 text-zinc-600" };
@@ -19,13 +20,12 @@ function formatDate(value: string | null) {
 }
 
 function serialize(rows: TermRole[]) {
-  return JSON.stringify([...rows].sort((a, b) => a.member_id.localeCompare(b.member_id)));
+  return JSON.stringify([...rows].map((row) => ({ ...row, permissions: [...row.permissions].sort() })).sort((a, b) => a.member_id.localeCompare(b.member_id)));
 }
 
 export function TermsManager() {
   const supabase = getSupabaseClient();
-  const { id: clubId, role } = useCurrentAdminClub();
-  const isOwner = role === "owner";
+  const { id: clubId, role, isHead } = useCurrentAdminClub();
   const [terms, setTerms] = useState<Term[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -47,7 +47,7 @@ export function TermsManager() {
     setLoading(true);
     const [termResult, memberResult, teamResult] = await Promise.all([
       supabase.from("club_terms").select("id,name,start_date,end_date,status,activated_at,created_at").eq("club_id", clubId).order("created_at", { ascending: false }),
-      supabase.from("club_members").select("id,full_name,role,user_id,team_id,title,is_active").eq("club_id", clubId).order("full_name"),
+      supabase.from("club_members").select("id,full_name,role,user_id,team_id,title,is_active,permissions,is_head").eq("club_id", clubId).order("full_name"),
       supabase.from("teams").select("id,name").eq("club_id", clubId).order("name"),
     ]);
     const failure = termResult.error ?? memberResult.error ?? teamResult.error;
@@ -66,10 +66,10 @@ export function TermsManager() {
   const loadRoles = useCallback(async () => {
     if (!supabase || !selectedId) { setRoles([]); setSavedRoles("[]"); return; }
     setRolesLoading(true);
-    const { data, error: rolesError } = await supabase.from("club_term_roles").select("member_id,role,title,team_id").eq("term_id", selectedId);
+    const { data, error: rolesError } = await supabase.from("club_term_roles").select("member_id,role,title,team_id,permissions,is_head").eq("term_id", selectedId);
     if (rolesError) setError(rolesError.message);
     else {
-      const rows = ((data ?? []) as { member_id: string; role: "owner" | "admin"; title: string | null; team_id: string | null }[]).map((row) => ({ member_id: row.member_id, role: row.role, title: row.title ?? "", team_id: row.team_id ?? "" }));
+      const rows = ((data ?? []) as { member_id: string; role: "owner" | "admin"; title: string | null; team_id: string | null; permissions: string[] | null; is_head: boolean | null }[]).map((row) => ({ member_id: row.member_id, role: row.role, title: row.title ?? "", team_id: row.team_id ?? "", permissions: row.permissions ?? [], is_head: row.is_head === true && row.role === "owner" }));
       setRoles(rows); setSavedRoles(serialize(rows));
     }
     setRolesLoading(false);
@@ -80,30 +80,33 @@ export function TermsManager() {
   useEffect(() => { if (confirming) cancelRef.current?.focus(); }, [confirming]);
 
   const selected = terms.find((term) => term.id === selectedId) ?? null;
-  const canEdit = isOwner && selected?.status === "draft";
+  const canEdit = isHead && selected?.status === "draft";
   const memberById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const dirty = serialize(roles) !== savedRoles;
   const pickable = members.filter((member) => member.is_active && !roles.some((row) => row.member_id === member.id));
-  const hasLoginOwner = roles.some((row) => row.role === "owner" && memberById.get(row.member_id)?.is_active && memberById.get(row.member_id)?.user_id);
+  const heads = roles.filter((row) => row.role === "owner" && row.is_head);
+  const headMember = heads.length === 1 ? memberById.get(heads[0].member_id) : undefined;
+  // Kích hoạt chỉ được khi có đúng một Chủ nhiệm đang hoạt động và đã có tài khoản.
+  const headReady = heads.length === 1 && !!headMember?.is_active && !!headMember.user_id;
   const demoted = members.filter((member) => member.is_active && !roles.some((row) => row.member_id === member.id) && member.role !== "member");
   const droppedCount = members.filter((member) => member.is_active && !roles.some((row) => row.member_id === member.id)).length;
 
   async function createTerm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !isOwner) return;
+    if (!supabase || !isHead) return;
     if (form.start_date && form.end_date && form.end_date < form.start_date) { setError("Ngày kết thúc phải sau hoặc cùng ngày bắt đầu."); return; }
     setBusy(true); setError(""); setNotice("");
     const { data, error: insertError } = await supabase.from("club_terms").insert({ club_id: clubId, name: form.name.trim(), start_date: form.start_date || null, end_date: form.end_date || null }).select("id").single();
     setBusy(false);
     if (insertError) { setError(insertError.message); return; }
-    setForm(emptyForm); setNotice("Đã tạo nhiệm kỳ nháp. Hãy chọn Ban chủ nhiệm và Ban chủ chốt rồi lưu danh sách.");
+    setForm(emptyForm); setNotice("Đã tạo nhiệm kỳ nháp. Hãy chọn Ban chủ nhiệm (đúng một Chủ nhiệm) và Ban chủ chốt kèm quyền rồi lưu danh sách.");
     setSelectedId(data.id);
     await load();
   }
 
   function addRole() {
     if (!pickMember) return;
-    setRoles((current) => [...current, { member_id: pickMember, role: "admin", title: "", team_id: "" }]);
+    setRoles((current) => [...current, { member_id: pickMember, role: "admin", title: "", team_id: "", permissions: [], is_head: false }]);
     setPickMember("");
   }
 
@@ -111,17 +114,41 @@ export function TermsManager() {
     setRoles((current) => current.map((row) => row.member_id === memberId ? { ...row, ...patch } : row));
   }
 
+  // Chọn đúng một Chủ nhiệm: bỏ cờ ở mọi người khác.
+  function setHead(memberId: string) {
+    setRoles((current) => current.map((row) => ({ ...row, is_head: row.member_id === memberId && row.role === "owner" })));
+  }
+
+  function changeRole(memberId: string, next: "owner" | "admin") {
+    // Ban chủ nhiệm đã có mọi quyền nên xóa quyền lẻ; Ban chủ chốt không thể là Chủ nhiệm.
+    updateRole(memberId, next === "owner" ? { role: next, permissions: [] } : { role: next, is_head: false });
+  }
+
+  function togglePermission(memberId: string, code: string, checked: boolean) {
+    setRoles((current) => current.map((row) => row.member_id !== memberId ? row : { ...row, permissions: checked ? [...new Set([...row.permissions, code])] : row.permissions.filter((item) => item !== code) }));
+  }
+
   function prefillFromCurrent() {
-    setRoles(members.filter((member) => member.is_active && (member.role === "owner" || member.role === "admin")).map((member) => ({ member_id: member.id, role: member.role as "owner" | "admin", title: member.title ?? "", team_id: member.team_id ?? "" })));
+    setRoles(members.filter((member) => member.is_active && (member.role === "owner" || member.role === "admin")).map((member) => ({
+      member_id: member.id, role: member.role as "owner" | "admin", title: member.title ?? "", team_id: member.team_id ?? "",
+      permissions: member.role === "admin" ? (member.permissions ?? []).filter(isClubPermission) : [], is_head: member.role === "owner" && member.is_head === true,
+    })));
   }
 
   async function saveRoles() {
     if (!supabase || !canEdit || !selected) return;
+    if (heads.length > 1) { setError("Chỉ được chọn một Chủ nhiệm."); return; }
     setBusy(true); setError(""); setNotice("");
     const keep = new Set(roles.map((row) => row.member_id));
-    const removed = (JSON.parse(savedRoles) as TermRole[]).map((row) => row.member_id).filter((id) => !keep.has(id));
+    const saved = JSON.parse(savedRoles) as TermRole[];
+    const removed = saved.map((row) => row.member_id).filter((id) => !keep.has(id));
+    // Bỏ cờ Chủ nhiệm cũ trước để không vướng ràng buộc "tối đa một Chủ nhiệm" khi đổi người.
+    if (saved.some((row) => row.is_head)) {
+      const { error: clearError } = await supabase.from("club_term_roles").update({ is_head: false }).eq("term_id", selected.id).eq("is_head", true);
+      if (clearError) { setBusy(false); setError(clearError.message); return; }
+    }
     if (roles.length) {
-      const { error: upsertError } = await supabase.from("club_term_roles").upsert(roles.map((row) => ({ term_id: selected.id, member_id: row.member_id, role: row.role, title: row.title.trim() || null, team_id: row.team_id || null })), { onConflict: "term_id,member_id" });
+      const { error: upsertError } = await supabase.from("club_term_roles").upsert(roles.map((row) => ({ term_id: selected.id, member_id: row.member_id, role: row.role, title: row.title.trim() || null, team_id: row.team_id || null, permissions: row.role === "admin" ? row.permissions : [], is_head: row.role === "owner" && row.is_head })), { onConflict: "term_id,member_id" });
       if (upsertError) { setBusy(false); setError(upsertError.message); return; }
     }
     if (removed.length) {
@@ -147,10 +174,10 @@ export function TermsManager() {
     {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
     {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
     {!supabase && <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Thiếu cấu hình Supabase.</p>}
-    {!isOwner && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ Ban chủ nhiệm được tạo và sửa nhiệm kỳ. Ban chủ chốt chỉ có quyền xem.</p>}
+    {!isHead && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ Chủ nhiệm được tạo, sửa và kích hoạt nhiệm kỳ.{role === "owner" ? " Phó chủ nhiệm chỉ có quyền xem." : " Ban chủ chốt chỉ có quyền xem."}</p>}
     <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
       <div className="space-y-6">
-        {isOwner && <form onSubmit={(event) => void createTerm(event)} className="space-y-4 rounded-xl border bg-white p-5">
+        {isHead && <form onSubmit={(event) => void createTerm(event)} className="space-y-4 rounded-xl border bg-white p-5">
           <div><h2 className="font-semibold">Tạo nhiệm kỳ nháp</h2><p className="mt-1 text-xs text-zinc-500">Nhiệm kỳ nháp chưa ảnh hưởng đến vai trò của ai.</p></div>
           <label className="block text-sm">Tên nhiệm kỳ<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={inputClass} placeholder="Ví dụ: Nhiệm kỳ 2026–2027" /></label>
           <label className="block text-sm">Ngày bắt đầu<input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} className={inputClass} /></label>
@@ -173,18 +200,20 @@ export function TermsManager() {
               return <li key={row.member_id} className="rounded-lg border p-3">
                 <p className="break-words text-sm font-semibold">{member?.full_name ?? "Thành viên đã xóa"}{member && !member.user_id && <span className="ml-2 text-xs font-normal text-amber-800">Chưa có tài khoản</span>}</p>
                 <div className="mt-2 grid gap-3 sm:grid-cols-3">
-                  <label className="block text-xs font-medium text-zinc-600">Vai trò<select disabled={!canEdit} value={row.role} onChange={(event) => updateRole(row.member_id, { role: event.target.value as "owner" | "admin" })} className={inputClass}><option value="owner">{roleLabel("owner")}</option><option value="admin">{roleLabel("admin")}</option></select></label>
+                  <label className="block text-xs font-medium text-zinc-600">Vai trò<select disabled={!canEdit} value={row.role} onChange={(event) => changeRole(row.member_id, event.target.value as "owner" | "admin")} className={inputClass}><option value="owner">{roleLabel("owner")}</option><option value="admin">{roleLabel("admin")}</option></select></label>
                   <label className="block text-xs font-medium text-zinc-600">Chức danh<input disabled={!canEdit} value={row.title} onChange={(event) => updateRole(row.member_id, { title: event.target.value })} className={inputClass} placeholder="Ví dụ: Phó chủ nhiệm" /></label>
                   <label className="block text-xs font-medium text-zinc-600">Ban<select disabled={!canEdit} value={row.team_id} onChange={(event) => updateRole(row.member_id, { team_id: event.target.value })} className={inputClass}><option value="">Không đổi ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
                 </div>
+                {row.role === "owner" ? <label className="mt-3 flex w-fit cursor-pointer items-center gap-2 text-sm"><input type="radio" name="term-head" disabled={!canEdit} checked={row.is_head} onChange={() => setHead(row.member_id)} /> <span className="font-medium">Chủ nhiệm</span><span className="text-xs text-zinc-500">(đúng một người; Phó chủ nhiệm không chọn)</span></label>
+                  : <fieldset className="mt-3"><legend className="text-xs font-medium text-zinc-600">Quyền chức năng của {member?.full_name ?? "thành viên"}</legend><div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">{CLUB_PERMISSIONS.map((permission) => <label key={permission.code} className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" disabled={!canEdit} checked={row.permissions.includes(permission.code)} onChange={(event) => togglePermission(row.member_id, permission.code, event.target.checked)} /> {permission.label}</label>)}</div></fieldset>}
                 {canEdit && <button type="button" onClick={() => setRoles((current) => current.filter((item) => item.member_id !== row.member_id))} className="mt-2 text-sm font-medium text-rose-700 hover:underline">Gỡ khỏi danh sách</button>}
               </li>;
             })}</ul> : <p className="mt-4 text-sm text-zinc-500">Chưa có ai trong danh sách của nhiệm kỳ này.</p>}
             {canEdit && <div className="mt-4 flex flex-wrap items-end gap-2 rounded-lg bg-zinc-50 p-3"><label className="min-w-52 flex-1 text-sm">Thêm thành viên<select value={pickMember} onChange={(event) => setPickMember(event.target.value)} className={inputClass}><option value="">Chọn thành viên</option>{pickable.map((member) => <option key={member.id} value={member.id}>{member.full_name}{member.role !== "member" ? ` · ${roleLabel(member.role)}` : ""}</option>)}</select></label><button type="button" disabled={!pickMember} onClick={addRole} className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 disabled:opacity-50">Thêm vào danh sách</button></div>}
             {canEdit && <div className="mt-5 flex flex-wrap items-center gap-3 border-t pt-5">
               <button type="button" disabled={busy || !dirty} onClick={() => void saveRoles()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang lưu…" : "Lưu danh sách"}</button>
-              <button type="button" disabled={busy || dirty || !hasLoginOwner} onClick={() => setConfirming(true)} className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 disabled:opacity-50">Kích hoạt nhiệm kỳ</button>
-              <p className="text-xs text-zinc-500">{dirty ? "Hãy lưu danh sách trước khi kích hoạt." : !hasLoginOwner ? "Cần ít nhất một thành viên Ban chủ nhiệm đang hoạt động và đã có tài khoản." : "Kích hoạt sẽ áp dụng danh sách này cho cả CLB."}</p>
+              <button type="button" disabled={busy || dirty || !headReady} onClick={() => setConfirming(true)} className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 disabled:opacity-50">Kích hoạt nhiệm kỳ</button>
+              <p className="text-xs text-zinc-500">{dirty ? "Hãy lưu danh sách trước khi kích hoạt." : !headReady ? "Cần chọn đúng một Chủ nhiệm thuộc Ban chủ nhiệm, đang hoạt động và đã có tài khoản." : "Kích hoạt sẽ áp dụng danh sách này cho cả CLB."}</p>
             </div>}
           </div>
         </>}
@@ -194,7 +223,8 @@ export function TermsManager() {
       <div role="dialog" aria-modal="true" aria-labelledby="activate-term-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <h2 id="activate-term-title" className="text-lg font-bold">Kích hoạt “{selected.name}”?</h2>
         <div className="mt-3 space-y-2 text-sm text-zinc-700">
-          <p>Danh sách này sẽ trở thành Ban chủ nhiệm và Ban chủ chốt của CLB ({roles.length} người). Nhiệm kỳ đang áp dụng (nếu có) sẽ chuyển sang “Đã kết thúc”.</p>
+          <p className="rounded-lg bg-emerald-50 p-3 text-emerald-900"><strong>{headMember?.full_name ?? "Người được chọn"}</strong> sẽ trở thành Chủ nhiệm của CLB. Chỉ Chủ nhiệm mới được kích hoạt nhiệm kỳ và cấp quyền.</p>
+          <p>Danh sách này sẽ trở thành Ban chủ nhiệm và Ban chủ chốt của CLB ({roles.length} người) với đúng quyền chức năng đã tick. Nhiệm kỳ đang áp dụng (nếu có) sẽ chuyển sang “Đã kết thúc”.</p>
           <p className="rounded-lg bg-amber-50 p-3 text-amber-900"><strong>Mọi người không có trong danh sách sẽ trở thành Thành viên</strong> và mất chức danh hiện tại ({droppedCount} người{demoted.length ? `, trong đó ${demoted.length} người đang giữ vai trò quản trị` : ""}).</p>
           <p className="text-xs text-zinc-500">Thao tác này không hoàn tác tự động; muốn đổi lại phải kích hoạt một nhiệm kỳ khác.</p>
         </div>

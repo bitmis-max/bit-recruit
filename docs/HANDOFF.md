@@ -89,6 +89,16 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 - Lệnh `vercel redeploy/promote` bị chốt an toàn chặn → người dùng làm trên dashboard. Nên bật Settings → Environments → Production → "Auto-assign Custom Production Domains" để lần sau tự cập nhật.
 - Commit docs sau merge (`dff374c` trở đi) nằm trên nhánh `feat/member-roles-terms`, chưa vào `main` (chỉ tài liệu).
 
+## Đợt 4: phân quyền theo chức năng (đang làm, nhánh `feat/permissions`)
+- Quyết định người dùng (2026-11-10): BCN = 1 Chủ nhiệm + 3 Phó CN (owner, toàn quyền vận hành); CHỈ Chủ nhiệm (`is_head`) đổi nhiệm kỳ + cấp/gỡ vai trò và quyền. BCC (admin) có quyền theo chức năng tick riêng từng người: `events`, `recruitment`, `members`, `mail`, `facebook`; giao việc / xem đóng góp chỉ trong ban mình. Ban: Chuyên môn, Truyền thông, Nhân sự; số BCC đổi theo năm.
+- Hợp đồng `docs/CONTRACT.md` (Đợt 3 chuyển sang `docs/CONTRACT-3.md`). 4 agent mới: db (`20261115000000_permissions.sql`), api (`src/lib/admin/permissions.ts`, kiểm quyền mọi route), frontend (ẩn menu theo quyền, Terms/Members/Tasks/Contribution), tester (`permissions.test.sql` + cập nhật test cũ).
+- Tiến độ 2026-11-10 22:07: api-agent XONG (`permissions.ts`, kiểm quyền mọi route; tsc/eslint sạch; npm test 104/104). db/FE/tester dừng do giới hạn sử dụng (reset 17:50) → 22:07 đã nhắn làm tiếp. Migration `20261115000000_permissions.sql` CHƯA được ghi ra đĩa lúc dừng.
+- 2026-11-10 tối: cả 4 agent xong lượt đầu (858 test DB + 104 unit xanh). Reviewer: 1 nghiêm trọng (admin có `members` bật lại/khóa/xóa admin khác, Phó CN với owner → vượt "chỉ Chủ nhiệm") + nên sửa (apply_task_scan việc ban khác; insert task_assignees ban khác qua REST; tự đổi ban; migration dữ liệu im lặng khi CLB không có owner có tài khoản). Đang sửa (db/api/tester cũ). Sau đó lead tự kiểm migration dữ liệu (reset tới 20261114 → seed → áp 20261115) + thử trình duyệt theo vai.
+- **Xong (2026-11-10 khuya):** sửa sau review hoàn tất; `npx supabase test db` 871/871, `npm test` 104/104, tsc sạch, build sạch. Lead kiểm migration dữ liệu (reset tới 20261114 → seed → áp 20261115): owner có tài khoản → `is_head`, admin cũ → đủ 5 quyền, member → `{}`. Trình duyệt: admin chỉ `events` thấy đúng menu, trang tuyển báo "chưa được cấp quyền", API accounts 403, API events 200; Phó CN thấy Nhiệm kỳ chỉ xem, nút kích hoạt khóa; Chủ nhiệm thấy radio Chủ nhiệm + 5 checkbox quyền. Đã commit + push nhánh `feat/permissions`.
+- Người dùng cần: `npx supabase db push --remote` (1 migration 20261115; nếu báo lỗi "CLB … chưa có Chủ nhiệm" thì dừng báo lead) → tạo PR `feat/permissions` → merge bằng tài khoản BIT → Vercel (Promote nếu chưa bật Auto-assign).
+- Sau khi xong: reviewer → người dùng `db push` → PR merge bằng tài khoản BIT → Vercel (nhớ bật Auto-assign hoặc Promote).
+- Câu hỏi còn mở: gộp "Kết nạp" + "Tạo tài khoản" thành 1 bước? (người dùng chưa trả lời; giữ 2 bước).
+
 ## Còn mở sau khi lên production
 - Thử thật: đăng nhập Google vào tài khoản tạo sẵn; Gmail nhắc việc (chọn Gmail gửi ở màn Giao việc rồi "Gửi nhắc ngay"); bookmarklet trên bài Facebook thật.
 - Kiểm Supabase Auth → URL Configuration: Site URL `https://bit-bav.vercel.app`, Redirect `https://bit-bav.vercel.app/auth/callback`; tắt "Allow new users to sign up".

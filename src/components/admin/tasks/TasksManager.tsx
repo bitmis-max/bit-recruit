@@ -38,8 +38,10 @@ const formatDateTime = (value: string) => new Date(value).toLocaleString("vi-VN"
 
 export function TasksManager() {
   const supabase = getSupabaseClient();
-  const { id: clubId, role } = useCurrentAdminClub();
-  const canWrite = role === "owner" || role === "admin";
+  const { id: clubId, role, teamId, can } = useCurrentAdminClub();
+  const isOwner = role === "owner";
+  const canWrite = isOwner || role === "admin";
+  const canMail = can("mail");
   const [data, setData] = useState<LoadedData | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [sender, setSender] = useState<Sender | null>(null);
@@ -77,7 +79,7 @@ export function TasksManager() {
   }, [supabase, clubId, canWrite, reloadKey]);
 
   useEffect(() => {
-    if (!clubId || !canWrite) return;
+    if (!clubId || !canWrite || !canMail) return;
     let active = true;
     (async () => {
       const result = await callApi<{ configured: boolean; isMe: boolean; senderName: string | null }>(`/api/admin/mail-sender?clubId=${encodeURIComponent(clubId)}`);
@@ -85,7 +87,7 @@ export function TasksManager() {
       setSender({ clubId, configured: result.data?.configured ?? false, isMe: result.data?.isMe ?? false, senderName: result.data?.senderName ?? null, error: result.error ?? "" });
     })();
     return () => { active = false; };
-  }, [clubId, canWrite, senderKey]);
+  }, [clubId, canWrite, canMail, senderKey]);
 
   useEffect(() => { if (confirmTask) cancelRef.current?.focus(); }, [confirmTask]);
 
@@ -101,7 +103,11 @@ export function TasksManager() {
   const closedCount = tasks.length - openCount;
   const visible = useMemo(() => tasks.filter((task) => task.status === filter).sort((a, b) => filter === "open" ? a.due_at.localeCompare(b.due_at) : b.due_at.localeCompare(a.due_at)), [tasks, filter]);
   const selected = tasks.find((task) => task.id === selectedId) ?? null;
-  const activeMembers = members.filter((member) => member.is_active);
+  // Ban chủ chốt chỉ giao việc trong ban của mình; Ban chủ nhiệm giao cho mọi ban.
+  const canAssign = isOwner || !!teamId;
+  const assignableTeams = isOwner ? teams : teams.filter((team) => team.id === teamId);
+  const canAllMembers = isOwner || (can("facebook") && form.kind !== "general");
+  const activeMembers = members.filter((member) => member.is_active && (isOwner || member.team_id === teamId));
   const query = memberQuery.trim().toLowerCase();
   const shownMembers = query ? activeMembers.filter((member) => member.full_name.toLowerCase().includes(query)) : activeMembers;
   const isOverdue = (task: Task) => task.status === "open" && Date.parse(task.due_at) < loadedAt;
@@ -110,17 +116,18 @@ export function TasksManager() {
 
   async function createTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !canWrite) return;
+    if (!supabase || !canWrite || !canAssign) return;
     const due = new Date(form.due);
     if (Number.isNaN(due.getTime())) { setError("Hãy chọn hạn chót hợp lệ."); return; }
-    if (!form.allMembers && !memberIds.length && !form.teamId) { setError("Hãy chọn ít nhất một người nhận, một ban hoặc giao cho tất cả thành viên."); return; }
+    const allMembers = form.allMembers && canAllMembers;
+    if (!allMembers && !memberIds.length && !form.teamId) { setError("Hãy chọn ít nhất một người nhận hoặc một ban."); return; }
     const postUrl = form.postUrl.trim();
     if (form.kind === "engagement" && !facebookUrlPattern.test(postUrl)) { setError("Việc tương tác cần link bài viết Facebook, bắt đầu bằng https://facebook.com/ hoặc https://fb.com/."); return; }
     setBusy("create"); resetMessages();
     const { data: newId, error: rpcError } = await supabase.rpc("create_task", {
       p_club_id: clubId, p_title: form.title.trim(), p_description: form.description.trim() || null,
       p_due_at: due.toISOString(), p_member_ids: memberIds, p_team_id: form.teamId || null,
-      p_kind: form.kind, p_post_url: form.kind === "engagement" ? postUrl : null, p_frame_id: form.kind === "avatar" ? form.frameId || null : null, p_all_members: form.allMembers,
+      p_kind: form.kind, p_post_url: form.kind === "engagement" ? postUrl : null, p_frame_id: form.kind === "avatar" ? form.frameId || null : null, p_all_members: allMembers,
     });
     setBusy("");
     if (rpcError) { setError(rpcError.message); return; }
@@ -189,7 +196,8 @@ export function TasksManager() {
   }
 
   const loading = !loaded;
-  const canRemind = senderState?.configured !== false;
+  // Không có quyền Gửi mail thì không biết trạng thái Gmail; để máy chủ quyết định khi gửi.
+  const canRemind = !canMail || senderState?.configured !== false;
 
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
     <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Không gian CLB</p><h1 className="mt-1 text-3xl font-bold">Giao việc</h1><p className="mt-2 text-sm text-zinc-600">Giao việc có hạn chót cho thành viên hoặc cả ban. Thành viên tự đánh dấu xong ở trang cá nhân, hệ thống gửi mail nhắc khi sắp hoặc đã quá hạn.</p></header>
@@ -199,7 +207,9 @@ export function TasksManager() {
     {!canWrite && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ Ban chủ nhiệm và Ban chủ chốt được giao việc.</p>}
     {loaded?.error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{loaded.error}</p>}
 
-    {canWrite && <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-white p-4">
+    {canWrite && !canMail && <p className="mb-6 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Bạn chưa được cấp quyền Gửi mail nên không chọn được Gmail gửi nhắc việc. Nếu CLB đã chọn Gmail, bạn vẫn gửi nhắc được cho việc của mình.</p>}
+    {canWrite && !canAssign && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Bạn chưa thuộc ban nào nên chưa giao việc được. Hãy nhờ Chủ nhiệm xếp bạn vào một ban.</p>}
+    {canWrite && canMail && <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-white p-4">
       <div className="min-w-0 flex-1"><h2 className="font-semibold">Gmail gửi nhắc việc</h2>
         <p className="mt-1 break-words text-xs text-zinc-500">{!senderState ? "Đang kiểm tra…" : senderState.error ? `Không đọc được trạng thái: ${senderState.error}` : senderState.configured ? `Mail nhắc được gửi từ Gmail của ${senderState.isMe ? "bạn" : senderState.senderName ?? "một thành viên quản trị"}.` : "Chưa chọn Gmail gửi nhắc nên hệ thống chưa gửi mail nhắc."} <Link href="/manage-clubs/mail" className="font-medium text-emerald-800 underline">Kết nối Gmail ở mục Gửi mail</Link></p></div>
       {!senderState?.isMe && <button type="button" disabled={busy === "sender" || !senderState} onClick={() => void connectMyGmail()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "sender" ? "Đang lưu…" : "Dùng Gmail của tôi để gửi nhắc"}</button>}
@@ -207,19 +217,19 @@ export function TasksManager() {
 
     <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
       <div className="space-y-6">
-        {canWrite && <form onSubmit={(event) => void createTask(event)} className="space-y-4 rounded-xl border bg-white p-5">
-          <div><h2 className="font-semibold">Giao việc mới</h2><p className="mt-1 text-xs text-zinc-500">Chọn người nhận và/hoặc cả ban (chỉ tính thành viên đang hoạt động).</p></div>
+        {canWrite && canAssign && <form onSubmit={(event) => void createTask(event)} className="space-y-4 rounded-xl border bg-white p-5">
+          <div><h2 className="font-semibold">Giao việc mới</h2><p className="mt-1 text-xs text-zinc-500">Chọn người nhận và/hoặc cả ban (chỉ tính thành viên đang hoạt động).{!isOwner && " Bạn chỉ giao được cho thành viên trong ban của mình."}</p></div>
           <label className="block text-sm">Tiêu đề<input required maxLength={200} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className={inputClass} placeholder="Ví dụ: Nộp bản thiết kế poster" /></label>
           <label className="block text-sm">Mô tả<textarea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className={inputClass} placeholder="Yêu cầu chi tiết (không bắt buộc)" /></label>
-          <label className="block text-sm">Loại việc<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as TaskKind })} className={inputClass}>{(Object.keys(kindLabel) as TaskKind[]).map((value) => <option key={value} value={value}>{kindLabel[value]}</option>)}</select></label>
+          <label className="block text-sm">Loại việc<select value={form.kind} onChange={(event) => { const kind = event.target.value as TaskKind; setForm({ ...form, kind, allMembers: form.allMembers && (isOwner || (can("facebook") && kind !== "general")) }); }} className={inputClass}>{(Object.keys(kindLabel) as TaskKind[]).map((value) => <option key={value} value={value}>{kindLabel[value]}</option>)}</select></label>
           {form.kind === "engagement" && <label className="block text-sm">Link bài viết Facebook<input required type="url" value={form.postUrl} onChange={(event) => setForm({ ...form, postUrl: event.target.value })} className={inputClass} placeholder="https://facebook.com/..." /><span className="mt-1 block text-xs text-zinc-500">Thành viên react hoặc bình luận bài này. Sau đó dùng bookmarklet để đối chiếu.</span></label>}
           {form.kind === "avatar" && <label className="block text-sm">Khung avatar<select value={form.frameId} onChange={(event) => setForm({ ...form, frameId: event.target.value })} className={inputClass}><option value="">Chưa chọn khung</option>{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.name}</option>)}</select><span className="mt-1 block text-xs text-zinc-500">{frames.length ? "Khung được chọn sẽ hiện nút “Tạo avatar khung” ở trang cá nhân của người nhận." : <>CLB chưa có khung nào. <Link href="/manage-clubs/frames" className="font-medium text-emerald-800 underline">Tải khung lên ở mục Khung avatar</Link>.</>}</span></label>}
           <label className="block text-sm">Hạn chót<input required type="datetime-local" value={form.due} onChange={(event) => setForm({ ...form, due: event.target.value })} className={inputClass} /></label>
-          <label className="block text-sm">Giao cho cả ban<select value={form.teamId} onChange={(event) => setForm({ ...form, teamId: event.target.value })} className={inputClass}><option value="">Không giao theo ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-          <label className="flex cursor-pointer items-start gap-2 text-sm"><input type="checkbox" checked={form.allMembers} onChange={(event) => setForm({ ...form, allMembers: event.target.checked })} className="mt-0.5 shrink-0" /><span>Giao cho tất cả thành viên đang hoạt động<span className="block text-xs text-zinc-500">Gộp thêm với người và ban đã chọn.</span></span></label>
+          <label className="block text-sm">Giao cho cả ban<select value={form.teamId} onChange={(event) => setForm({ ...form, teamId: event.target.value })} className={inputClass}><option value="">Không giao theo ban</option>{assignableTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+          {canAllMembers && <label className="flex cursor-pointer items-start gap-2 text-sm"><input type="checkbox" checked={form.allMembers} onChange={(event) => setForm({ ...form, allMembers: event.target.checked })} className="mt-0.5 shrink-0" /><span>Giao cho tất cả thành viên đang hoạt động<span className="block text-xs text-zinc-500">Gộp thêm với người và ban đã chọn.</span></span></label>}
           <fieldset className="text-sm"><legend className="font-medium">Giao cho từng người ({memberIds.length} đã chọn)</legend>
             <label className="mt-1 block text-xs text-zinc-600">Tìm thành viên<input type="search" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} className={inputClass} placeholder="Gõ tên để lọc" /></label>
-            <div className="mt-2 max-h-52 overflow-y-auto rounded-lg border">{shownMembers.length ? <ul className="divide-y divide-zinc-100">{shownMembers.map((member) => <li key={member.id}><label className="flex cursor-pointer items-start gap-2 px-3 py-2 hover:bg-zinc-50"><input type="checkbox" checked={memberIds.includes(member.id)} onChange={() => toggleMember(member.id)} className="mt-0.5 shrink-0" /><span className="min-w-0 break-words">{member.full_name}</span></label></li>)}</ul> : <p className="p-3 text-xs text-zinc-500">{loading ? "Đang tải thành viên…" : "Không có thành viên phù hợp."}</p>}</div>
+            <div className="mt-2 max-h-52 overflow-y-auto rounded-lg border">{shownMembers.length ? <ul className="divide-y divide-zinc-100">{shownMembers.map((member) => <li key={member.id}><label className="flex cursor-pointer items-start gap-2 px-3 py-2 hover:bg-zinc-50"><input type="checkbox" checked={memberIds.includes(member.id)} onChange={() => toggleMember(member.id)} className="mt-0.5 shrink-0" /><span className="min-w-0 break-words">{member.full_name}</span></label></li>)}</ul> : <p className="p-3 text-xs text-zinc-500">{loading ? "Đang tải thành viên…" : isOwner || teamId ? "Không có thành viên phù hợp." : "Chưa có thành viên."}</p>}</div>
           </fieldset>
           <button disabled={busy === "create" || !supabase} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "create" ? "Đang giao…" : "Giao việc"}</button>
         </form>}

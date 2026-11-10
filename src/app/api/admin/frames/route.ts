@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   if (length > maxRequestBytes) return NextResponse.json({ error: "Dung lượng khung tối đa 2 MB." }, { status: 413 });
   if (!uuidPattern.test(clubId)) return NextResponse.json({ error: "Mã CLB không hợp lệ." }, { status: 400 });
 
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "facebook" });
   if (context.error) return context.error;
 
   const form = await request.formData().catch(() => null);
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const clubId = text(request.nextUrl.searchParams.get("clubId"));
   const id = text(request.nextUrl.searchParams.get("id"));
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "facebook" });
   if (context.error) return context.error;
   if (!uuidPattern.test(id)) return NextResponse.json({ error: "Mã khung không hợp lệ." }, { status: 400 });
 
