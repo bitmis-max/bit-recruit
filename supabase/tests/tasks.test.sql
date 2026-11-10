@@ -48,6 +48,11 @@ insert into public.club_members (id, club_id, user_id, team_id, role, full_name,
   ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000b1', null, 'owner',  'Owner B',  true,  'OB1'),
   ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000b2', null, 'member', 'Member B', true,  'OB2');
 
+-- Đợt 4: giao việc của Ban chủ chốt (admin) bị giới hạn trong ban của họ (xem permissions.test.sql). Các ca ở file này
+-- kiểm tra cơ chế giao việc / RLS / cột cho người quản trị toàn CLB, nên 'Admin A' (e2) là Phó chủ nhiệm (owner, không phải Chủ nhiệm).
+update public.club_members set role = 'owner' where id = '00000000-0000-0000-0000-0000000000e2';
+update public.club_members set is_head = true where id in ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f1');
+
 -- Việc dùng cho RLS / set_my_task_done (đều chưa tới hạn, hạn +10 ngày)
 insert into public.tasks (id, club_id, title, due_at, status) values
   ('00000000-0000-0000-0000-00000000a001', '00000000-0000-0000-0000-0000000000c1', 'Task chính',            now() + interval '10 days', 'open'),
@@ -543,7 +548,7 @@ select results_eq(
   'club_contribution trả đúng full_name, team_id, is_active');
 select is(
   (select role::text from public.club_contribution('00000000-0000-0000-0000-0000000000c1', now() - interval '100 days', now() - interval '50 days') where member_id = '00000000-0000-0000-0000-0000000000e2'),
-  'admin', 'club_contribution trả đúng role');
+  'owner', 'club_contribution trả đúng role (e2 là Phó chủ nhiệm, role owner)');
 
 -- cửa sổ W2 [now+200d, now+300d): K6 (hạn tương lai)
 select results_eq(

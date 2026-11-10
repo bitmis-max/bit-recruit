@@ -10,7 +10,7 @@ type Result = { memberId: string; status: "created" | "linked" | "skipped" | "er
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const clubId = typeof body?.clubId === "string" ? body.clubId.trim() : "";
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "members" });
   if (context.error) return context.error;
   const memberIds: string[] = Array.isArray(body?.memberIds)
     ? [...new Set<string>((body.memberIds as unknown[]).filter((id): id is string => typeof id === "string" && id.trim() !== "").map((id) => id.trim()))]
@@ -37,12 +37,8 @@ export async function POST(request: NextRequest) {
     if (!member) { results.push({ memberId, status: "error", message: "Thành viên không thuộc CLB này." }); continue; }
     if (!member.is_active) { results.push({ memberId, status: "skipped", message: "Thành viên đã ngừng hoạt động." }); continue; }
     if (member.user_id) { results.push({ memberId, status: "skipped", message: "Thành viên đã có tài khoản." }); continue; }
-    if (member.role === "owner" && context.role !== "owner") {
-      results.push({ memberId, status: "skipped", message: "Chỉ Ban chủ nhiệm mới có thể tạo tài khoản cho thành viên Ban chủ nhiệm." });
-      continue;
-    }
-    if (member.role === "admin" && context.role !== "owner") {
-      results.push({ memberId, status: "skipped", message: "Chỉ Ban chủ nhiệm mới có thể gán tài khoản cho Ban chủ chốt." });
+    if ((member.role === "owner" || member.role === "admin") && !context.isHead) {
+      results.push({ memberId, status: "skipped", message: "Chỉ Chủ nhiệm mới có thể gán tài khoản cho thành viên Ban chủ nhiệm hoặc Ban chủ chốt." });
       continue;
     }
     const email = typeof member.email === "string" ? member.email.trim().toLowerCase() : "";

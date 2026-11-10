@@ -7,7 +7,7 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 
 export async function GET(request: NextRequest) {
   const clubId = request.nextUrl.searchParams.get("clubId") ?? "";
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "members" });
   if (context.error) return context.error;
   const { data: members, error } = await context.admin.from("club_members")
     .select("id,full_name,user_id,role,is_active").eq("club_id", clubId).order("full_name");
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const clubId = text(body?.clubId);
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "members" });
   if (context.error) return context.error;
   const memberId = text(body?.memberId);
   const email = text(body?.email).toLowerCase();
@@ -36,11 +36,8 @@ export async function POST(request: NextRequest) {
   const { data: member, error: memberError } = await context.admin.from("club_members").select("id,full_name,user_id,role")
     .eq("id", memberId).eq("club_id", clubId).maybeSingle();
   if (memberError || !member) return NextResponse.json({ error: "Thành viên không thuộc CLB này." }, { status: 404 });
-  if (member.role === "owner" && context.role !== "owner") {
-    return NextResponse.json({ error: "Chỉ owner mới có thể gán tài khoản cho thành viên owner." }, { status: 403 });
-  }
-  if (member.role === "admin" && context.role !== "owner") {
-    return NextResponse.json({ error: "Chỉ Ban chủ nhiệm mới có thể gán tài khoản cho Ban chủ chốt." }, { status: 403 });
+  if ((member.role === "owner" || member.role === "admin") && !context.isHead) {
+    return NextResponse.json({ error: "Chỉ Chủ nhiệm mới có thể gán tài khoản cho thành viên Ban chủ nhiệm hoặc Ban chủ chốt." }, { status: 403 });
   }
   if (member.user_id) return NextResponse.json({ error: "Thành viên này đã được gán tài khoản." }, { status: 409 });
 
@@ -96,7 +93,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const clubId = text(body?.clubId);
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "members" });
   if (context.error) return context.error;
   const accountId = text(body?.accountId);
   const email = text(body?.email).toLowerCase();
@@ -104,11 +101,8 @@ export async function PATCH(request: NextRequest) {
   const { data: assignment } = await context.admin.from("club_members").select("id,role")
     .eq("club_id", clubId).eq("user_id", accountId).maybeSingle();
   if (!assignment) return NextResponse.json({ error: "Tài khoản không được gán trong CLB này." }, { status: 404 });
-  if (assignment.role === "owner" && context.role !== "owner") {
-    return NextResponse.json({ error: "Chỉ owner mới có thể sửa tài khoản owner." }, { status: 403 });
-  }
-  if (assignment.role === "admin" && context.role !== "owner") {
-    return NextResponse.json({ error: "Chỉ owner mới có thể sửa tài khoản Ban chủ chốt." }, { status: 403 });
+  if ((assignment.role === "owner" || assignment.role === "admin") && !context.isHead) {
+    return NextResponse.json({ error: "Chỉ Chủ nhiệm mới có thể sửa tài khoản của thành viên Ban chủ nhiệm hoặc Ban chủ chốt." }, { status: 403 });
   }
   // Email và tên là của tài khoản dùng chung, nên không cho sửa nếu tài khoản còn thuộc CLB khác.
   const { data: otherMembership, error: otherError } = await context.admin.from("club_members").select("id")
@@ -126,14 +120,14 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const clubId = request.nextUrl.searchParams.get("clubId") ?? "";
   const accountId = request.nextUrl.searchParams.get("accountId") ?? "";
-  const context = await getClubAdminContext(clubId);
+  const context = await getClubAdminContext(clubId, { permission: "members" });
   if (context.error) return context.error;
   if (accountId === context.user.id) return NextResponse.json({ error: "Không thể tự gỡ tài khoản đang quản trị CLB." }, { status: 400 });
   const { data: assignment } = await context.admin.from("club_members").select("id,user_id,role")
     .eq("club_id", clubId).eq("user_id", accountId).maybeSingle();
   if (!assignment) return NextResponse.json({ error: "Tài khoản không được gán trong CLB này." }, { status: 404 });
-  if (assignment.role === "owner" && context.role !== "owner") {
-    return NextResponse.json({ error: "Chỉ owner mới có thể gỡ tài khoản owner." }, { status: 403 });
+  if ((assignment.role === "owner" || assignment.role === "admin") && !context.isHead) {
+    return NextResponse.json({ error: "Chỉ Chủ nhiệm mới có thể gỡ tài khoản của thành viên Ban chủ nhiệm hoặc Ban chủ chốt." }, { status: 403 });
   }
   const { error } = await context.admin.from("club_members").update({ user_id: null }).eq("id", assignment.id).eq("club_id", clubId);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });

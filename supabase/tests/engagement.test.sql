@@ -45,6 +45,11 @@ insert into public.club_members (id, club_id, user_id, team_id, role, full_name,
   ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000b1', null, 'owner',  'Owner B',  true,  'OB1'),
   ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000b2', null, 'member', 'Member B', true,  'OB2');
 
+-- Đợt 4: giao việc của admin chỉ trong ban mình, và aliases/apply_task_scan cần quyền facebook (xem permissions.test.sql).
+-- Ở file này 'Admin A' (e2) là Phó chủ nhiệm (owner, không phải Chủ nhiệm) để giữ nguyên các ca giao việc toàn CLB.
+update public.club_members set role = 'owner' where id = '00000000-0000-0000-0000-0000000000e2';
+update public.club_members set is_head = true where id in ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f1');
+
 -- Khung: fa01 + fa03 thuộc CLB A, fa02 thuộc CLB B, fa04 thuộc CLB C (để thử cascade theo CLB)
 insert into public.avatar_frames (id, club_id, name, image_path, created_by) values
   ('00000000-0000-0000-0000-00000000fa01', '00000000-0000-0000-0000-0000000000c1', 'Khung A',  '00000000-0000-0000-0000-0000000000c1/00000000-0000-0000-0000-00000000f001.png', '00000000-0000-0000-0000-0000000000e2'),

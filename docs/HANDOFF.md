@@ -30,6 +30,14 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 - Đang chờ: người dùng merge PR, tạo project Vercel từ repo, nhập biến môi trường trên dashboard Vercel, cấu hình Supabase Auth (Site URL, Redirect URL, Google provider, tắt signup).
 - Lưu ý: `google_mail_tokens` trên DB thật có 1 token mã hóa bằng `GOOGLE_TOKEN_ENCRYPTION_KEY` cũ; nếu dùng key mới thì người đó phải kết nối lại Gmail.
 
+## Vercel qua CLI (người dùng nhờ lead làm, 2026-11-10)
+- Vercel CLI 65.14.0 có sẵn (`npx vercel`), đang login tài khoản cá nhân `buiducthinh250506-cell` → người dùng cần `npx vercel logout` + `npx vercel login` bằng tài khoản BIT.
+- File secret tạm `.env.vercel.local` (gitignored qua `.env*`): người dùng điền `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, (tùy chọn) `GOOGLE_TOKEN_ENCRYPTION_KEY`. Lead xóa file sau khi đẩy xong.
+- Script (scratchpad) `push-vercel-env.mjs <siteUrl> [--dry]`: kiểm định dạng, tự tạo `CRON_SECRET` (+ key mã hóa nếu trống), `vercel env add ... --environment production --force --sensitive` qua stdin, không in giá trị.
+- Sau khi đẩy: `vercel link` vào project hiện có, redeploy bản production mới nhất (sau khi người dùng merge PR bằng tài khoản BIT).
+- **Kết quả:** CLI login `bitmis-3939`; project Vercel = **`bit-bav`**, web **https://bit-bav.vercel.app**; `.vercel/` (gitignored) đã link. Project ĐÃ có sẵn `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY` (không ghi đè — key mã hóa phải giữ để giải mã token Gmail cũ), `NEXT_PUBLIC_SUPABASE_*`, SMTP_*. Lead đã thêm `CRON_SECRET` (sensitive, tự tạo, không lưu ở đâu khác) và `NEXT_PUBLIC_SITE_URL=https://bit-bav.vercel.app`. Đã xóa `.env.vercel.local`. `vercel link` tự thêm `VERCEL_OIDC_TOKEN` vào `.env.local` (gitignored, vô hại).
+- Còn chờ: người dùng merge PR bằng tài khoản BIT → Vercel tự deploy `main`; lead kiểm tra web + cron (401 khi không có secret). Supabase Auth URL Configuration nên có Site URL `https://bit-bav.vercel.app` và Redirect `https://bit-bav.vercel.app/auth/callback` (bản cũ có thể đã đặt).
+
 ## Gộp `main` (2026-11-10)
 - PR báo xung đột: `origin/main` có 4 commit của tài khoản BIT ngày 27/10 (import ứng viên/ca phỏng vấn từ Excel + SQL `update_application_forms_schema.sql` đổi form sang theo `campaign_id`). SQL này là nguồn gốc schema "legacy" trên DB thật. Code khác trên main vẫn dùng `position_id`.
 - Lead đã merge `origin/main` vào nhánh (commit `8428c1f`): giữ mô hình form theo vị trí; 2 màn hình xung đột giữ bản nhánh; SQL chuyển vào `supabase/migration/legacy/` với dòng "KHÔNG CHẠY".
@@ -74,3 +82,25 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 
 ## Ghi chú git
 - 2026-11-10: theo yêu cầu người dùng, đã viết lại lịch sử nhánh `feat/member-roles-terms` (filter-branch, chỉ bỏ dòng `Co-Authored-By: Claude`, code không đổi) và force-push. Mã commit trong file này là mã mới. Từ nay không thêm ghi công Claude vào commit/PR.
+
+## Production (2026-11-10 14:3x) — ĐÃ LÊN
+- PR #1 đã merge vào `main` bởi `bitmis-max` (commit `d1c2322`). Project Vercel `bit-bav` không tự gắn tên miền cho bản production mới → người dùng đã Redeploy (nhận `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL`) + Promote. `bit-bav.vercel.app` = deployment 14:29 (`bit-2uf9bskbw`).
+- Lead kiểm tra read-only: `/`, `/login`, `/positions`, `/events` 200; `/register` → `/login`; `/me`, `/manage-clubs/*` → login; cron không/sai secret → 401 (có `CRON_SECRET`); không lỗi JS trên trang công khai. `/positions` trống vì đợt "Tuyển thành viên đợt 1 năm học 2026–2027" hết hạn 2026-11-07 (đúng thiết kế).
+- Lệnh `vercel redeploy/promote` bị chốt an toàn chặn → người dùng làm trên dashboard. Nên bật Settings → Environments → Production → "Auto-assign Custom Production Domains" để lần sau tự cập nhật.
+- Commit docs sau merge (`dff374c` trở đi) nằm trên nhánh `feat/member-roles-terms`, chưa vào `main` (chỉ tài liệu).
+
+## Đợt 4: phân quyền theo chức năng (đang làm, nhánh `feat/permissions`)
+- Quyết định người dùng (2026-11-10): BCN = 1 Chủ nhiệm + 3 Phó CN (owner, toàn quyền vận hành); CHỈ Chủ nhiệm (`is_head`) đổi nhiệm kỳ + cấp/gỡ vai trò và quyền. BCC (admin) có quyền theo chức năng tick riêng từng người: `events`, `recruitment`, `members`, `mail`, `facebook`; giao việc / xem đóng góp chỉ trong ban mình. Ban: Chuyên môn, Truyền thông, Nhân sự; số BCC đổi theo năm.
+- Hợp đồng `docs/CONTRACT.md` (Đợt 3 chuyển sang `docs/CONTRACT-3.md`). 4 agent mới: db (`20261115000000_permissions.sql`), api (`src/lib/admin/permissions.ts`, kiểm quyền mọi route), frontend (ẩn menu theo quyền, Terms/Members/Tasks/Contribution), tester (`permissions.test.sql` + cập nhật test cũ).
+- Tiến độ 2026-11-10 22:07: api-agent XONG (`permissions.ts`, kiểm quyền mọi route; tsc/eslint sạch; npm test 104/104). db/FE/tester dừng do giới hạn sử dụng (reset 17:50) → 22:07 đã nhắn làm tiếp. Migration `20261115000000_permissions.sql` CHƯA được ghi ra đĩa lúc dừng.
+- 2026-11-10 tối: cả 4 agent xong lượt đầu (858 test DB + 104 unit xanh). Reviewer: 1 nghiêm trọng (admin có `members` bật lại/khóa/xóa admin khác, Phó CN với owner → vượt "chỉ Chủ nhiệm") + nên sửa (apply_task_scan việc ban khác; insert task_assignees ban khác qua REST; tự đổi ban; migration dữ liệu im lặng khi CLB không có owner có tài khoản). Đang sửa (db/api/tester cũ). Sau đó lead tự kiểm migration dữ liệu (reset tới 20261114 → seed → áp 20261115) + thử trình duyệt theo vai.
+- **Xong (2026-11-10 khuya):** sửa sau review hoàn tất; `npx supabase test db` 871/871, `npm test` 104/104, tsc sạch, build sạch. Lead kiểm migration dữ liệu (reset tới 20261114 → seed → áp 20261115): owner có tài khoản → `is_head`, admin cũ → đủ 5 quyền, member → `{}`. Trình duyệt: admin chỉ `events` thấy đúng menu, trang tuyển báo "chưa được cấp quyền", API accounts 403, API events 200; Phó CN thấy Nhiệm kỳ chỉ xem, nút kích hoạt khóa; Chủ nhiệm thấy radio Chủ nhiệm + 5 checkbox quyền. Đã commit + push nhánh `feat/permissions`.
+- Người dùng cần: `npx supabase db push --remote` (1 migration 20261115; nếu báo lỗi "CLB … chưa có Chủ nhiệm" thì dừng báo lead) → tạo PR `feat/permissions` → merge bằng tài khoản BIT → Vercel (Promote nếu chưa bật Auto-assign).
+- Sau khi xong: reviewer → người dùng `db push` → PR merge bằng tài khoản BIT → Vercel (nhớ bật Auto-assign hoặc Promote).
+- Câu hỏi còn mở: gộp "Kết nạp" + "Tạo tài khoản" thành 1 bước? (người dùng chưa trả lời; giữ 2 bước).
+
+## Còn mở sau khi lên production
+- Thử thật: đăng nhập Google vào tài khoản tạo sẵn; Gmail nhắc việc (chọn Gmail gửi ở màn Giao việc rồi "Gửi nhắc ngay"); bookmarklet trên bài Facebook thật.
+- Kiểm Supabase Auth → URL Configuration: Site URL `https://bit-bav.vercel.app`, Redirect `https://bit-bav.vercel.app/auth/callback`; tắt "Allow new users to sign up".
+- Quyết định về `xlsx@0.18.5` (lỗ hổng high chưa vá trên npm).
+- Khuyến nghị bật 2FA cho tài khoản Vercel BIT.

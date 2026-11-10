@@ -6,11 +6,11 @@ Nền tảng: **Supabase (PostgreSQL)**
 
 - **Ứng viên không cần tài khoản.** Thông tin cá nhân lưu thẳng trong `applications`.
 - **Thành viên CLB (`club_members`) không nhất thiết có tài khoản.** Thành viên có tài khoản (`user_id`) đăng nhập được; vai trò `member` chỉ vào trang cá nhân `/me`.
-- **Vai trò theo từng CLB** nằm ở `club_members.role`: `owner` (Ban chủ nhiệm), `admin` (Ban chủ chốt), `member` (Thành viên). `club_members.title` là chức danh hiển thị, không ảnh hưởng quyền.
+- **Vai trò theo từng CLB** nằm ở `club_members.role`: `owner` (Ban chủ nhiệm), `admin` (Ban chủ chốt), `member` (Thành viên). Một người trong Ban chủ nhiệm là **Chủ nhiệm** (`club_members.is_head`). Ban chủ chốt chỉ có các **quyền chức năng** (`club_members.permissions`, xem mục 5.2.1). `club_members.title` là chức danh hiển thị, không ảnh hưởng quyền.
 - **Ứng viên không phải vai trò.** Đơn `passed` được Ban chủ chốt "kết nạp" thành dòng `club_members` vai trò `member` (hàm `admit_applications`).
-- **Nhiệm kỳ** (`club_terms`, `club_term_roles`): Ban chủ nhiệm soạn danh sách Ban chủ nhiệm/Ban chủ chốt cho nhiệm kỳ mới ở trạng thái nháp, rồi kích hoạt (`activate_term`) để đổi vai trò hàng loạt.
+- **Nhiệm kỳ** (`club_terms`, `club_term_roles`): Chủ nhiệm soạn danh sách Ban chủ nhiệm/Ban chủ chốt cho nhiệm kỳ mới ở trạng thái nháp, rồi kích hoạt (`activate_term`) để đổi vai trò hàng loạt.
 - Dùng `auth.users` của Supabase, bảng `profiles` để lưu thông tin thêm.
-- **Không dùng bộ 4 bảng RBAC** (`roles`, `permissions`, `role_permissions`, `user_roles`). Vai trò là enum, quyền được kiểm soát bằng **RLS policy**.
+- **Không dùng bộ 4 bảng RBAC** (`roles`, `permissions`, `role_permissions`, `user_roles`). Vai trò là enum, quyền chức năng là mảng `text[]` trên `club_members`, và mọi thứ được kiểm soát bằng **RLS policy** (mục 5.2.1).
 - **Đánh giá đơn giản:** điểm, nhận xét, kết quả nằm trực tiếp trong `interview_assignments`.
 - **Hỗ trợ nhiều CLB** dùng chung hệ thống (hầu hết bảng truy ngược được về `club_id`).
 
@@ -84,6 +84,8 @@ erDiagram
 
 ## 4. Script SQL
 
+Phân quyền theo chức năng và Chủ nhiệm được thêm bởi `supabase/migrations/20261115000000_permissions.sql` (xem mục 5.2.1; các mục cũ bên dưới mô tả quyền theo `is_club_admin` chỉ còn đúng cho phần đọc chung).
+
 Schema gốc, RLS, function và seed tối thiểu nằm trong migration baseline `supabase/migrations/20261023000000_init.sql`. Vai trò thành viên, nhiệm kỳ và kết nạp được thêm bởi `supabase/migrations/20261110000000_member_roles_terms.sql` (các khối SQL bên dưới đã phản ánh trạng thái sau migration này). Giao việc, nhắc hạn và đóng góp được thêm bởi `supabase/migrations/20261111000000_tasks.sql` (xem mục 6.4). Đối chiếu tương tác Facebook và avatar khung được thêm bởi `supabase/migrations/20261112000000_engagement_frames.sql` (xem mục 6.5). Các script tăng dần trước đây chỉ còn giá trị tham khảo trong `supabase/migration/legacy/` và không cần chạy trên database mới. Hướng dẫn bootstrap owner đầu tiên nằm trong `README.md`.
 
 ### 4.1. Enum
@@ -155,6 +157,8 @@ create table club_members (
   phone text,
   facebook_url text check (facebook_url is null or facebook_url ~ '^https://(www\.|m\.|web\.)?(facebook|fb)\.com/.+'),
   title text,                                  -- chức danh hiển thị (vd. "Phó chủ nhiệm"), không ảnh hưởng quyền
+  -- + permissions text[] not null default '{}'  (migration 20261115000000, mục 5.2.1)
+  -- + is_head boolean not null default false     (Chủ nhiệm; unique một phần theo club_id)
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   unique (club_id, student_code),
@@ -187,6 +191,7 @@ create table club_term_roles (
   role club_role not null check (role in ('owner', 'admin')),
   title text,
   team_id uuid references teams(id) on delete set null,
+  -- + permissions text[] not null default '{}', is_head boolean not null default false (mục 5.2.1)
   primary key (term_id, member_id)
 );
 ```
@@ -541,6 +546,58 @@ Policy cho nhiệm kỳ:
 
 `club_members`: giữ nguyên (đọc dòng của mình; admin đọc cả CLB). Mọi thay đổi do server (service role) hoặc RPC thực hiện; thành viên tự sửa hồ sơ qua `update_my_member_profile`.
 
+### 5.2.1. Phân quyền theo chức năng và Chủ nhiệm (migration `20261115000000_permissions.sql`)
+
+Từ migration này, các policy/hàm ở mục 5.2 dùng `is_club_admin` để GHI dữ liệu được thay bằng quyền chức năng; mô tả cũ ở các mục trên chỉ còn đúng cho phần ĐỌC chung của quản trị.
+
+Cơ cấu: `owner` = Ban chủ nhiệm (1 Chủ nhiệm có `is_head` + các Phó chủ nhiệm), `admin` = Ban chủ chốt (chỉ có quyền chức năng được tick), `member` = Thành viên.
+
+Cột mới:
+
+- `club_members.permissions text[] not null default '{}'` (check: mọi phần tử thuộc `events`, `recruitment`, `members`, `mail`, `facebook`); `club_members.is_head boolean not null default false`, unique một phần `(club_id) where is_head`. `owner` coi như có mọi quyền nên `permissions` của owner để rỗng; `member` không có quyền.
+- `club_term_roles.permissions`, `club_term_roles.is_head`: cùng kiểu/check. `authenticated` được grant insert/update thêm 2 cột này; RLS vẫn chỉ cho Chủ nhiệm ghi (term `draft`).
+- `tasks.team_id uuid references teams(id) on delete set null`: ban sở hữu việc; null = việc toàn CLB. Không grant insert/update cột này (chỉ `create_task` ghi).
+
+Hàm (`security definer`, `stable`, `set search_path = public`; thu hồi `public`/`anon`, cấp `authenticated`/`service_role`):
+
+- `is_club_head(p_club_id)`: người gọi là thành viên active, `role = 'owner'`, `is_head`.
+- `has_club_permission(p_club_id, p_permission text)`: người gọi active và (`role = 'owner'` hoặc (`role = 'admin'` và `p_permission = any(permissions)`)).
+- `my_club_team(p_club_id)`: `team_id` của người gọi trong CLB (null nếu không có).
+- `can_manage_task(p_club_id, p_team_id, p_kind)` / `can_manage_task_id(p_task_id)` (hàm phụ cho RLS giao việc): owner với mọi việc của CLB; admin với việc có `team_id = my_club_team`, cộng việc `team_id is null` loại `engagement`/`avatar` nếu có quyền `facebook`.
+- `is_club_admin` (owner hoặc admin) giữ nguyên nghĩa, dùng cho các chỗ đọc chung (thành viên, ban, đợt tuyển, nhiệm kỳ, `club_contribution`...).
+
+Ma trận quyền:
+
+| Đối tượng | Quyền cần |
+|---|---|
+| `events` (ảnh sự kiện: policy storage bucket `event-images`) | `events` |
+| `recruitment_campaigns`, `recruitment_positions`, `application_forms`, `form_questions` (ghi); `applications` (đọc, đổi `status`), `application_answers` (đọc); `interview_sessions` (thêm/sửa, xóa qua `can_delete_empty_interview_session`), `interview_assignments`, `interview_session_members`; RPC `admit_applications`, `import_applications`, `create_application_form_from_template`, `save_application_form_questions` | `recruitment` |
+| `form_templates`, `form_template_questions` (dùng chung toàn hệ thống; đọc và ghi) | owner, hoặc admin có `recruitment` ở ít nhất một CLB |
+| `teams` (ghi), ảnh ban (bucket `team-images`) | `members` |
+| `member_facebook_aliases` (đọc/ghi), `apply_task_scan` | `facebook` |
+| `club_terms`, `club_term_roles` (ghi, term `draft`), `activate_term` | Chủ nhiệm (`is_club_head`) |
+| `club_terms`, `club_term_roles` (đọc) | `is_club_admin` |
+| `tasks`, `task_assignees` (đọc, sửa trạng thái/ghi chú, đóng, xóa) | `can_manage_task` (xem trên); thành viên vẫn đọc việc của mình |
+| `club_contribution` | owner: cả CLB; admin: chỉ thành viên cùng ban của mình (không có ban thì không có dòng nào) |
+
+Mail (`mail`) và việc ghi `events`/`club_members`/`accounts` đi qua API (service-role), không có RLS ghi: quyền do API kiểm tra (`docs/CONTRACT.md` mục 2).
+
+`create_task` (chữ ký giữ nguyên): owner như cũ, `tasks.team_id = p_team_id` (giao lẻ hoặc toàn CLB thì null). Admin: bắt buộc có ban (`my_club_team`), nếu không báo lỗi; `p_team_id` (nếu có) phải bằng ban của mình; mọi người nhận phải thuộc ban của mình, `tasks.team_id` = ban của mình; `p_all_members = true` chỉ được khi `p_kind` là `engagement`/`avatar` và có quyền `facebook` (khi đó `team_id` null).
+
+`activate_term(p_term_id)`: chỉ Chủ nhiệm; term phải `draft`; danh sách có đúng một dòng `is_head`, dòng đó role `owner`, thành viên đang hoạt động và có `user_id`. Trong một transaction: term active cũ thành `ended`; gỡ cờ `is_head` cũ của CLB; mọi người ngoài danh sách về `member`, `title = null`, `permissions = '{}'`; người trong danh sách nhận `role`, `title`, `team_id` (nếu khác null), `is_active = true`, `permissions` của dòng nếu role `admin` (owner nhận `'{}'`), `is_head` của dòng (chỉ khi role `owner`); term thành `active`.
+
+Trigger `club_members_keep_owner` (constraint trigger deferred, hàm `enforce_club_has_owner`): chạy khi sửa/xóa một Chủ nhiệm đang hoạt động có `user_id`; lúc commit CLB (nếu còn tồn tại) phải còn một dòng `is_head` role `owner`, đang hoạt động, có `user_id`, nếu không báo "CLB phải còn đúng một Chủ nhiệm (thuộc Ban chủ nhiệm) đang hoạt động và có tài khoản." (Tối đa một Chủ nhiệm do unique index.) Hệ quả: không xóa được tài khoản của Chủ nhiệm, và muốn đổi Chủ nhiệm phải qua `activate_term`.
+
+Dữ liệu sẵn có khi áp migration: mỗi CLB, owner active có `user_id` tạo sớm nhất thành Chủ nhiệm; mọi `admin` nhận đủ 5 quyền (giữ hành vi cũ); `club_term_roles` role `admin` nhận đủ 5 quyền, owner là Chủ nhiệm hiện tại trong term `active`/`draft` được đặt `is_head`. CLB không có owner có tài khoản thì chưa có Chủ nhiệm (không ai kích hoạt được nhiệm kỳ) và cần gán tay `is_head`.
+
+Xóa một ban làm `tasks.team_id` của các việc thuộc ban đó thành null (`on delete set null`): việc `engagement`/`avatar` trở thành việc toàn CLB (người có quyền `facebook` vẫn quản lý được), còn việc `general` chỉ owner còn thấy và quản lý được. Hệ quả tương tự khi `activate_term`/đổi ban khiến admin không còn thuộc ban đó.
+
+`apply_task_scan` cần quyền `facebook` VÀ `can_manage_task` (admin không đánh dấu được việc của ban khác hay việc `general` toàn CLB). Insert vào `task_assignees` (RLS) qua `can_assign_task_member`: owner thêm ai cũng được; admin chỉ thêm người thuộc ban của mình, trừ việc toàn CLB loại `engagement`/`avatar` (chỉ cần cùng CLB). `authenticated` không đổi được `member_id` (chỉ update `status`, `note`).
+
+`club_term_roles` có unique một phần `(term_id) where is_head` (mỗi nhiệm kỳ tối đa một Chủ nhiệm). Cuối migration có khối kiểm tra: CLB đã có thành viên nhưng chưa có `is_head` thì migration báo lỗi tiếng Việt (nêu tên CLB) và rollback; CLB chưa có thành viên nào (vd. CLB seed trên DB mới) được bỏ qua.
+
+Lưu ý policy storage: trong subquery trên `clubs`, `name` trần là `clubs.name`; policy ảnh ban/ảnh sự kiện (viết lại ở migration này) dùng `objects.name` để lấy thư mục theo `club_id`. Bản cũ so sánh sai cột nên `authenticated` không upload trực tiếp được (API dùng service-role nên không bị ảnh hưởng).
+
 ### 5.3. Luồng của ứng viên (anon)
 
 **Không cho `anon` `INSERT` hoặc `SELECT` trực tiếp trên `applications`.** Thay vào đó dùng RPC chạy `security definer`:
@@ -608,13 +665,13 @@ grant execute on function get_application_by_token to anon;
 
 ### 6.2. Đổi nhiệm kỳ
 
-1. Owner tạo `club_terms` (`draft`) và thêm `club_term_roles` (chỉ `owner`/`admin`, kèm `title`, `team_id`).
-2. `activate_term(p_term_id uuid) returns void` (chỉ owner của CLB, term phải `draft`, danh sách có ít nhất một `owner` đang hoạt động và có `user_id`), trong một transaction:
+1. Chủ nhiệm tạo `club_terms` (`draft`) và thêm `club_term_roles` (chỉ `owner`/`admin`, kèm `title`, `team_id`).
+2. `activate_term(p_term_id uuid) returns void` (chỉ Chủ nhiệm, term phải `draft`, danh sách có đúng một Chủ nhiệm; xem mục 5.2.1), trong một transaction:
    1. Term `active` cũ thành `ended` (`end_date` null thì đặt hôm nay).
    2. Mọi thành viên của CLB (kể cả đang nghỉ) không có trong danh sách: `role = 'member'`, `title = null`.
    3. Thành viên trong danh sách: cập nhật `role`, `title`, `team_id` (nếu khác null), `is_active = true`.
    4. Term thành `active`, ghi `activated_at`, `activated_by`.
-3. Constraint trigger `club_members_keep_owner` (deferred, kiểm tra lúc commit): sau khi một owner đang hoạt động có `user_id` bị sửa/xóa, CLB (nếu còn tồn tại) phải còn ít nhất một owner đang hoạt động có `user_id`, nếu không báo "CLB phải còn ít nhất một thành viên Ban chủ nhiệm có tài khoản." Xóa cả CLB (cascade) không bị chặn.
+3. Constraint trigger `club_members_keep_owner` (deferred): xem mục 5.2.1 (CLB phải còn đúng một Chủ nhiệm đang hoạt động có tài khoản). Xóa cả CLB (cascade) không bị chặn.
 
 ### 6.2.1. Lưu ý vận hành
 
@@ -654,6 +711,7 @@ create table tasks (
   created_by uuid references club_members(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()      -- trigger set_updated_at
+  -- + team_id uuid references teams(id) on delete set null  (ban sở hữu việc; null = việc toàn CLB; mục 5.2.1)
 );
 create index on tasks (club_id, due_at);
 

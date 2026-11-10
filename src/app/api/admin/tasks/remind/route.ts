@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClubAdminContext } from "../../../../../lib/admin/api";
+import { hasPermission } from "../../../../../lib/admin/permissions";
 import { findValidSender, loadClubSender, loadPendingRows, sendReminderMails } from "../../../../../lib/tasks/dispatch";
 
 const RECENT_REMINDER_MS = 10 * 60 * 1000;
@@ -12,9 +13,18 @@ export async function POST(request: NextRequest) {
   if (context.error) return context.error;
   if (!taskId) return NextResponse.json({ error: "Thiếu việc cần nhắc." }, { status: 400 });
 
-  const { data: task } = await context.admin.from("tasks").select("id,title,due_at,status")
+  const { data: task } = await context.admin.from("tasks").select("id,title,due_at,status,team_id,kind")
     .eq("id", taskId).eq("club_id", clubId).maybeSingle();
   if (!task) return NextResponse.json({ error: "Không tìm thấy việc trong CLB này." }, { status: 404 });
+  // owner nhắc mọi việc; admin chỉ nhắc việc của ban mình, hoặc việc toàn CLB loại engagement/avatar nếu có quyền facebook.
+  if (context.role !== "owner") {
+    const ownTeam = context.teamId !== null && task.team_id === context.teamId;
+    const clubWideFacebook = task.team_id === null && ["engagement", "avatar"].includes(task.kind)
+      && hasPermission(context.role, context.permissions, "facebook");
+    if (!ownTeam && !clubWideFacebook) {
+      return NextResponse.json({ error: "Bạn chỉ được nhắc việc thuộc ban của mình." }, { status: 403 });
+    }
+  }
   if (task.status !== "open") return NextResponse.json({ error: "Việc này đã đóng, không cần nhắc." }, { status: 400 });
 
   const { data: club } = await context.admin.from("clubs").select("name,mail_sender_user_id").eq("id", clubId).maybeSingle();

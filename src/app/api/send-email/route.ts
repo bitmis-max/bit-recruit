@@ -3,6 +3,7 @@ import type { EmailAttachment } from "../../../lib/email/template";
 import { createSupabaseServerClient } from "../../../lib/supabase/server";
 import { getGmailAccessToken, GmailError, sendGmail } from "../../../lib/email/gmail";
 import { fetchPublicFile } from "../../../lib/security/safe-fetch";
+import { hasPermission } from "../../../lib/admin/permissions";
 
 export const runtime = "nodejs";
 
@@ -45,8 +46,8 @@ export async function POST(request: Request) {
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
     if (!supabase || !user || !body.clubId) return Response.json({ ok: false, error: "Cần đăng nhập và chọn CLB." }, { status: 401 });
-    const { data: membership } = await supabase.from("club_members").select("role").eq("user_id", user.id).eq("club_id", body.clubId).eq("is_active", true).limit(1).maybeSingle();
-    if (!membership || !["owner", "admin"].includes(membership.role)) return Response.json({ ok: false, error: "Bạn không có quyền gửi mail cho CLB này." }, { status: 403 });
+    const { data: membership } = await supabase.from("club_members").select("role,permissions").eq("user_id", user.id).eq("club_id", body.clubId).eq("is_active", true).limit(1).maybeSingle();
+    if (!membership || !hasPermission(membership.role, membership.permissions, "mail")) return Response.json({ ok: false, error: "Bạn không có quyền gửi mail cho CLB này." }, { status: 403 });
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !serviceKey || !process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {

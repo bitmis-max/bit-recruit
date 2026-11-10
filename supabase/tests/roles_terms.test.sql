@@ -45,6 +45,10 @@ insert into public.club_members (id, club_id, user_id, role, full_name, is_activ
   ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000b1', 'owner',  'Owner B',    true,  'OB1', null, null),
   ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000c2', null,                                   'owner',  'Owner B không TK', true, 'OB2', null, null);
 
+-- Đợt 4: admin fixture được cấp đủ 5 quyền chức năng; e1 (CLB A) và f1 (CLB B) là Chủ nhiệm (is_head).
+update public.club_members set permissions = array['events', 'recruitment', 'members', 'mail', 'facebook'] where role = 'admin';
+update public.club_members set is_head = true where id in ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f1');
+
 -- Tuyển sinh (CLB A): campaign mở, 1 vị trí thuộc ban Truyền thông, 1 form
 insert into public.recruitment_campaigns (id, club_id, name, status) values
   ('00000000-0000-0000-0000-000000000c91', '00000000-0000-0000-0000-0000000000c1', 'Gen 17', 'open');
@@ -82,18 +86,18 @@ insert into public.club_terms (id, club_id, name, start_date, end_date, status) 
   ('00000000-0000-0000-0000-00000000ee04', '00000000-0000-0000-0000-0000000000c1', 'Owner không TK', null, null, 'draft'),
   ('00000000-0000-0000-0000-00000000ee05', '00000000-0000-0000-0000-0000000000c1', 'Để thử insert',  null, null, 'draft');
 
-insert into public.club_term_roles (term_id, member_id, role, title, team_id) values
-  ('00000000-0000-0000-0000-00000000ee01', '00000000-0000-0000-0000-0000000000e1', 'owner', 'Chủ nhiệm cũ', null),
-  ('00000000-0000-0000-0000-00000000ee01', '00000000-0000-0000-0000-0000000000e5', 'admin', 'Trưởng ban cũ', null),
+insert into public.club_term_roles (term_id, member_id, role, title, team_id, is_head, permissions) values
+  ('00000000-0000-0000-0000-00000000ee01', '00000000-0000-0000-0000-0000000000e1', 'owner', 'Chủ nhiệm cũ', null, true, '{}'),
+  ('00000000-0000-0000-0000-00000000ee01', '00000000-0000-0000-0000-0000000000e5', 'admin', 'Trưởng ban cũ', null, false, '{}'),
   -- ee02: kỳ mới. Owner giữ nguyên, admin có ban, người đã nghỉ được đưa vào lại, e5 KHÔNG có trong danh sách
-  ('00000000-0000-0000-0000-00000000ee02', '00000000-0000-0000-0000-0000000000e1', 'owner', 'Chủ nhiệm 2026', null),
-  ('00000000-0000-0000-0000-00000000ee02', '00000000-0000-0000-0000-0000000000e2', 'admin', 'Phó chủ nhiệm 2026', '00000000-0000-0000-0000-0000000000d1'),
-  ('00000000-0000-0000-0000-00000000ee02', '00000000-0000-0000-0000-0000000000e6', 'admin', 'Trưởng ban mới', null),
-  -- ee03: chỉ có admin, không owner
-  ('00000000-0000-0000-0000-00000000ee03', '00000000-0000-0000-0000-0000000000e2', 'admin', 'Phó', null),
-  -- ee04: owner nhưng không có tài khoản
-  ('00000000-0000-0000-0000-00000000ee04', '00000000-0000-0000-0000-0000000000e7', 'owner', 'Chủ nhiệm', null),
-  ('00000000-0000-0000-0000-00000000ee04', '00000000-0000-0000-0000-0000000000e2', 'admin', 'Phó', null);
+  ('00000000-0000-0000-0000-00000000ee02', '00000000-0000-0000-0000-0000000000e1', 'owner', 'Chủ nhiệm 2026', null, true, '{}'),
+  ('00000000-0000-0000-0000-00000000ee02', '00000000-0000-0000-0000-0000000000e2', 'admin', 'Phó chủ nhiệm 2026', '00000000-0000-0000-0000-0000000000d1', false, array['events', 'recruitment', 'members', 'mail', 'facebook']),
+  ('00000000-0000-0000-0000-00000000ee02', '00000000-0000-0000-0000-0000000000e6', 'admin', 'Trưởng ban mới', null, false, '{}'),
+  -- ee03: chỉ có admin, không có Chủ nhiệm
+  ('00000000-0000-0000-0000-00000000ee03', '00000000-0000-0000-0000-0000000000e2', 'admin', 'Phó', null, false, '{}'),
+  -- ee04: Chủ nhiệm nhưng không có tài khoản
+  ('00000000-0000-0000-0000-00000000ee04', '00000000-0000-0000-0000-0000000000e7', 'owner', 'Chủ nhiệm', null, true, '{}'),
+  ('00000000-0000-0000-0000-00000000ee04', '00000000-0000-0000-0000-0000000000e2', 'admin', 'Phó', null, false, '{}');
 
 -- ===========================================================================
 -- 1. RLS đọc: member không đọc được dữ liệu tuyển sinh, admin đọc được
@@ -194,10 +198,10 @@ reset role;
 select public.tap_as('00000000-0000-0000-0000-0000000000a1'); -- owner đúng
 select throws_like(
   $$select public.activate_term('00000000-0000-0000-0000-00000000ee03')$$, '%',
-  'activate_term: danh sách không có owner thì lỗi');
+  'activate_term: danh sách không có Chủ nhiệm thì lỗi');
 select throws_like(
   $$select public.activate_term('00000000-0000-0000-0000-00000000ee04')$$, '%',
-  'activate_term: owner trong danh sách không có user_id thì lỗi');
+  'activate_term: Chủ nhiệm trong danh sách không có user_id thì lỗi');
 select throws_like(
   $$select public.activate_term('00000000-0000-0000-0000-00000000ee01')$$, '%',
   'activate_term: term không phải draft (đang active) thì lỗi');
@@ -250,16 +254,16 @@ select lives_ok(
   $$update public.club_members set role = 'admin' where id = '00000000-0000-0000-0000-0000000000f2'$$,
   'hạ owner KHÔNG có tài khoản khi vẫn còn owner có TK thì được');
 select throws_like(
-  $$update public.club_members set role = 'admin' where id = '00000000-0000-0000-0000-0000000000f1'$$, '%ít nhất một%',
-  'hạ owner cuối cùng có TK -> lỗi');
+  $$update public.club_members set role = 'admin', is_head = false where id = '00000000-0000-0000-0000-0000000000f1'$$, '%Chủ nhiệm%',
+  'hạ owner cuối cùng có TK (Chủ nhiệm duy nhất) -> lỗi');
 select throws_like(
-  $$delete from public.club_members where id = '00000000-0000-0000-0000-0000000000f1'$$, '%ít nhất một%',
+  $$delete from public.club_members where id = '00000000-0000-0000-0000-0000000000f1'$$, '%Chủ nhiệm%',
   'xóa owner cuối cùng có TK -> lỗi');
 select throws_like(
-  $$update public.club_members set is_active = false where id = '00000000-0000-0000-0000-0000000000f1'$$, '%ít nhất một%',
+  $$update public.club_members set is_active = false where id = '00000000-0000-0000-0000-0000000000f1'$$, '%Chủ nhiệm%',
   'tắt is_active owner cuối cùng -> lỗi');
 select throws_like(
-  $$update public.club_members set user_id = null where id = '00000000-0000-0000-0000-0000000000f1'$$, '%ít nhất một%',
+  $$update public.club_members set user_id = null where id = '00000000-0000-0000-0000-0000000000f1'$$, '%Chủ nhiệm%',
   'gỡ user_id owner cuối cùng -> lỗi');
 select lives_ok(
   $$delete from public.clubs where id = '00000000-0000-0000-0000-0000000000c2'$$,

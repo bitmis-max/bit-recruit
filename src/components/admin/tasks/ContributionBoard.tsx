@@ -48,8 +48,9 @@ function compareRows(mode: SortMode) {
 
 export function ContributionBoard() {
   const supabase = getSupabaseClient();
-  const { id: clubId, role } = useCurrentAdminClub();
-  const canWrite = role === "owner" || role === "admin";
+  const { id: clubId, role, teamId } = useCurrentAdminClub();
+  const isOwner = role === "owner";
+  const canWrite = isOwner || role === "admin";
   const [inputs, setInputs] = useState<Range>(defaultRange);
   const [applied, setApplied] = useState<Range>(inputs);
   const [reloadKey, setReloadKey] = useState(0);
@@ -81,7 +82,8 @@ export function ContributionBoard() {
   }, [supabase, clubId, canWrite, applied, reloadKey]);
 
   const loaded = result?.key === key ? result : null;
-  const rows = useMemo(() => (loaded?.rows ?? []).map(toRow), [loaded]);
+  // Ban chủ chốt chỉ xem thành viên trong ban của mình (máy chủ cũng lọc như vậy).
+  const rows = useMemo(() => (loaded?.rows ?? []).filter((raw) => isOwner || (!!teamId && raw.team_id === teamId)).map(toRow), [loaded, isOwner, teamId]);
   const flaggedCount = rows.filter((row) => row.flagged).length;
   const shown = useMemo(() => rows.filter((row) => !onlyFlagged || row.flagged).sort(compareRows(sort)), [rows, onlyFlagged, sort]);
 
@@ -98,6 +100,7 @@ export function ContributionBoard() {
     {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
     {loaded?.error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{loaded.error}</p>}
     {!supabase && <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Thiếu cấu hình Supabase.</p>}
+    {canWrite && !isOwner && <p className="mb-4 rounded-lg bg-zinc-100 p-3 text-sm text-zinc-700">{teamId ? "Bảng chỉ hiện thành viên trong ban của bạn." : "Bạn chưa thuộc ban nào nên chưa có thành viên để xem. Hãy nhờ Chủ nhiệm xếp bạn vào một ban."}</p>}
     {!canWrite && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ Ban chủ nhiệm và Ban chủ chốt được xem bảng đóng góp.</p>}
 
     {canWrite && <>
