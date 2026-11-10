@@ -573,7 +573,7 @@ Ma trận quyền:
 | `events` (ảnh sự kiện: policy storage bucket `event-images`) | `events` |
 | `recruitment_campaigns`, `recruitment_positions`, `application_forms`, `form_questions` (ghi); `applications` (đọc, đổi `status`), `application_answers` (đọc); `interview_sessions` (thêm/sửa, xóa qua `can_delete_empty_interview_session`), `interview_assignments`, `interview_session_members`; RPC `admit_applications`, `import_applications`, `create_application_form_from_template`, `save_application_form_questions` | `recruitment` |
 | `form_templates`, `form_template_questions` (dùng chung toàn hệ thống; đọc và ghi) | owner, hoặc admin có `recruitment` ở ít nhất một CLB |
-| `teams` (ghi), ảnh ban (bucket `team-images`) | `members` |
+| `teams` (ghi), ảnh ban (bucket `team-images`), RPC `import_members` | `members` |
 | `member_facebook_aliases` (đọc/ghi), `apply_task_scan` | `facebook` |
 | `club_terms`, `club_term_roles` (ghi, term `draft`), `activate_term` | Chủ nhiệm (`is_club_head`) |
 | `club_terms`, `club_term_roles` (đọc) | `is_club_admin` |
@@ -828,6 +828,25 @@ Không đổi bảng. Client không insert trực tiếp vào `applications`, `a
 - Đơn: thêm `applications` (trạng thái mặc định). Trùng `(position_id, email)` (đã có trong DB hoặc lặp lại trong chính file; email null không bị coi là trùng) thì bỏ qua cả dòng, không tạo ca/câu trả lời cho dòng đó. Câu trả lời rỗng không được lưu.
 - Hai lần import cùng một đợt tuyển được tuần tự hóa bằng `pg_advisory_xact_lock`, để không tạo trùng vị trí/form/ca.
 - Trả về `{ "imported", "skipped_duplicates", "positions_created", "forms_created", "sessions_created" }`.
+
+### 6.7. Import thành viên từ Excel/CSV (migration `20261116000000_import_members.sql`)
+
+Không đổi bảng. CLB đang quản lý thành viên trên Google Sheet; tải về `.xlsx`/`.csv` rồi đưa lên web (một lần, dùng lại các năm sau). Client không insert/update `club_members` trực tiếp khi import; mọi việc ghi nằm trong một RPC chạy trong một transaction (lỗi ở bất kỳ dòng nào thì không ghi gì).
+
+`import_members(p_club_id uuid, p_rows jsonb) returns jsonb`: `security definer`, `set search_path = public`, thu hồi quyền của `public`/`anon`, cấp `execute` cho `authenticated` và `service_role`. Người gọi phải có `has_club_permission(p_club_id, 'members')` (owner, hoặc admin có quyền `members`), nếu không thì lỗi `Bạn không có quyền import thành viên cho CLB này`. Lỗi tiếng Việt; lỗi theo dòng có dạng `Dòng N: ...` (N từ 1). Lỗi kiểm tra dữ liệu có số dòng ngay trong thông báo; lỗi phát sinh từ DB/trigger được thêm tiền tố bởi MỘT khối bắt lỗi bao ngoài vòng lặp (không savepoint mỗi dòng).
+
+- `p_rows`: mảng JSON 1 đến 1000 phần tử (rỗng hoặc không phải mảng bị từ chối). Mỗi phần tử là object `{ full_name, student_code, class_name, email, phone, facebook_url, team, title }`; khóa thiếu coi như null, khóa lạ bị bỏ qua. Giá trị là chuỗi hoặc null (số, boolean, object... bị từ chối: `Dòng N: trường "…" phải là chuỗi`), được trim, rỗng thành null.
+  - `full_name` bắt buộc (`Dòng N: thiếu họ tên`), tối đa 200 ký tự; `team` tối đa 200; `email` tối đa 254; `facebook_url` tối đa 500; `student_code`, `class_name`, `phone`, `title` tối đa 100.
+  - `email` (nếu có) viết thường và khớp regex email của `submit_application` (sai thì `Dòng N: email không hợp lệ`).
+  - `facebook_url` (nếu có) khớp `^https://(www\.|m\.|web\.)?(facebook|fb)\.com/.+` như check của `club_members` (sai thì `Dòng N: link Facebook không hợp lệ`).
+  - `team` (nếu có): so `lower(btrim(teams.name)) = lower(btrim(team))` trong CLB (lấy ban tạo sớm nhất nếu trùng tên). Không có thì lỗi `Dòng N: ban "…" chưa có trên web. Hãy tạo ban ở mục Quản lí ban hoặc sửa tên trong file.`; hàm không tự tạo ban.
+- Trùng trong chính file (cùng MSSV, hoặc cùng email không phân biệt hoa thường) thì lỗi `Dòng N trùng với dòng M (MSSV …)` hoặc `(email …)`; N là dòng đến sau.
+- Ghép với thành viên đã có trong CLB: trước theo `student_code` (khác null), không có thì theo `lower(email)`. Nếu MSSV khớp người A còn email khớp người B (A khác B) thì lỗi `Dòng N: MSSV và email thuộc hai thành viên khác nhau trên web`.
+  - Không khớp: thêm mới với `role = 'member'`, `is_active = true`, `permissions = '{}'`, `is_head = false`, `user_id` null, cùng các trường từ file.
+  - Khớp: cập nhật **chỉ những trường file có giá trị** (trường trống không ghi đè bằng null). KHÔNG đổi `role`, `permissions`, `is_head`, `user_id`, `is_active`. Nếu không có trường nào thực sự đổi thì đếm `unchanged` (email chỉ khác hoa/thường cũng coi là không đổi).
+  - Dòng đích là `owner`/`admin`: chỉ Chủ nhiệm (`is_club_head`) được đổi `team_id`; người khác thì giữ nguyên ban của dòng đó. `staff_team_skipped` chỉ đếm khi ban trong file khác ban hiện tại (ban trùng thì không đếm); các trường khác của dòng vẫn được cập nhật bình thường.
+- Hai lần import cùng một CLB được tuần tự hóa bằng `pg_advisory_xact_lock`.
+- Trả về `{ "inserted", "updated", "unchanged", "staff_team_skipped" }`.
 
 ## Phụ lục: policy đọc CLB cho quản trị
 
