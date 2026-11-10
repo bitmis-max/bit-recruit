@@ -30,6 +30,14 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 - Đang chờ: người dùng merge PR, tạo project Vercel từ repo, nhập biến môi trường trên dashboard Vercel, cấu hình Supabase Auth (Site URL, Redirect URL, Google provider, tắt signup).
 - Lưu ý: `google_mail_tokens` trên DB thật có 1 token mã hóa bằng `GOOGLE_TOKEN_ENCRYPTION_KEY` cũ; nếu dùng key mới thì người đó phải kết nối lại Gmail.
 
+## Vercel qua CLI (người dùng nhờ lead làm, 2026-11-10)
+- Vercel CLI 65.14.0 có sẵn (`npx vercel`), đang login tài khoản cá nhân `buiducthinh250506-cell` → người dùng cần `npx vercel logout` + `npx vercel login` bằng tài khoản BIT.
+- File secret tạm `.env.vercel.local` (gitignored qua `.env*`): người dùng điền `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, (tùy chọn) `GOOGLE_TOKEN_ENCRYPTION_KEY`. Lead xóa file sau khi đẩy xong.
+- Script (scratchpad) `push-vercel-env.mjs <siteUrl> [--dry]`: kiểm định dạng, tự tạo `CRON_SECRET` (+ key mã hóa nếu trống), `vercel env add ... --environment production --force --sensitive` qua stdin, không in giá trị.
+- Sau khi đẩy: `vercel link` vào project hiện có, redeploy bản production mới nhất (sau khi người dùng merge PR bằng tài khoản BIT).
+- **Kết quả:** CLI login `bitmis-3939`; project Vercel = **`bit-bav`**, web **https://bit-bav.vercel.app**; `.vercel/` (gitignored) đã link. Project ĐÃ có sẵn `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY` (không ghi đè — key mã hóa phải giữ để giải mã token Gmail cũ), `NEXT_PUBLIC_SUPABASE_*`, SMTP_*. Lead đã thêm `CRON_SECRET` (sensitive, tự tạo, không lưu ở đâu khác) và `NEXT_PUBLIC_SITE_URL=https://bit-bav.vercel.app`. Đã xóa `.env.vercel.local`. `vercel link` tự thêm `VERCEL_OIDC_TOKEN` vào `.env.local` (gitignored, vô hại).
+- Còn chờ: người dùng merge PR bằng tài khoản BIT → Vercel tự deploy `main`; lead kiểm tra web + cron (401 khi không có secret). Supabase Auth URL Configuration nên có Site URL `https://bit-bav.vercel.app` và Redirect `https://bit-bav.vercel.app/auth/callback` (bản cũ có thể đã đặt).
+
 ## Gộp `main` (2026-11-10)
 - PR báo xung đột: `origin/main` có 4 commit của tài khoản BIT ngày 27/10 (import ứng viên/ca phỏng vấn từ Excel + SQL `update_application_forms_schema.sql` đổi form sang theo `campaign_id`). SQL này là nguồn gốc schema "legacy" trên DB thật. Code khác trên main vẫn dùng `position_id`.
 - Lead đã merge `origin/main` vào nhánh (commit `8428c1f`): giữ mô hình form theo vị trí; 2 màn hình xung đột giữ bản nhánh; SQL chuyển vào `supabase/migration/legacy/` với dòng "KHÔNG CHẠY".
