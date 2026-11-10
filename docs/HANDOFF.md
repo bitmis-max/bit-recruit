@@ -12,7 +12,10 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
 - **Hợp đồng:** `docs/CONTRACT-1.md` (Đợt 1), `docs/CONTRACT-2.md` (Đợt 2), `docs/CONTRACT.md` (Đợt 3, có các dòng "Sửa sau review").
 
 ## DB thật (`rftgnkgnyvtehnsjwuhp`)
-- **Chưa sửa gì.** Đang ở schema legacy (khớp `supabase/migration/legacy/`). Code hiện tại KHÔNG chạy đúng trên đó.
+- **2026-11-10 sau `db push`:** cả 4 migration đã áp lên DB thật (migration list local = remote). Read-only: role enum `owner,admin,member`, club_members owner:1 member:2, applications 55, answers 2365, events 10, storage 2 object, 6 bảng mới + 7 hàm mới + bucket avatar-frames.
+  - Security advisor: anon gọi được 19 hàm security definer cũ (Supabase cấp mặc định). Lead thêm `20261113000000_harden_function_grants.sql` (anon chỉ còn submit_application, get_application_by_token; hàm trigger không gọi qua API) + `supabase/tests/function_grants.test.sql`; local 425/425 PASS. **Chờ người dùng `npx supabase db push --remote`.** Cảnh báo còn lại chấp nhận: authenticated gọi hàm RPC (đúng thiết kế), `google_mail_tokens`/`legacy_archive` RLS không policy (cố ý, chỉ service-role), leaked password protection (tính năng gói trả phí).
+- **2026-11-10 (người dùng chạy):** script nâng cấp ĐÃ áp + `migration repair` baseline ĐÃ xong. Lead kiểm tra read-only: hết dấu legacy, có `position_id`, applications 55, answers 2365, forms 4, questions 172, events 10, club_members 3, assignments 55, 0 câu trả lời trỏ sai vị trí, 8 trigger. `db push --dry-run` liệt kê đúng 3 migration. **Còn chờ: `npx supabase db push --remote`.**
+- (Trước nâng cấp) Ở schema legacy (khớp `supabase/migration/legacy/`).
 - Dữ liệu (đếm 2026-11-10): applications 55, application_answers 2365, form_questions 43, events 10, interview_sessions 9, interview_assignments 55, teams 5, recruitment_positions 4, club_members 3 (1 owner có tài khoản), clubs/campaigns/form_templates/google_mail_tokens 1; auth.users 2; storage 2 ảnh event-images. Không có bảng `supabase_migrations`.
 - Backup: `backup/schema.sql`, `backup/data.sql`, `backup/pre_upgrade_schema.sql`, `backup/pre_upgrade_data.sql`.
 - Script nâng cấp `supabase/upgrade/20261110_legacy_to_baseline.sql` đã kiểm chứng trên bản sao: nội dung 2365 câu trả lời giữ nguyên (md5), 0 câu trỏ sai vị trí, dấu vân tay schema = DB dựng mới.
