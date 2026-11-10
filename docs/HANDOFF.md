@@ -25,6 +25,11 @@ Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. 
   3. `npx supabase db push --remote --dry-run` (phải liệt kê đúng 3: `20261110000000`, `20261111000000`, `20261112000000`) rồi `npx supabase db push --remote`
 - Sau khi người dùng chạy: lead đếm lại (read-only), chạy `npx supabase db advisors --remote` hoặc MCP `get_advisors`, cập nhật file này.
 
+## Deploy (người dùng chọn 2026-11-10: GitHub ↔ Vercel, push nhánh + PR)
+- Đã push `feat/member-roles-terms` lên `origin` (github.com/bitmis-max/bit-recruit). `gh` chưa cài → người dùng tự tạo PR qua link `https://github.com/bitmis-max/bit-recruit/pull/new/feat/member-roles-terms` rồi merge.
+- Đang chờ: người dùng merge PR, tạo project Vercel từ repo, nhập biến môi trường trên dashboard Vercel, cấu hình Supabase Auth (Site URL, Redirect URL, Google provider, tắt signup).
+- Lưu ý: `google_mail_tokens` trên DB thật có 1 token mã hóa bằng `GOOGLE_TOKEN_ENCRYPTION_KEY` cũ; nếu dùng key mới thì người đó phải kết nối lại Gmail.
+
 ## Việc tiếp theo
 1. Người dùng chạy 3 lệnh nâng cấp DB (trên).
 2. Cấu hình (người dùng làm, lead hướng dẫn): tắt "Allow new users to sign up"; bật Google provider; bật "Confirm email"; điền `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL` (qua file, không dán vào chat).
