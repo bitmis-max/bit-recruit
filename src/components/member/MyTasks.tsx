@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
 
-type TaskInfo = { id: string; title: string; description: string | null; due_at: string; status: "open" | "closed" };
+type TaskInfo = { id: string; title: string; description: string | null; due_at: string; status: "open" | "closed"; kind: "general" | "engagement" | "avatar"; post_url: string | null; frame_id: string | null };
 type Assignment = { task_id: string; status: "pending" | "done" | "missed"; completed_at: string | null; note: string | null; tasks: TaskInfo | TaskInfo[] | null };
 type Item = Omit<Assignment, "tasks"> & { task: TaskInfo };
 type Loaded = { key: string; items: Item[]; loadedAt: number; error: string };
@@ -32,7 +33,7 @@ export function MyTasks({ memberId }: { memberId: string }) {
     let active = true;
     (async () => {
       const { data, error: loadError } = await supabase.from("task_assignees")
-        .select("task_id,status,completed_at,note,tasks(id,title,description,due_at,status)").eq("member_id", memberId);
+        .select("task_id,status,completed_at,note,tasks(id,title,description,due_at,status,kind,post_url,frame_id)").eq("member_id", memberId);
       if (!active) return;
       const items = ((data ?? []) as unknown as Assignment[]).flatMap((row) => {
         const task = Array.isArray(row.tasks) ? row.tasks[0] : row.tasks;
@@ -74,6 +75,8 @@ export function MyTasks({ memberId }: { memberId: string }) {
         {item.status === "pending" && item.task.status === "open" && <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${due.late ? "bg-rose-50 text-rose-800" : "bg-amber-50 text-amber-800"}`}>{due.text}</span>}
       </div>
       {item.task.description && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-zinc-600">{item.task.description}</p>}
+      {item.task.kind === "engagement" && item.task.post_url?.startsWith("https://") && <p className="mt-2"><a href={item.task.post_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center text-sm font-semibold text-emerald-800 underline">Mở bài viết</a></p>}
+      {item.task.kind === "avatar" && item.task.frame_id && <p className="mt-2"><Link href={`/frames/${encodeURIComponent(item.task.frame_id)}`} className="inline-flex min-h-9 items-center text-sm font-semibold text-emerald-800 underline">Tạo avatar khung</Link></p>}
       <p className="mt-2 text-xs text-zinc-500">Hạn {formatDateTime(item.task.due_at)}{item.status === "done" && item.completed_at ? ` · Xong lúc ${formatDateTime(item.completed_at)}` : ""}</p>
       {item.note && <p className="mt-2 break-words rounded-lg bg-[#f7f8f6] px-3 py-2 text-xs text-zinc-700">Ghi chú của Ban chủ chốt: {item.note}</p>}
       {item.status === "missed" && <p className="mt-2 text-xs text-rose-700">Việc này bị đánh dấu chưa hoàn thành. Hãy liên hệ Ban chủ chốt nếu có nhầm lẫn.</p>}

@@ -4,20 +4,24 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { useCurrentAdminClub } from "../AdminClubContext";
+import { facebookUrlPattern } from "../roles";
 
 type AssigneeStatus = "pending" | "done" | "missed";
 type Assignee = { member_id: string; status: AssigneeStatus; note: string | null; completed_at: string | null };
-type Task = { id: string; title: string; description: string | null; due_at: string; status: "open" | "closed"; task_assignees: Assignee[] };
+type TaskKind = "general" | "engagement" | "avatar";
+type Task = { id: string; title: string; description: string | null; due_at: string; status: "open" | "closed"; kind: TaskKind; post_url: string | null; frame_id: string | null; task_assignees: Assignee[] };
 type Member = { id: string; full_name: string; team_id: string | null; is_active: boolean };
 type Team = { id: string; name: string };
-type LoadedData = { clubId: string; tasks: Task[]; members: Member[]; teams: Team[]; loadedAt: number; error: string };
+type Frame = { id: string; name: string };
+type LoadedData = { clubId: string; tasks: Task[]; members: Member[]; teams: Team[]; frames: Frame[]; loadedAt: number; error: string };
 type Sender = { clubId: string; configured: boolean; isMe: boolean; senderName: string | null; error: string };
 type Draft = { status: AssigneeStatus; note: string };
 
 const statusLabel: Record<AssigneeStatus, string> = { pending: "Chờ", done: "Xong", missed: "Chưa hoàn thành" };
 const statusClass: Record<AssigneeStatus, string> = { pending: "bg-amber-50 text-amber-800", done: "bg-emerald-50 text-emerald-800", missed: "bg-rose-50 text-rose-800" };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100";
-const emptyForm = { title: "", description: "", due: "", teamId: "" };
+const kindLabel: Record<TaskKind, string> = { general: "Việc thường", engagement: "Tương tác bài viết", avatar: "Thay avatar" };
+const emptyForm = { title: "", description: "", due: "", teamId: "", kind: "general" as TaskKind, postUrl: "", frameId: "", allMembers: false };
 
 async function callApi<T>(url: string, init?: RequestInit): Promise<{ data?: T; error?: string }> {
   try {
@@ -56,16 +60,17 @@ export function TasksManager() {
     if (!supabase || !clubId || !canWrite) return;
     let active = true;
     (async () => {
-      const [taskResult, memberResult, teamResult] = await Promise.all([
-        supabase.from("tasks").select("id,title,description,due_at,status,task_assignees(member_id,status,note,completed_at)").eq("club_id", clubId).order("due_at", { ascending: true }),
+      const [taskResult, memberResult, teamResult, frameResult] = await Promise.all([
+        supabase.from("tasks").select("id,title,description,due_at,status,kind,post_url,frame_id,task_assignees(member_id,status,note,completed_at)").eq("club_id", clubId).order("due_at", { ascending: true }),
         supabase.from("club_members").select("id,full_name,team_id,is_active").eq("club_id", clubId).order("full_name"),
         supabase.from("teams").select("id,name").eq("club_id", clubId).order("name"),
+        supabase.from("avatar_frames").select("id,name").eq("club_id", clubId).order("name"),
       ]);
       if (!active) return;
-      const failure = taskResult.error ?? memberResult.error ?? teamResult.error;
+      const failure = taskResult.error ?? memberResult.error ?? teamResult.error ?? frameResult.error;
       setData({
         clubId, loadedAt: Date.now(), error: failure?.message ?? "",
-        tasks: (taskResult.data ?? []) as unknown as Task[], members: (memberResult.data ?? []) as Member[], teams: (teamResult.data ?? []) as Team[],
+        tasks: (taskResult.data ?? []) as unknown as Task[], members: (memberResult.data ?? []) as Member[], teams: (teamResult.data ?? []) as Team[], frames: (frameResult.data ?? []) as Frame[],
       });
     })();
     return () => { active = false; };
@@ -89,6 +94,7 @@ export function TasksManager() {
   const tasks = useMemo(() => loaded?.tasks ?? [], [loaded]);
   const members = useMemo(() => loaded?.members ?? [], [loaded]);
   const teams = useMemo(() => loaded?.teams ?? [], [loaded]);
+  const frames = useMemo(() => loaded?.frames ?? [], [loaded]);
   const loadedAt = loaded?.loadedAt ?? 0;
   const memberById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const openCount = tasks.filter((task) => task.status === "open").length;
@@ -107,11 +113,14 @@ export function TasksManager() {
     if (!supabase || !canWrite) return;
     const due = new Date(form.due);
     if (Number.isNaN(due.getTime())) { setError("Hãy chọn hạn chót hợp lệ."); return; }
-    if (!memberIds.length && !form.teamId) { setError("Hãy chọn ít nhất một người nhận hoặc một ban."); return; }
+    if (!form.allMembers && !memberIds.length && !form.teamId) { setError("Hãy chọn ít nhất một người nhận, một ban hoặc giao cho tất cả thành viên."); return; }
+    const postUrl = form.postUrl.trim();
+    if (form.kind === "engagement" && !facebookUrlPattern.test(postUrl)) { setError("Việc tương tác cần link bài viết Facebook, bắt đầu bằng https://facebook.com/ hoặc https://fb.com/."); return; }
     setBusy("create"); resetMessages();
     const { data: newId, error: rpcError } = await supabase.rpc("create_task", {
       p_club_id: clubId, p_title: form.title.trim(), p_description: form.description.trim() || null,
       p_due_at: due.toISOString(), p_member_ids: memberIds, p_team_id: form.teamId || null,
+      p_kind: form.kind, p_post_url: form.kind === "engagement" ? postUrl : null, p_frame_id: form.kind === "avatar" ? form.frameId || null : null, p_all_members: form.allMembers,
     });
     setBusy("");
     if (rpcError) { setError(rpcError.message); return; }
@@ -202,8 +211,12 @@ export function TasksManager() {
           <div><h2 className="font-semibold">Giao việc mới</h2><p className="mt-1 text-xs text-zinc-500">Chọn người nhận và/hoặc cả ban (chỉ tính thành viên đang hoạt động).</p></div>
           <label className="block text-sm">Tiêu đề<input required maxLength={200} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className={inputClass} placeholder="Ví dụ: Nộp bản thiết kế poster" /></label>
           <label className="block text-sm">Mô tả<textarea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className={inputClass} placeholder="Yêu cầu chi tiết (không bắt buộc)" /></label>
+          <label className="block text-sm">Loại việc<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as TaskKind })} className={inputClass}>{(Object.keys(kindLabel) as TaskKind[]).map((value) => <option key={value} value={value}>{kindLabel[value]}</option>)}</select></label>
+          {form.kind === "engagement" && <label className="block text-sm">Link bài viết Facebook<input required type="url" value={form.postUrl} onChange={(event) => setForm({ ...form, postUrl: event.target.value })} className={inputClass} placeholder="https://facebook.com/..." /><span className="mt-1 block text-xs text-zinc-500">Thành viên react hoặc bình luận bài này. Sau đó dùng bookmarklet để đối chiếu.</span></label>}
+          {form.kind === "avatar" && <label className="block text-sm">Khung avatar<select value={form.frameId} onChange={(event) => setForm({ ...form, frameId: event.target.value })} className={inputClass}><option value="">Chưa chọn khung</option>{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.name}</option>)}</select><span className="mt-1 block text-xs text-zinc-500">{frames.length ? "Khung được chọn sẽ hiện nút “Tạo avatar khung” ở trang cá nhân của người nhận." : <>CLB chưa có khung nào. <Link href="/manage-clubs/frames" className="font-medium text-emerald-800 underline">Tải khung lên ở mục Khung avatar</Link>.</>}</span></label>}
           <label className="block text-sm">Hạn chót<input required type="datetime-local" value={form.due} onChange={(event) => setForm({ ...form, due: event.target.value })} className={inputClass} /></label>
           <label className="block text-sm">Giao cho cả ban<select value={form.teamId} onChange={(event) => setForm({ ...form, teamId: event.target.value })} className={inputClass}><option value="">Không giao theo ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+          <label className="flex cursor-pointer items-start gap-2 text-sm"><input type="checkbox" checked={form.allMembers} onChange={(event) => setForm({ ...form, allMembers: event.target.checked })} className="mt-0.5 shrink-0" /><span>Giao cho tất cả thành viên đang hoạt động<span className="block text-xs text-zinc-500">Gộp thêm với người và ban đã chọn.</span></span></label>
           <fieldset className="text-sm"><legend className="font-medium">Giao cho từng người ({memberIds.length} đã chọn)</legend>
             <label className="mt-1 block text-xs text-zinc-600">Tìm thành viên<input type="search" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} className={inputClass} placeholder="Gõ tên để lọc" /></label>
             <div className="mt-2 max-h-52 overflow-y-auto rounded-lg border">{shownMembers.length ? <ul className="divide-y divide-zinc-100">{shownMembers.map((member) => <li key={member.id}><label className="flex cursor-pointer items-start gap-2 px-3 py-2 hover:bg-zinc-50"><input type="checkbox" checked={memberIds.includes(member.id)} onChange={() => toggleMember(member.id)} className="mt-0.5 shrink-0" /><span className="min-w-0 break-words">{member.full_name}</span></label></li>)}</ul> : <p className="p-3 text-xs text-zinc-500">{loading ? "Đang tải thành viên…" : "Không có thành viên phù hợp."}</p>}</div>
@@ -217,7 +230,7 @@ export function TasksManager() {
           {loading ? <p className="p-6 text-sm text-zinc-500">Đang tải việc…</p> : visible.length ? <ul className="divide-y divide-zinc-100">{visible.map((task) => {
             const done = task.task_assignees.filter((row) => row.status === "done").length;
             return <li key={task.id}><button type="button" aria-current={task.id === selectedId} onClick={() => setSelectedId(task.id)} className={`block w-full p-4 text-left hover:bg-zinc-50 ${task.id === selectedId ? "bg-emerald-50/60" : ""}`}>
-              <span className="flex items-start justify-between gap-2"><span className="min-w-0 break-words font-medium">{task.title}</span>{isOverdue(task) && <span className="shrink-0 rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-800">Quá hạn</span>}</span>
+              <span className="flex items-start justify-between gap-2"><span className="min-w-0 break-words font-medium">{task.title}{task.kind !== "general" && <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">{kindLabel[task.kind]}</span>}</span>{isOverdue(task) && <span className="shrink-0 rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-800">Quá hạn</span>}</span>
               <span className="mt-1 block text-xs text-zinc-500">Hạn {formatDateTime(task.due_at)} · {done}/{task.task_assignees.length} người xong</span>
             </button></li>;
           })}</ul> : <p className="p-6 text-sm text-zinc-500">{filter === "open" ? "Chưa có việc nào đang mở." : "Chưa có việc nào đã đóng."}</p>}
@@ -229,9 +242,15 @@ export function TasksManager() {
           <div className="border-b p-5">
             <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="break-words text-xl font-semibold">{selected.title}</h2><p className="mt-1 text-sm text-zinc-600">Hạn {formatDateTime(selected.due_at)}</p></div>
               <div className="flex flex-wrap gap-2">{isOverdue(selected) && <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-800">Quá hạn</span>}<span className={`rounded-full px-3 py-1 text-xs font-semibold ${selected.status === "open" ? "bg-emerald-50 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>{selected.status === "open" ? "Đang mở" : "Đã đóng"}</span></div></div>
+            {selected.kind !== "general" && <div className="mt-3 space-y-1 text-sm text-zinc-700">
+              <p><span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-700">{kindLabel[selected.kind]}</span></p>
+              {selected.kind === "engagement" && selected.post_url && <p className="break-all">{selected.post_url.startsWith("https://") ? <a href={selected.post_url} target="_blank" rel="noopener noreferrer" className="font-medium text-emerald-800 underline">{selected.post_url}</a> : selected.post_url}</p>}
+              {selected.kind === "avatar" && <p className="break-words">{selected.frame_id ? `Khung: ${frames.find((frame) => frame.id === selected.frame_id)?.name ?? "Không đọc được tên khung"}` : "Chưa gắn khung."}</p>}
+            </div>}
             {selected.description && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-zinc-700">{selected.description}</p>}
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button type="button" disabled={busy === "remind" || selected.status !== "open" || !canRemind || !selected.task_assignees.some((row) => row.status === "pending")} onClick={() => void remindNow(selected)} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "remind" ? "Đang gửi…" : "Gửi nhắc ngay"}</button>
+              {selected.kind !== "general" && <Link href="/manage-clubs/scan" className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">Đối chiếu bằng bookmarklet</Link>}
               <button type="button" disabled={busy === "status"} onClick={() => void setTaskStatus(selected, selected.status === "open" ? "closed" : "open")} className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">{selected.status === "open" ? "Đóng việc" : "Mở lại việc"}</button>
               <button type="button" disabled={busy === "delete"} onClick={() => setConfirmTask(selected)} className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 disabled:opacity-50">Xóa việc</button>
             </div>

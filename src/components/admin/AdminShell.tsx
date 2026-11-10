@@ -12,6 +12,8 @@ import { FormTemplatesManager } from "./FormTemplatesManager";
 import { TermsManager } from "./TermsManager";
 import { TasksManager } from "./tasks/TasksManager";
 import { ContributionBoard } from "./tasks/ContributionBoard";
+import { ScanImport } from "./scan/ScanImport";
+import { FramesManager } from "./frames/FramesManager";
 import { roleLabel } from "./roles";
 import { TeamsManager } from "./recruitment/TeamsManager";
 import { RecruitmentManager } from "./recruitment/RecruitmentManager";
@@ -51,6 +53,8 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
     { href: "/manage-clubs/terms", label: "Nhiệm kỳ", allowed: canWrite },
     { href: "/manage-clubs/tasks", label: "Giao việc", allowed: canWrite },
     { href: "/manage-clubs/contribution", label: "Đóng góp", allowed: canWrite },
+    { href: "/manage-clubs/scan", label: "Đối chiếu Facebook", allowed: canWrite },
+    { href: "/manage-clubs/frames", label: "Khung avatar", allowed: canWrite },
     { href: "/manage-clubs/events", label: "Quản lý sự kiện", allowed: canWrite },
     { href: "/manage-clubs/recruitment", label: "Quản lý tuyển gen", allowed: true },
     { href: "/manage-clubs/form-templates", label: "Quản lý biểu mẫu", allowed: canWrite },
@@ -64,6 +68,8 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
     { href: "/manage-clubs/terms", content: <TermsManager /> },
     { href: "/manage-clubs/tasks", content: <TasksManager /> },
     { href: "/manage-clubs/contribution", content: <ContributionBoard /> },
+    { href: "/manage-clubs/scan", content: <ScanImport /> },
+    { href: "/manage-clubs/frames", content: <FramesManager /> },
     { href: "/manage-clubs/events", content: <EventsManager /> },
     { href: "/manage-clubs/recruitment", content: <><RecruitmentTabs /><RecruitmentManager /></> },
     { href: "/manage-clubs/recruitment/applications", content: <><RecruitmentTabs /><ApplicationsManager /></> },

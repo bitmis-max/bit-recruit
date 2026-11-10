@@ -22,6 +22,10 @@ erDiagram
     clubs ||--o{ teams : has
     clubs ||--o{ club_terms : has
     clubs ||--o{ tasks : assigns
+    clubs ||--o{ avatar_frames : owns
+    avatar_frames ||--o{ tasks : "frame of"
+    clubs ||--o{ member_facebook_aliases : maps
+    club_members ||--o{ member_facebook_aliases : "known as"
     tasks ||--o{ task_assignees : "assigned to"
     club_members ||--o{ task_assignees : receives
     club_terms ||--o{ club_term_roles : lists
@@ -64,6 +68,8 @@ erDiagram
 | | `club_term_roles` | Danh sách Ban chủ nhiệm/Ban chủ chốt của một nhiệm kỳ |
 | Giao việc | `tasks` | Việc Ban chủ chốt giao (tiêu đề, hạn, `open`/`closed`) |
 | | `task_assignees` | Người nhận việc, trạng thái, ghi chú, mốc nhắc |
+| Tương tác Facebook | `avatar_frames` | Khung avatar PNG của CLB (file nằm trong bucket `avatar-frames`) |
+| | `member_facebook_aliases` | Gắn khóa hồ sơ Facebook (`id:...`/`u:...`) với thành viên khi link trong hồ sơ không khớp |
 | tuyển gen | `recruitment_campaigns` | Đợt tuyển |
 | | `recruitment_positions` | Vị trí tuyển trong đợt |
 | | `form_templates` | Mẫu biểu mẫu có thể tái sử dụng |
@@ -78,7 +84,7 @@ erDiagram
 
 ## 4. Script SQL
 
-Schema gốc, RLS, function và seed tối thiểu nằm trong migration baseline `supabase/migrations/20261023000000_init.sql`. Vai trò thành viên, nhiệm kỳ và kết nạp được thêm bởi `supabase/migrations/20261110000000_member_roles_terms.sql` (các khối SQL bên dưới đã phản ánh trạng thái sau migration này). Giao việc, nhắc hạn và đóng góp được thêm bởi `supabase/migrations/20261111000000_tasks.sql` (xem mục 6.4). Các script tăng dần trước đây chỉ còn giá trị tham khảo trong `supabase/migration/legacy/` và không cần chạy trên database mới. Hướng dẫn bootstrap owner đầu tiên nằm trong `README.md`.
+Schema gốc, RLS, function và seed tối thiểu nằm trong migration baseline `supabase/migrations/20261023000000_init.sql`. Vai trò thành viên, nhiệm kỳ và kết nạp được thêm bởi `supabase/migrations/20261110000000_member_roles_terms.sql` (các khối SQL bên dưới đã phản ánh trạng thái sau migration này). Giao việc, nhắc hạn và đóng góp được thêm bởi `supabase/migrations/20261111000000_tasks.sql` (xem mục 6.4). Đối chiếu tương tác Facebook và avatar khung được thêm bởi `supabase/migrations/20261112000000_engagement_frames.sql` (xem mục 6.5). Các script tăng dần trước đây chỉ còn giá trị tham khảo trong `supabase/migration/legacy/` và không cần chạy trên database mới. Hướng dẫn bootstrap owner đầu tiên nằm trong `README.md`.
 
 ### 4.1. Enum
 
@@ -692,6 +698,63 @@ Luồng giao việc, nhắc hạn, đóng góp:
 2. Thành viên xem việc của mình ở `/me` (RLS chỉ cho thấy việc và dòng của chính mình), tự đánh dấu xong/bỏ đánh dấu qua `set_my_task_done`. Ban chủ chốt có thể đặt `missed`.
 3. Nhắc hạn: CLB đặt `clubs.mail_sender_user_id` (service-role, qua API) là tài khoản Gmail dùng để gửi. Cron hằng ngày (service-role) đọc các dòng `pending` của task `open`, gửi mail gộp cho mỗi người rồi ghi `reminded_before_at` (trước hạn, trong 36 giờ) hoặc `reminded_overdue_at` (quá hạn, trong 7 ngày) để không nhắc lặp. "Gửi nhắc ngay" bỏ qua mốc nhưng vẫn ghi mốc.
 4. Đóng góp: `club_contribution` tổng hợp theo khoảng thời gian; tỉ lệ hoàn thành và nhãn "Cần nhắc nhở" do giao diện tính, hệ thống không tự phạt.
+
+### 6.5. Đối chiếu tương tác Facebook và avatar khung (migration `20261112000000_engagement_frames.sql`)
+
+```sql
+create table avatar_frames (
+  id uuid primary key default gen_random_uuid(),
+  club_id uuid not null references clubs(id) on delete cascade,
+  name text not null check (length(btrim(name)) between 1 and 120),
+  image_path text not null,                 -- '<club_id>/<uuid>.png' trong bucket 'avatar-frames'
+  created_by uuid references club_members(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+-- tasks: thêm cột
+alter table tasks
+  add column kind text not null default 'general',   -- 'general' | 'engagement' | 'avatar'
+  add column post_url text,                          -- link bài Facebook; bắt buộc khi kind = 'engagement'
+  add column frame_id uuid references avatar_frames(id) on delete set null;
+-- check: kind in (...); post_url khớp ^https://(www\.|m\.|web\.)?(facebook|fb)\.com/.+;
+--        kind <> 'engagement' or post_url is not null; kind = 'avatar' or frame_id is null
+
+create table member_facebook_aliases (
+  club_id uuid not null references clubs(id) on delete cascade,
+  fb_key text not null check (fb_key ~ '^(id:[0-9]{3,25}|u:[a-z0-9.]{1,80})$'),
+  member_id uuid not null references club_members(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (club_id, fb_key)
+);
+```
+
+Trigger (đều `security definer`, `set search_path = public`):
+
+- `tasks_frame_club_check` (`enforce_task_frame_club`): `frame_id` phải thuộc cùng CLB với việc.
+- `member_facebook_aliases_club_check` (`enforce_member_alias_club`): `member_id` phải thuộc `club_id` của alias.
+
+RLS và grant:
+
+| Bảng | Đọc | Ghi |
+|---|---|---|
+| `avatar_frames` | `anon`, `authenticated`, chỉ cột `(id, club_id, name, image_path, created_at)` (không lộ `created_by`; `select("*")` từ client sẽ báo thiếu quyền, phải liệt kê cột). Khung là ảnh quảng bá, trang ghép avatar công khai | Không ai ngoài `service_role` (API `/api/admin/frames`) |
+| `member_facebook_aliases` | admin của CLB | admin của CLB: insert `(club_id, fb_key, member_id)` và delete; không có update |
+| `tasks` | không đổi | Grant cột giữ như cũ; `kind`, `post_url`, `frame_id` chỉ đặt qua `create_task` |
+
+Bucket storage `avatar-frames`: công khai, giới hạn 2 MB, chỉ `image/png`. Chỉ có policy đọc công khai; không có policy ghi/xóa cho `authenticated`, nên upload và xóa chỉ do service-role (API) làm.
+
+Hàm (`security definer`, `set search_path = public`, thu hồi quyền của `public`/`anon`, cấp `execute` cho `authenticated` và `service_role`, lỗi tiếng Việt):
+
+- `create_task(p_club_id, p_title, p_description, p_due_at, p_member_ids, p_team_id, p_kind text default 'general', p_post_url text default null, p_frame_id uuid default null, p_all_members boolean default false) returns uuid`: thay hàm 6 tham số của mục 6.4 (hàm cũ bị drop); gọi kiểu cũ (không truyền 4 tham số mới) vẫn chạy y như trước. Thêm các kiểm tra: `p_kind` thuộc `general|engagement|avatar`; `engagement` bắt buộc có `p_post_url`; `p_post_url` (nếu có) phải là link Facebook; `p_frame_id` chỉ dùng với `avatar` và khung phải thuộc cùng CLB. `p_all_members = true` thêm mọi thành viên đang hoạt động của CLB vào danh sách người nhận (gộp, không trùng, với `p_member_ids` và `p_team_id`).
+- `apply_task_scan(p_task_id, p_member_ids uuid[]) returns int`: chỉ admin của CLB chứa việc; việc phải `open`. Đặt `status = 'done'` cho các dòng `task_assignees` của việc có `member_id` trong mảng và đang `pending` (không đụng `done`/`missed`; `completed_at` do trigger), trả số dòng đã đổi. `p_member_ids` null được coi là mảng rỗng.
+
+Luồng đối chiếu và avatar khung:
+
+1. Ban chủ chốt tạo việc loại `engagement` (kèm link bài viết) hoặc `avatar` (chọn khung) qua `create_task`, thường kèm `p_all_members = true`. Việc này có nhắc hạn và tính vào đóng góp như việc thường.
+2. Ban chủ chốt mở bài Facebook trên trình duyệt của mình, bấm bookmarklet; bookmarklet chuyển danh sách (khóa hồ sơ, tên, chữ ký màu vòng avatar) sang trang `/manage-clubs/scan` qua phần `#` của URL, không gửi lên máy chủ.
+3. Trang quét tính khóa từ `club_members.facebook_url` rồi so với khóa trong bài; khóa không khớp có thể gắn tay vào thành viên (ghi `member_facebook_aliases`, dùng cho các lần quét sau).
+4. Ban chủ chốt xác nhận danh sách rồi gọi `apply_task_scan`; mỗi lần quét chỉ thêm "xong", quét nhiều lần (react, rồi bình luận) được.
+5. Việc `avatar`: thành viên ghép ảnh với khung ngay trên trình duyệt (trang công khai `/frames/<id>`, đọc `avatar_frames` và bucket công khai). Kiểm tra ai đã thay avatar chỉ là thử nghiệm (so màu vòng viền), luôn được xác nhận lại bằng tay.
 
 ## Phụ lục: policy đọc CLB cho quản trị
 
