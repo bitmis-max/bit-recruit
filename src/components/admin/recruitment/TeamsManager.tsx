@@ -125,8 +125,9 @@ export function TeamsManager() {
     if (!supabase || !clubId || !selected || !canWrite) return;
     if (!window.confirm(`Xóa ban “${selected.name}”?`)) return;
     setBusy(true); setError(null); setNotice(null);
+    // Đếm theo tập ban (gồm cả người có ban này là ban phụ), không chỉ ban chính.
     const [members, positions] = await Promise.all([
-      supabase.from("club_members").select("id", { count: "exact", head: true }).eq("team_id", selected.id),
+      supabase.from("club_member_teams").select("member_id", { count: "exact", head: true }).eq("team_id", selected.id),
       supabase.from("recruitment_positions").select("id", { count: "exact", head: true }).eq("team_id", selected.id),
     ]);
     if (members.error || positions.error) {

@@ -112,6 +112,14 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Tài khoản này còn thuộc CLB khác nên không thể đổi email hoặc tên tại đây." }, { status: 403 });
   }
   if (!accountId || !EMAIL_PATTERN.test(email) || !fullName) return NextResponse.json({ error: "Tên hoặc email không hợp lệ." }, { status: 400 });
+  // Đổi email đăng nhập = đổi người sở hữu tài khoản, nên chỉ Chủ nhiệm được làm.
+  if (!context.isHead) {
+    const { data: existing, error: lookupError } = await context.admin.auth.admin.getUserById(accountId);
+    if (lookupError || !existing.user) return NextResponse.json({ error: "Không tìm thấy tài khoản." }, { status: 404 });
+    if ((existing.user.email ?? "").toLowerCase() !== email) {
+      return NextResponse.json({ error: "Chỉ Chủ nhiệm mới có thể đổi email đăng nhập của tài khoản." }, { status: 403 });
+    }
+  }
   const { error } = await context.admin.auth.admin.updateUserById(accountId, { email, user_metadata: { full_name: fullName } });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });

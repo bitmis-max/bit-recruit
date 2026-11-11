@@ -1,7 +1,7 @@
 -- pgTAP: import_members (import thành viên từ Excel/CSV). Theo docs/CONTRACT.md mục 1 và 3.
 -- Chạy: npx supabase test db   (cần npx supabase db reset để áp migration 20261116000000_import_members.sql)
 begin;
-select plan(63);
+select plan(65);
 
 -- ---------------------------------------------------------------------------
 -- Helper (mất khi rollback)
@@ -263,10 +263,13 @@ select is(
     {"full_name":"Phó chủ nhiệm","student_code":"E2","team":"Ban Chuyên môn"}
   ]$$::jsonb),
   '{"inserted":0,"updated":2,"unchanged":0,"staff_team_skipped":0}'::jsonb,
-  'Chủ nhiệm đổi được ban của admin và owner');
+  'Chủ nhiệm THÊM được ban cho admin và owner');
 reset role;
-select is((select team_id from public.club_members where id = public.u('e4')), public.u('d1'), 'Chủ nhiệm đã đổi ban e4 sang d1');
-select is((select team_id from public.club_members where id = public.u('e2')), public.u('d2'), 'Chủ nhiệm đã đổi ban e2 sang d2');
+-- Đợt 6: import THÊM ban vào tập; ban chính chỉ đặt khi đang null (trước đây import đổi ban chính).
+select is((select team_id from public.club_members where id = public.u('e4')), public.u('d2'), 'ban chính của e4 giữ nguyên d2');
+select is((select array_agg(team_id order by team_id) from public.club_member_teams where member_id = public.u('e4')), array[public.u('d1'), public.u('d2')], 'tập ban của e4 có thêm d1');
+select is((select team_id from public.club_members where id = public.u('e2')), public.u('d1'), 'ban chính của e2 giữ nguyên d1');
+select is((select array_agg(team_id order by team_id) from public.club_member_teams where member_id = public.u('e2')), array[public.u('d1'), public.u('d2')], 'tập ban của e2 có thêm d2');
 
 -- ===========================================================================
 -- 6. Lỗi: không ghi gì (một transaction)

@@ -144,6 +144,7 @@ Dùng khi CLB thu đơn bằng Google Form/Sheet.
 
 ### 7.1. Hồ sơ thành viên
 **Quản lý thành viên**: thêm/sửa họ tên, MSSV, lớp, **email (Gmail)**, SĐT, link Facebook, ban, chức danh, trạng thái hoạt động.
+- **Một người có thể thuộc nhiều ban**: trong form sửa, tick các ban, chọn **Ban chính** cho một ban. Ban chính quyết định Ban chủ chốt quản lý ban nào; với thành viên thường, người đó hiện trong việc và bảng đóng góp của **mọi** ban họ thuộc.
 - Đổi **vai trò** và **quyền**: chỉ **Chủ nhiệm**.
 - Bật/tắt hoạt động, xóa, đổi ban của **Ban chủ nhiệm / Ban chủ chốt**: chỉ **Chủ nhiệm**. Với thành viên thường, người có quyền Quản lý thành viên làm được.
 
@@ -165,7 +166,8 @@ Dùng khi CLB đang quản lý thành viên trên Google Sheet, hoặc đầu n�
 5. Bấm **Xác nhận import**. Kết quả: "Đã thêm X, cập nhật Y, không đổi Z".
 - Người có **Mã sinh viên** trùng (hoặc, nếu không có Mã sinh viên, trùng **email**) với thành viên đã có trong CLB thì **cập nhật** người đó, không tạo thêm. Chỉ những ô có giá trị mới ghi đè; ô trống không xóa dữ liệu cũ.
 - Người mới được thêm với vai trò **Thành viên**, đang hoạt động. File **không** đổi được vai trò, quyền, trạng thái hoạt động hay tài khoản; cấp vai trò và quyền ở mục **Nhiệm kỳ** ([mục 8](#8-nhiệm-kỳ-và-chuyển-giao-chỉ-chủ-nhiệm)).
-- Với người thuộc Ban chủ nhiệm/Ban chủ chốt, chỉ **Chủ nhiệm** đổi được ban. Người khác import thì ban của họ được giữ nguyên, kết quả có dòng "Giữ nguyên ban của W người…".
+- **Ban trong file được THÊM vào các ban người đó đang có, không thay thế.** Vì vậy có thể làm mỗi ban một file rồi import lần lượt: người đậu nhiều ban sẽ có đủ các ban. Ban chính chỉ được đặt nếu người đó chưa có ban nào. Muốn gỡ một ban thì sửa tay trong **Quản lý thành viên**.
+- Với người thuộc Ban chủ nhiệm/Ban chủ chốt, import không thêm ban (trừ khi Chủ nhiệm import); kết quả có dòng "Giữ nguyên ban của W người…".
 - Lỗi ở một dòng (thiếu họ tên, email sai, ban chưa có, trùng MSSV/email trong file…) → cả file không ghi gì, thông báo cho biết "Dòng N: …" (không kể dòng tiêu đề). Sửa file rồi import lại.
 - Xong thì cấp tài khoản đăng nhập hàng loạt: xem [mục 7.2](#72-cấp-tài-khoản-đăng-nhập).
 

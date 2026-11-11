@@ -1,112 +1,70 @@
 # Handoff
 
-Cập nhật: 2026-11-10 13:0x — Đợt 0–3 xong ở local và đã commit. DB thật CHƯA nâng cấp (chờ người dùng chạy lệnh). Chưa deploy.
+Cập nhật: 2026-11-11 — Đợt 0–5 đã lên production. Còn lại: người dùng chuyển dữ liệu thật + thử 3 luồng chưa kiểm chứng + vài quyết định.
 
 ## Trạng thái
-- **Nhánh `feat/member-roles-terms`** (chưa push, chưa merge `main`):
-  - `6c5a613` Đợt 0 + 1: bảo mật (SSRF, đóng đăng ký, RLS đơn ứng tuyển, redirect an toàn), vai trò owner/admin/member, nhiệm kỳ, kết quả phỏng vấn, kết nạp, `/me`, tạo tài khoản hàng loạt.
-  - `9f0d3cf` Đợt 2: giao việc, nhắc Gmail qua Vercel Cron, bảng đóng góp; script nâng cấp DB `supabase/upgrade/`.
-  - `84ee737` Đợt 3: đối chiếu Facebook bằng bookmarklet, khung avatar, `/frames/[id]` công khai.
-  - Không commit (cố ý): `.claude/settings.local.json`, `.claude/skills/`, `.mcp.json`, `backup/` (gitignored, có dữ liệu cá nhân).
-- **Kiểm chứng gần nhất:** `npm test` 98/98, `npx supabase test db` 420/420, `tsc` sạch, eslint sạch ở code mới, `next build` sạch. E2E bằng playwright trên Supabase local (port 3100) cho cả 3 đợt, ảnh desktop + 375px đã xem. Bookmarklet chỉ thử trên trang Facebook GIẢ LẬP (`scratchpad/shots/fb-mock.html`).
-- **Hợp đồng:** `docs/CONTRACT-1.md` (Đợt 1), `docs/CONTRACT-2.md` (Đợt 2), `docs/CONTRACT.md` (Đợt 3, có các dòng "Sửa sau review").
+- **Web:** https://bit-bav.vercel.app (Vercel project `bit-bav`, tài khoản `bitmis-3939`, Auto-assign tên miền production đã bật).
+- **Git:** `main` = `d4caa31` (merge PR #3). Các PR đã merge: #1 Đợt 0–3 + import ứng viên, #2 Đợt 4 phân quyền, #3 Đợt 5 import thành viên + hướng dẫn. Không còn nhánh đang làm.
+- **DB thật** (`rftgnkgnyvtehnsjwuhp`): đã nâng cấp từ schema legacy, giữ dữ liệu (55 đơn, 2365 câu trả lời…). Migration local = remote: `20261023000000` (baseline, đánh dấu bằng `migration repair`) → `20261110` vai trò/nhiệm kỳ → `20261111` giao việc → `20261112` Facebook/khung avatar → `20261113` thu quyền anon → `20261114` import ứng viên → `20261115` phân quyền → `20261116` import thành viên.
+- **Dữ liệu quản trị hiện có:** 1 Chủ nhiệm (tài khoản BIT, owner `is_head`), 2 thành viên. Chưa ai khác có tài khoản / quyền.
+- **Test (local):** `npm test` 104/104, `npx supabase test db` 934/934 (7 file). tsc sạch, build sạch.
+- **Tài liệu:** hướng dẫn người dùng `docs/HUONG-DAN-SU-DUNG.md`; thiết kế DB `docs/database.md`; hợp đồng từng đợt `docs/CONTRACT-1.md` … `docs/CONTRACT-5.md`, `docs/CONTRACT.md` (Đợt 6: nhiều ban).
 
-## DB thật (`rftgnkgnyvtehnsjwuhp`)
-- **2026-11-10 sau `db push`:** cả 4 migration đã áp lên DB thật (migration list local = remote). Read-only: role enum `owner,admin,member`, club_members owner:1 member:2, applications 55, answers 2365, events 10, storage 2 object, 6 bảng mới + 7 hàm mới + bucket avatar-frames.
-  - Security advisor: anon gọi được 19 hàm security definer cũ (Supabase cấp mặc định). Lead thêm `20261113000000_harden_function_grants.sql` (anon chỉ còn submit_application, get_application_by_token; hàm trigger không gọi qua API) + `supabase/tests/function_grants.test.sql`; local 425/425 PASS. Người dùng đã push (2026-11-10); advisor sau đó: anon chỉ còn 2 hàm cố ý, authenticated 19 hàm ứng dụng/RLS, hàm trigger không còn gọi được. DB thật hoàn tất. Cảnh báo còn lại chấp nhận: authenticated gọi hàm RPC (đúng thiết kế), `google_mail_tokens`/`legacy_archive` RLS không policy (cố ý, chỉ service-role), leaked password protection (tính năng gói trả phí).
-- **2026-11-10 (người dùng chạy):** script nâng cấp ĐÃ áp + `migration repair` baseline ĐÃ xong. Lead kiểm tra read-only: hết dấu legacy, có `position_id`, applications 55, answers 2365, forms 4, questions 172, events 10, club_members 3, assignments 55, 0 câu trả lời trỏ sai vị trí, 8 trigger. `db push --dry-run` liệt kê đúng 3 migration. **Còn chờ: `npx supabase db push --remote`.**
-- (Trước nâng cấp) Ở schema legacy (khớp `supabase/migration/legacy/`).
-- Dữ liệu (đếm 2026-11-10): applications 55, application_answers 2365, form_questions 43, events 10, interview_sessions 9, interview_assignments 55, teams 5, recruitment_positions 4, club_members 3 (1 owner có tài khoản), clubs/campaigns/form_templates/google_mail_tokens 1; auth.users 2; storage 2 ảnh event-images. Không có bảng `supabase_migrations`.
-- Backup: `backup/schema.sql`, `backup/data.sql`, `backup/pre_upgrade_schema.sql`, `backup/pre_upgrade_data.sql`.
-- Script nâng cấp `supabase/upgrade/20261110_legacy_to_baseline.sql` đã kiểm chứng trên bản sao: nội dung 2365 câu trả lời giữ nguyên (md5), 0 câu trỏ sai vị trí, dấu vân tay schema = DB dựng mới.
-- Truy cập: MCP `supabase` + Supabase CLI đã `link`. Lệnh ghi lên DB thật (`db query --remote --yes`) bị chốt an toàn Claude Code chặn (Production Deploy) → **người dùng tự chạy**:
-  1. `npx supabase db query --remote --yes -f supabase/upgrade/20261110_legacy_to_baseline.sql`
-  2. `npx supabase migration repair --remote --status applied 20261023000000` rồi `npx supabase migration list --remote`
-  3. `npx supabase db push --remote --dry-run` (phải liệt kê đúng 3: `20261110000000`, `20261111000000`, `20261112000000`) rồi `npx supabase db push --remote`
-- Sau khi người dùng chạy: lead đếm lại (read-only), chạy `npx supabase db advisors --remote` hoặc MCP `get_advisors`, cập nhật file này.
+## Chức năng đã có
+- Vai trò: Chủ nhiệm (`is_head`, duy nhất đổi nhiệm kỳ + cấp quyền), Ban chủ nhiệm (owner, toàn quyền vận hành), Ban chủ chốt (admin, quyền tick riêng: `events`, `recruitment`, `members`, `mail`, `facebook`; giao việc/đóng góp chỉ ban mình), Thành viên (`/me`), Ứng viên (không tài khoản).
+- Nhiệm kỳ: Chủ nhiệm tạo nháp → chọn người, Chủ nhiệm mới, quyền → kích hoạt.
+- Tuyển: đợt/vị trí/biểu mẫu theo vị trí, ca phỏng vấn, kết quả/điểm, trạng thái đơn, kết nạp, import đơn Excel (RPC `import_applications`).
+- Thành viên: import Excel/Google Sheet (RPC `import_members`), tạo tài khoản hàng loạt (đăng nhập Google, không gửi mail).
+- Giao việc + nhắc Gmail (Vercel Cron 01:00 UTC, `/api/cron/task-reminders`, `CRON_SECRET`), bảng đóng góp.
+- Đối chiếu Facebook bằng bookmarklet, alias tài khoản, khung avatar + trang công khai `/frames/[id]`.
+- Gửi mail hàng loạt qua Gmail API.
 
-## Deploy (người dùng chọn 2026-11-10: GitHub ↔ Vercel, push nhánh + PR)
-- Đã push `feat/member-roles-terms` lên `origin` (github.com/bitmis-max/bit-recruit). `gh` chưa cài → người dùng tự tạo PR qua link `https://github.com/bitmis-max/bit-recruit/pull/new/feat/member-roles-terms` rồi merge.
-- Đang chờ: người dùng merge PR, tạo project Vercel từ repo, nhập biến môi trường trên dashboard Vercel, cấu hình Supabase Auth (Site URL, Redirect URL, Google provider, tắt signup).
-- Lưu ý: `google_mail_tokens` trên DB thật có 1 token mã hóa bằng `GOOGLE_TOKEN_ENCRYPTION_KEY` cũ; nếu dùng key mới thì người đó phải kết nối lại Gmail.
+## Việc người dùng cần làm tiếp
+1. **Chuyển dữ liệu thật:** kiểm tra Quản lí ban (đủ Chuyên môn / Truyền thông / Nhân sự, tên khớp Sheet) → tải Google Sheet thành viên (.xlsx) → Quản lý thành viên → Import Excel → Tạo tài khoản cho thành viên có email → Nhiệm kỳ: cấp vai trò, Chủ nhiệm, quyền.
+2. **Thử 3 luồng chưa kiểm chứng trên web thật** (lỗi thì gửi ảnh/thông báo cho lead):
+   - Thành viên đăng nhập Google vào tài khoản tạo sẵn (Supabase có tự gắn identity Google không).
+   - Chọn Gmail gửi nhắc (Giao việc) → "Gửi nhắc ngay" → mail có đến không (logic chống gửi trùng chưa chạy thật).
+   - Bookmarklet trên bài Facebook thật (DOM thật, CSP, CORS ảnh fbcdn).
+3. **Cấu hình nên kiểm:** Supabase Auth → URL Configuration: Site URL `https://bit-bav.vercel.app`, Redirect `https://bit-bav.vercel.app/auth/callback`; tắt "Allow new users to sign up". Bật 2FA cho GitHub `bitmis-max` và Vercel BIT.
 
-## Vercel qua CLI (người dùng nhờ lead làm, 2026-11-10)
-- Vercel CLI 65.14.0 có sẵn (`npx vercel`), đang login tài khoản cá nhân `buiducthinh250506-cell` → người dùng cần `npx vercel logout` + `npx vercel login` bằng tài khoản BIT.
-- File secret tạm `.env.vercel.local` (gitignored qua `.env*`): người dùng điền `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, (tùy chọn) `GOOGLE_TOKEN_ENCRYPTION_KEY`. Lead xóa file sau khi đẩy xong.
-- Script (scratchpad) `push-vercel-env.mjs <siteUrl> [--dry]`: kiểm định dạng, tự tạo `CRON_SECRET` (+ key mã hóa nếu trống), `vercel env add ... --environment production --force --sensitive` qua stdin, không in giá trị.
-- Sau khi đẩy: `vercel link` vào project hiện có, redeploy bản production mới nhất (sau khi người dùng merge PR bằng tài khoản BIT).
-- **Kết quả:** CLI login `bitmis-3939`; project Vercel = **`bit-bav`**, web **https://bit-bav.vercel.app**; `.vercel/` (gitignored) đã link. Project ĐÃ có sẵn `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY` (không ghi đè — key mã hóa phải giữ để giải mã token Gmail cũ), `NEXT_PUBLIC_SUPABASE_*`, SMTP_*. Lead đã thêm `CRON_SECRET` (sensitive, tự tạo, không lưu ở đâu khác) và `NEXT_PUBLIC_SITE_URL=https://bit-bav.vercel.app`. Đã xóa `.env.vercel.local`. `vercel link` tự thêm `VERCEL_OIDC_TOKEN` vào `.env.local` (gitignored, vô hại).
-- Còn chờ: người dùng merge PR bằng tài khoản BIT → Vercel tự deploy `main`; lead kiểm tra web + cron (401 khi không có secret). Supabase Auth URL Configuration nên có Site URL `https://bit-bav.vercel.app` và Redirect `https://bit-bav.vercel.app/auth/callback` (bản cũ có thể đã đặt).
+## Quy trình làm việc đã chốt
+- Code mới: nhánh riêng → push bằng tài khoản `buiducthinh250506-cell` → PR → **tài khoản BIT (`bitmis-max`) bấm Merge** (Vercel Hobby chỉ build commit của chủ project; preview các commit khác bị "Blocked" — bình thường).
+- Migration mới: lead thử trên Supabase local + pgTAP → **người dùng tự chạy** `npx supabase db push --remote --dry-run` rồi `npx supabase db push --remote` (lệnh ghi DB thật / deploy production của lead bị chốt an toàn Claude Code chặn — không lách).
+- Đọc DB thật chỉ bằng lệnh read-only (`npx supabase db query --remote --read-only`, MCP `get_advisors`).
+- **Không thêm dòng ghi công Claude** (`Co-Authored-By`, "Generated with Claude Code") vào commit/PR.
+- Biến môi trường Vercel: đã có sẵn `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY` (KHÔNG ghi đè — giải mã token Gmail đã lưu), `NEXT_PUBLIC_SUPABASE_*`, `SMTP_*`; lead thêm `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL`. Vercel CLI đang login `bitmis-3939`, thư mục đã `vercel link` (`.vercel/`, gitignored).
+- Agent dùng model Sonnet; bị dừng do giới hạn sử dụng thì nhắn agent cũ làm tiếp sau giờ reset.
 
-## Gộp `main` (2026-11-10)
-- PR báo xung đột: `origin/main` có 4 commit của tài khoản BIT ngày 27/10 (import ứng viên/ca phỏng vấn từ Excel + SQL `update_application_forms_schema.sql` đổi form sang theo `campaign_id`). SQL này là nguồn gốc schema "legacy" trên DB thật. Code khác trên main vẫn dùng `position_id`.
-- Lead đã merge `origin/main` vào nhánh (commit `8428c1f`): giữ mô hình form theo vị trí; 2 màn hình xung đột giữ bản nhánh; SQL chuyển vào `supabase/migration/legacy/` với dòng "KHÔNG CHẠY".
-- **Xong (commit `e1f48bb`, đã push):** RPC `import_applications` + giao diện import dùng chung (`ApplicantImportDialog`) ở 2 màn hình; `npm test` 98/98, `npx supabase test db` 522/522, `tsc` sạch, build sạch; thử local: CSV 3 dòng → "Đã import 2, bỏ qua 1 đơn trùng", tạo vị trí mới + ca + câu trả lời đúng. Reviewer rà `8428c1f` + `e1f48bb`: 0 nghiêm trọng; đang sửa theo `docs/CONTRACT.md` 5.4 (form mới chép câu hỏi mẫu mặc định; đợt `open` không thêm câu hỏi vào form đã có; cấm tiêu đề câu hỏi chọn ca; dòng × câu ≤ 20000; bỏ savepoint mỗi dòng; kiểm email; so tên vị trí không phân biệt hoa thường; file ≤ 5 MB). Migration `20261114000000` CHƯA áp lên DB thật nên sửa thẳng file. **Đã sửa xong** (cùng file migration 20261114000000): `npm test` 98/98, `npx supabase test db` 552/552, tsc sạch, build sạch; thử local: import vào đợt đang mở tạo form mới đủ câu mẫu (9 câu, 5 có field_key), import lần 2 thêm câu hỏi mới vào form đã có bị chặn với thông báo tiếng Việt và không ghi gì. Đã commit + push. Người dùng đã `db push` migration 20261114 (2026-11-10); read-only: hàm có, anon không execute, authenticated execute, dữ liệu 55/2365 nguyên; migration list local = remote (6 migration). **Còn: merge PR bằng tài khoản BIT → Vercel.**
-- Còn mở (cần hỏi người dùng): `xlsx@0.18.5` (có từ trước, dùng cho import và mail merge) có lỗ hổng high chưa vá trên npm (prototype pollution, ReDoS); phương án: bản SheetJS từ CDN chính chủ ≥ 0.20, hoặc chỉ nhận CSV.
-- Kế hoạch đã làm (3 agent mới): RPC `import_applications` (migration `20261114000000`, hợp đồng `docs/CONTRACT.md` mục 5), đưa giao diện import của main vào cả 2 màn hình gọi RPC, pgTAP `import.test.sql`. Sau đó người dùng cần `npx supabase db push --remote` lần nữa.
-- Vercel: repo đã nối với một project Vercel có sẵn; check trên PR lỗi "Git author buiducthinh250506-cell must have access to the project" (gói Hobby chỉ deploy commit của chủ project). Chờ người dùng cho biết ai sở hữu project Vercel.
+## Quyết định đã chốt
+- Người dùng: vai trò/quyền như trên; nhắc qua web + Gmail (không Messenger); Facebook/avatar bằng bookmarklet; nâng cấp DB giữ dữ liệu; import thành viên bằng nút Import Excel; lead tự lên kế hoạch và làm tiếp, cập nhật HANDOFF thường xuyên.
+- Lead: tài khoản thành viên tạo không gửi mail, đăng nhập Google; mỗi vị trí một biểu mẫu (giữ `position_id`, SQL đổi sang `campaign_id` của main ngày 27/10 đã lưu trữ ở `supabase/migration/legacy/` với dòng "KHÔNG CHẠY"); việc `closed` không tính bỏ lỡ cho người còn chờ; email nhận nhắc lấy từ `club_members.email`; trang scan không tick sẵn; import không đổi vai trò/quyền/tài khoản.
 
-## Việc tiếp theo
-1. Người dùng chạy 3 lệnh nâng cấp DB (trên).
-2. Cấu hình (người dùng làm, lead hướng dẫn): tắt "Allow new users to sign up"; bật Google provider; bật "Confirm email"; điền `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL` (qua file, không dán vào chat).
-3. Deploy Vercel Hobby (hỏi người dùng trước): đặt biến môi trường, cron `vercel.json` 01:00 UTC.
-4. Thử thật: đăng nhập Google vào tài khoản tạo sẵn; gửi Gmail nhắc việc; bookmarklet trên một bài Facebook thật của CLB (DOM thật, CSP, CORS ảnh fbcdn).
-5. Push nhánh / merge `main` khi người dùng yêu cầu.
+## Đợt bảo mật (2026-11-11, nhánh `fix/security-hardening`, đã push + mở PR, chờ tài khoản BIT merge)
+- Rà soát: API, RLS, storage, thư viện, header. Báo cáo đã gửi người dùng; người dùng duyệt Đợt A.
+- Đã làm (local, test xanh: unit 104/104, pgTAP 939/939, build sạch):
+  - Migration `20261117000000_security_hardening.sql`: bỏ policy cho phép ai cũng tải lên bucket mẫu `thumbnails`/`videos` (khóa bucket); thu quyền ghi bảng của `anon`; `submit_application` từ chối đơn > 100 KB hoặc > 200 câu trả lời. Test: `supabase/tests/security_hardening.test.sql`.
+  - `next` 16.2.6 → 16.4.6 (lỗ hổng critical), `@tiptap/*` 3.33.1, `prosemirror-view` 1.42.9 (XSS khi dán).
+  - `next.config.ts`: header chống clickjacking (`frame-ancestors 'none'`, `X-Frame-Options: DENY`), `nosniff`, `Referrer-Policy`, tắt `X-Powered-By`.
+  - `/api/admin/accounts` PATCH: chỉ Chủ nhiệm đổi được email đăng nhập.
+  - Danh sách thành viên: ẩn nút "Xóa" ở dòng Chủ nhiệm (và dòng BCN/BCC khi không phải Chủ nhiệm). Server vốn đã chặn.
+- Người dùng cần làm: commit/PR → merge; `npx supabase db push --remote`; dashboard Supabase: tắt "Allow new users to sign up" (hiện vẫn MỞ), bật Leaked password protection; sau đó thử thành viên tạo sẵn đăng nhập Google; xóa hẳn bucket `thumbnails`/`videos` trong Storage nếu muốn.
+- Để sau (người dùng chọn "tính sau"): Turnstile chống spam; thay `xlsx` (dùng cho import thành viên, import ứng viên, gửi mail); nâng `nodemailer` v10 (major).
 
-## Quyết định của người dùng
-- Vai trò: owner = Ban chủ nhiệm, admin = Ban chủ chốt, member = Thành viên. Ứng viên không có tài khoản; đơn `passed` được kết nạp.
-- Đổi nhiệm kỳ hằng năm qua màn hình Nhiệm kỳ.
-- Nhắc deadline qua web + Gmail, không Messenger.
-- Ý 3 và 4 làm bằng bookmarklet.
-- Nâng cấp DB thật và giữ dữ liệu.
-- Lead tự lên kế hoạch và làm tiếp, không cần chờ; cập nhật HANDOFF thường xuyên.
-
-## Quyết định của lead
-- Tài khoản thành viên tạo không gửi mail, đăng nhập Google cùng email (chưa kiểm chứng trên project thật).
-- Chỉ Ban chủ nhiệm cấp/gỡ vai trò Ban chủ chốt và gán tài khoản cho Ban chủ chốt.
-- Thành viên thường đọc được thông tin đợt tuyển và lịch ca phỏng vấn; không đọc được đơn ứng viên.
-- Việc `closed` không tính "bỏ lỡ" cho người còn chờ; muốn ghi nhận thì tick "Chưa hoàn thành" trước khi đóng.
-- Email nhận nhắc lấy từ `club_members.email`, không lấy email tài khoản.
-- Link Facebook: đoạn đầu toàn số 3–25 chữ số, `/p/<slug>-<số>`, `/profile/<số>` → `id:`; username 5–80 ký tự có chữ cái.
-- Trang scan không tick sẵn ai; nhận diện khung chỉ là gợi ý.
+## Đợt 6: một thành viên thuộc nhiều ban (2026-11-11, nhánh `feat/multi-team` nối trên `fix/security-hardening`, CHƯA commit)
+- Hợp đồng: `docs/CONTRACT.md`. Quyết định người dùng: cho 1 người nhiều ban; import gặp người đã có thì THÊM ban (không ghi đè).
+- DB `20261118000000_member_teams.sql`: bảng `club_member_teams`; `club_members.team_id` = ban chính (dùng phân quyền Ban chủ chốt, `my_club_team` không đổi); RPC `set_member_teams` (chỉ service_role); sửa `can_assign_task_member`, `create_task`, `club_contribution` (+`team_ids`, admin chỉ đếm việc ban mình), `import_members`, `admit_applications` (người cũ đậu ban mới → thêm ban), `activate_term` (nhiệm kỳ đổi ban chính → gỡ ban chính cũ).
+- API `/api/admin/club-members`: `team_ids`; UI chọn nhiều ban + ban chính; Giao việc/Đóng góp/`/me`/Phỏng vấn/Xóa ban đọc tập ban. Hướng dẫn `docs/HUONG-DAN-SU-DUNG.md` mục 7.1, 7.4 đã cập nhật.
+- Kiểm chứng local: pgTAP 1041/1041, unit 111/111, tsc + build sạch; import 3 file thật (BCM 23, BTT 17, BTC 52) trên Supabase local → 91 người, Bảo Bảo (BCM+BTC) và Trung Đức (BTT+BTC) đủ 2 ban; sửa SĐT không mất ban; import lại không tạo trùng. Reviewer đã rà, các lỗi Cao/Trung bình đã sửa.
+- File import của người dùng (Downloads): `ban-chuyen-mon-import.xlsx`, `ban-truyen-thong-import.xlsx`, `ban-to-chuc-import.xlsx` — chỉ import SAU khi Đợt 6 lên DB thật. Link Facebook dạng /share/ đã đổi sang link trang cá nhân thật.
+- Còn để ngỏ (thấp): PATCH thành viên không nguyên tử (cập nhật trường rồi mới set ban); chưa có test cho API route.
 
 ## Còn mở / nợ kỹ thuật
+- Câu hỏi chưa trả lời: gộp "Kết nạp" + "Tạo tài khoản" thành 1 bước? (đang giữ 2 bước).
+- `xlsx@0.18.5` có lỗ hổng high chưa vá trên npm (dùng cho import và gửi mail) → chọn: bản SheetJS chính chủ ≥ 0.20 hoặc chỉ nhận CSV.
 - Chống spam form ứng tuyển (Cloudflare Turnstile, cần tài khoản Cloudflare).
-- SSRF còn khe DNS rebinding (chỉ admin gọi được; `shortcut:` trong `src/lib/security/safe-fetch.ts`).
+- SSRF còn khe DNS rebinding (chỉ admin gọi; `shortcut:` trong `src/lib/security/safe-fetch.ts`).
 - Lưu danh sách nhiệm kỳ không nguyên tử (upsert rồi delete).
-- Logic giữ chỗ chống gửi trùng mail nhắc chưa chạy thật (cần Gmail).
-- Nhận diện khung trên avatar Facebook thật có thể trượt nếu ảnh nhỏ làm viền lẫn màu.
-- Hết phiên đăng nhập giữa lúc quét: hash dữ liệu quét mất qua trang login (phải quét lại).
-- Lint `react-hooks/set-state-in-effect` có sẵn ở các màn hình admin cũ.
+- Hết phiên đăng nhập giữa lúc quét Facebook: dữ liệu quét mất qua trang login.
+- Lint `react-hooks/set-state-in-effect` ở các màn quản trị cũ (mẫu `useEffect(() => { void load(); })`).
 - `form_templates` dùng chung mọi CLB (chấp nhận khi chỉ có BIT).
-
-## Ghi chú git
-- 2026-11-10: theo yêu cầu người dùng, đã viết lại lịch sử nhánh `feat/member-roles-terms` (filter-branch, chỉ bỏ dòng `Co-Authored-By: Claude`, code không đổi) và force-push. Mã commit trong file này là mã mới. Từ nay không thêm ghi công Claude vào commit/PR.
-
-## Production (2026-11-10 14:3x) — ĐÃ LÊN
-- PR #1 đã merge vào `main` bởi `bitmis-max` (commit `d1c2322`). Project Vercel `bit-bav` không tự gắn tên miền cho bản production mới → người dùng đã Redeploy (nhận `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL`) + Promote. `bit-bav.vercel.app` = deployment 14:29 (`bit-2uf9bskbw`).
-- Lead kiểm tra read-only: `/`, `/login`, `/positions`, `/events` 200; `/register` → `/login`; `/me`, `/manage-clubs/*` → login; cron không/sai secret → 401 (có `CRON_SECRET`); không lỗi JS trên trang công khai. `/positions` trống vì đợt "Tuyển thành viên đợt 1 năm học 2026–2027" hết hạn 2026-11-07 (đúng thiết kế).
-- Lệnh `vercel redeploy/promote` bị chốt an toàn chặn → người dùng làm trên dashboard. Nên bật Settings → Environments → Production → "Auto-assign Custom Production Domains" để lần sau tự cập nhật.
-- Commit docs sau merge (`dff374c` trở đi) nằm trên nhánh `feat/member-roles-terms`, chưa vào `main` (chỉ tài liệu).
-
-## Đợt 4: phân quyền theo chức năng (đang làm, nhánh `feat/permissions`)
-- Quyết định người dùng (2026-11-10): BCN = 1 Chủ nhiệm + 3 Phó CN (owner, toàn quyền vận hành); CHỈ Chủ nhiệm (`is_head`) đổi nhiệm kỳ + cấp/gỡ vai trò và quyền. BCC (admin) có quyền theo chức năng tick riêng từng người: `events`, `recruitment`, `members`, `mail`, `facebook`; giao việc / xem đóng góp chỉ trong ban mình. Ban: Chuyên môn, Truyền thông, Nhân sự; số BCC đổi theo năm.
-- Hợp đồng `docs/CONTRACT.md` (Đợt 3 chuyển sang `docs/CONTRACT-3.md`). 4 agent mới: db (`20261115000000_permissions.sql`), api (`src/lib/admin/permissions.ts`, kiểm quyền mọi route), frontend (ẩn menu theo quyền, Terms/Members/Tasks/Contribution), tester (`permissions.test.sql` + cập nhật test cũ).
-- Tiến độ 2026-11-10 22:07: api-agent XONG (`permissions.ts`, kiểm quyền mọi route; tsc/eslint sạch; npm test 104/104). db/FE/tester dừng do giới hạn sử dụng (reset 17:50) → 22:07 đã nhắn làm tiếp. Migration `20261115000000_permissions.sql` CHƯA được ghi ra đĩa lúc dừng.
-- 2026-11-10 tối: cả 4 agent xong lượt đầu (858 test DB + 104 unit xanh). Reviewer: 1 nghiêm trọng (admin có `members` bật lại/khóa/xóa admin khác, Phó CN với owner → vượt "chỉ Chủ nhiệm") + nên sửa (apply_task_scan việc ban khác; insert task_assignees ban khác qua REST; tự đổi ban; migration dữ liệu im lặng khi CLB không có owner có tài khoản). Đang sửa (db/api/tester cũ). Sau đó lead tự kiểm migration dữ liệu (reset tới 20261114 → seed → áp 20261115) + thử trình duyệt theo vai.
-- **Xong (2026-11-10 khuya):** sửa sau review hoàn tất; `npx supabase test db` 871/871, `npm test` 104/104, tsc sạch, build sạch. Lead kiểm migration dữ liệu (reset tới 20261114 → seed → áp 20261115): owner có tài khoản → `is_head`, admin cũ → đủ 5 quyền, member → `{}`. Trình duyệt: admin chỉ `events` thấy đúng menu, trang tuyển báo "chưa được cấp quyền", API accounts 403, API events 200; Phó CN thấy Nhiệm kỳ chỉ xem, nút kích hoạt khóa; Chủ nhiệm thấy radio Chủ nhiệm + 5 checkbox quyền. Đã commit + push nhánh `feat/permissions`.
-- **Đã lên production (2026-11-10 22:41):** PR #2 merge bởi `bitmis-max` (`39a3450`); migration 20261115 đã áp (list local = remote); Vercel tự gắn tên miền cho bản mới (Auto-assign đã bật). DB thật: 1 owner `is_head` có tài khoản (Chủ nhiệm), 2 member. Web: /register → login, /me + /manage-clubs/terms → login, cron 401.
-- Sau khi xong: reviewer → người dùng `db push` → PR merge bằng tài khoản BIT → Vercel (nhớ bật Auto-assign hoặc Promote).
-- Câu hỏi còn mở: gộp "Kết nạp" + "Tạo tài khoản" thành 1 bước? (người dùng chưa trả lời; giữ 2 bước).
-
-## Đợt 5: import thành viên từ Excel/Google Sheet (đang làm, nhánh `feat/member-import`)
-- Người dùng muốn chuyển danh sách thành viên đang quản lý trên Google Sheet lên web; chọn làm nút "Import Excel" ở Quản lý thành viên (dùng lại được mỗi năm).
-- Hợp đồng `docs/CONTRACT.md` (Đợt 4 → `docs/CONTRACT-4.md`): RPC `import_members(p_club_id, p_rows)` (quyền `members`; ghép theo MSSV rồi email; cập nhật không ghi đè null; không đổi role/quyền/is_head/user_id/is_active; ban phải có sẵn; dòng owner/admin chỉ Chủ nhiệm đổi ban), migration `20261116000000_import_members.sql`, `MemberImportDialog.tsx`, pgTAP `import_members.test.sql`.
-- Cùng nhánh: hướng dẫn sử dụng `docs/HUONG-DAN-SU-DUNG.md` (người dùng yêu cầu 2026-11-10).
-- **Xong (2026-11-10):** `npx supabase test db` 934/934 (7 file), `npm test` 104/104, tsc sạch, build sạch. Thử trình duyệt (Chủ nhiệm): CSV kiểu Google Sheet tự ghép đúng 10 cột (STT, Ngày sinh → Bỏ qua), "Đã thêm 2, cập nhật 1, không đổi 0", ô trống không xóa dữ liệu cũ, giữ role/tài khoản; file có ban chưa tồn tại → "Dòng 1: ban … chưa có trên web" và không ghi gì. Đã commit + push. **Người dùng cần: `npx supabase db push --remote` (1 migration 20261116) → tạo PR `feat/member-import` → merge bằng tài khoản BIT.**
-
-## Còn mở sau khi lên production
-- Thử thật: đăng nhập Google vào tài khoản tạo sẵn; Gmail nhắc việc (chọn Gmail gửi ở màn Giao việc rồi "Gửi nhắc ngay"); bookmarklet trên bài Facebook thật.
-- Kiểm Supabase Auth → URL Configuration: Site URL `https://bit-bav.vercel.app`, Redirect `https://bit-bav.vercel.app/auth/callback`; tắt "Allow new users to sign up".
-- Quyết định về `xlsx@0.18.5` (lỗ hổng high chưa vá trên npm).
-- Khuyến nghị bật 2FA cho tài khoản Vercel BIT.
+- Supabase gửi mail mặc định ~2 mail/giờ: chỉ ảnh hưởng nút "Mời" / quên mật khẩu; cần thì cấu hình SMTP riêng.
