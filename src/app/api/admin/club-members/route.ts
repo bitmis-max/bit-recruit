@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getClubAdminContext } from "../../../../lib/admin/api";
 import { EMAIL_PATTERN } from "../../../../lib/admin/accounts";
 import { isClubPermission } from "../../../../lib/admin/permissions";
+import { orderTeamIds, readTeamIds, teamsChanged, teamsErrorMessage } from "../../../../lib/admin/member-teams";
 
 const roles = new Set(["owner", "admin", "member"]);
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
@@ -63,6 +65,39 @@ function dbError(error: { code?: string; message: string }) {
   return error.message;
 }
 
+const INVALID_TEAMS_MESSAGE = "Danh sách ban không hợp lệ.";
+const TEAM_NOT_IN_CLUB_MESSAGE = "Ban phải thuộc CLB đang chọn.";
+
+type TeamRow = { member_id: string; team_id: string; created_at: string | null };
+
+// Gom các dòng club_member_teams theo thành viên, rồi sắp: ban chính đầu, còn lại theo created_at.
+function teamIdsByMember(members: { id: string; team_id: string | null }[], rows: TeamRow[]) {
+  const byMember = new Map<string, TeamRow[]>();
+  for (const row of rows) byMember.set(row.member_id, [...(byMember.get(row.member_id) ?? []), row]);
+  return new Map(members.map((member) => [member.id, orderTeamIds(member.team_id, byMember.get(member.id) ?? [])]));
+}
+
+async function loadTeamIds(admin: SupabaseClient, memberId: string, primary: string | null) {
+  const { data, error } = await admin.from("club_member_teams").select("member_id,team_id,created_at").eq("member_id", memberId);
+  if (error) return null;
+  return orderTeamIds(primary, (data ?? []) as TeamRow[]);
+}
+
+// Mọi ban phải thuộc CLB đang chọn.
+async function teamsBelongToClub(admin: SupabaseClient, clubId: string, teamIds: string[]) {
+  if (!teamIds.length) return true;
+  const { data, error } = await admin.from("teams").select("id").eq("club_id", clubId).in("id", teamIds);
+  return !error && (data?.length ?? 0) === teamIds.length;
+}
+
+// Đọc lại thành viên sau khi ghi, kèm team_ids.
+async function loadMember(admin: SupabaseClient, memberId: string, clubId: string) {
+  const { data, error } = await admin.from("club_members").select(MEMBER_COLUMNS).eq("id", memberId).eq("club_id", clubId).single();
+  if (error || !data) return null;
+  const teamIds = await loadTeamIds(admin, memberId, data.team_id ?? null);
+  return teamIds ? { ...data, team_ids: teamIds } : null;
+}
+
 export async function GET(request: NextRequest) {
   const context = await getClubAdminContext(request.nextUrl.searchParams.get("clubId") ?? "");
   if (context.error) return context.error;
@@ -72,7 +107,24 @@ export async function GET(request: NextRequest) {
     context.admin.from("teams").select("id,name").eq("club_id", clubId).order("name"),
   ]);
   if (memberResult.error || teamResult.error) return NextResponse.json({ error: memberResult.error?.message ?? teamResult.error?.message }, { status: 500 });
-  return NextResponse.json({ members: memberResult.data ?? [], teams: teamResult.data ?? [] });
+  const members = memberResult.data ?? [];
+  const teams = teamResult.data ?? [];
+  let teamRows: TeamRow[] = [];
+  if (teams.length) {
+    // Phân trang: PostgREST trả tối đa 1000 dòng mỗi lần.
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await context.admin.from("club_member_teams").select("member_id,team_id,created_at")
+        .in("team_id", teams.map((team) => team.id)).order("member_id").order("team_id").range(from, from + 999);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      teamRows = teamRows.concat((data ?? []) as TeamRow[]);
+      if ((data ?? []).length < 1000) break;
+    }
+  }
+  const teamIds = teamIdsByMember(members, teamRows);
+  return NextResponse.json({
+    members: members.map((member) => ({ ...member, team_ids: teamIds.get(member.id) ?? [] })),
+    teams,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -97,15 +149,14 @@ export async function POST(request: NextRequest) {
   }
   const contact = readContactFields(body);
   if ("error" in contact) return NextResponse.json({ error: contact.error }, { status: 400 });
-  const teamId = text(body?.team_id) || null;
-  if (teamId) {
-    const { data: team } = await context.admin.from("teams").select("id").eq("id", teamId).eq("club_id", clubId).maybeSingle();
-    if (!team) return NextResponse.json({ error: "Ban phải thuộc CLB đang chọn." }, { status: 400 });
-  }
+  const parsedTeamIds = readTeamIds(body);
+  if (parsedTeamIds === null) return NextResponse.json({ error: INVALID_TEAMS_MESSAGE }, { status: 400 });
+  const teamIds = parsedTeamIds ?? [];
+  if (!(await teamsBelongToClub(context.admin, clubId, teamIds))) return NextResponse.json({ error: TEAM_NOT_IN_CLUB_MESSAGE }, { status: 400 });
+  // team_id không ghi trực tiếp: set_member_teams đặt ban chính và tập ban cùng lúc.
   const { data, error } = await context.admin.from("club_members").insert({
     ...contact.fields,
     club_id: clubId,
-    team_id: teamId,
     full_name: fullName,
     student_code: text(body?.student_code) || null,
     class_name: text(body?.class_name) || null,
@@ -114,7 +165,16 @@ export async function POST(request: NextRequest) {
     is_active: body?.is_active !== false,
   }).select(MEMBER_COLUMNS).single();
   if (error) return NextResponse.json({ error: dbError(error) }, { status: 400 });
-  return NextResponse.json({ member: data }, { status: 201 });
+  if (teamIds.length) {
+    const { error: teamsError } = await context.admin.rpc("set_member_teams", { p_member_id: data.id, p_team_ids: teamIds });
+    if (teamsError) {
+      // Không để lại thành viên dở dang khi không gán được ban.
+      await context.admin.from("club_members").delete().eq("id", data.id).eq("club_id", clubId);
+      return NextResponse.json({ error: teamsErrorMessage(teamsError.message) }, { status: 400 });
+    }
+  }
+  const member = await loadMember(context.admin, data.id, clubId);
+  return NextResponse.json({ member: member ?? { ...data, team_id: teamIds[0] ?? null, team_ids: teamIds } }, { status: 201 });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -131,9 +191,19 @@ export async function PATCH(request: NextRequest) {
     const blocked = requireHeadForStaffRow(context, current, "khóa hoặc mở khóa thành viên Ban chủ nhiệm hoặc Ban chủ chốt");
     if (blocked) return blocked;
   }
-  if (body?.team_id !== undefined && (text(body.team_id) || null) !== current.team_id) {
-    const blocked = requireHeadForStaffRow(context, current, "đổi ban của thành viên Ban chủ nhiệm, Ban chủ chốt hoặc của chính mình", true);
-    if (blocked) return blocked;
+  let nextTeamIds = readTeamIds(body);
+  if (nextTeamIds === null) return NextResponse.json({ error: INVALID_TEAMS_MESSAGE }, { status: 400 });
+  let teamsToWrite: string[] | null = null;
+  if (nextTeamIds !== undefined) {
+    const currentTeamIds = await loadTeamIds(context.admin, memberId, current.team_id ?? null);
+    if (!currentTeamIds) return NextResponse.json({ error: "Không đọc được ban của thành viên." }, { status: 500 });
+    // Đường cũ (chỉ team_id): đặt làm ban chính, giữ các ban còn lại.
+    if (body?.team_ids === undefined) nextTeamIds = [nextTeamIds[0], ...currentTeamIds.filter((id) => id !== nextTeamIds![0])];
+    if (teamsChanged(currentTeamIds, current.team_id ?? null, nextTeamIds)) {
+      const blocked = requireHeadForStaffRow(context, current, "đổi ban của thành viên Ban chủ nhiệm, Ban chủ chốt hoặc của chính mình", true);
+      if (blocked) return blocked;
+      teamsToWrite = nextTeamIds;
+    }
   }
   if (current.role === "owner" && context.role !== "owner") {
     return NextResponse.json({ error: "Chỉ Ban chủ nhiệm mới có thể thay đổi thành viên Ban chủ nhiệm." }, { status: 403 });
@@ -173,24 +243,28 @@ export async function PATCH(request: NextRequest) {
   if (body?.full_name !== undefined) update.full_name = text(body.full_name);
   if (body?.student_code !== undefined) update.student_code = text(body.student_code) || null;
   if (body?.class_name !== undefined) update.class_name = text(body.class_name) || null;
-  if (body?.team_id !== undefined) {
-    const teamId = text(body.team_id) || null;
-    if (teamId) {
-      const { data: team } = await context.admin.from("teams").select("id").eq("id", teamId).eq("club_id", clubId).maybeSingle();
-      if (!team) return NextResponse.json({ error: "Ban phải thuộc CLB đang chọn." }, { status: 400 });
-    }
-    update.team_id = teamId;
+  if (teamsToWrite && !(await teamsBelongToClub(context.admin, clubId, teamsToWrite))) {
+    return NextResponse.json({ error: TEAM_NOT_IN_CLUB_MESSAGE }, { status: 400 });
   }
   if (roleChanged) update.role = nextRole;
   const contact = readContactFields(body);
   if ("error" in contact) return NextResponse.json({ error: contact.error }, { status: 400 });
   Object.assign(update, contact.fields);
   if (body?.is_active !== undefined) update.is_active = Boolean(body.is_active);
-  if (!Object.keys(update).length) return NextResponse.json({ error: "Không có thông tin cần cập nhật." }, { status: 400 });
-  const { data, error } = await context.admin.from("club_members").update(update).eq("id", memberId).eq("club_id", clubId)
-    .select(MEMBER_COLUMNS).single();
-  if (error) return NextResponse.json({ error: dbError(error) }, { status: 400 });
-  return NextResponse.json({ member: data });
+  if (!Object.keys(update).length && nextTeamIds === undefined) {
+    return NextResponse.json({ error: "Không có thông tin cần cập nhật." }, { status: 400 });
+  }
+  if (Object.keys(update).length) {
+    const { error } = await context.admin.from("club_members").update(update).eq("id", memberId).eq("club_id", clubId);
+    if (error) return NextResponse.json({ error: dbError(error) }, { status: 400 });
+  }
+  if (teamsToWrite) {
+    const { error: teamsError } = await context.admin.rpc("set_member_teams", { p_member_id: memberId, p_team_ids: teamsToWrite });
+    if (teamsError) return NextResponse.json({ error: teamsErrorMessage(teamsError.message) }, { status: 400 });
+  }
+  const member = await loadMember(context.admin, memberId, clubId);
+  if (!member) return NextResponse.json({ error: "Đã lưu nhưng không đọc lại được thành viên." }, { status: 500 });
+  return NextResponse.json({ member });
 }
 
 export async function DELETE(request: NextRequest) {

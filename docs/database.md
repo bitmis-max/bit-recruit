@@ -32,6 +32,8 @@ erDiagram
     club_members ||--o{ club_term_roles : appointed
     club_members ||--o{ applications : admitted_from
     teams ||--o{ club_members : groups
+    club_members ||--o{ club_member_teams : "thuộc ban"
+    teams ||--o{ club_member_teams : "có thành viên"
     clubs ||--o{ recruitment_campaigns : runs
 
     recruitment_campaigns ||--o{ recruitment_positions : opens
@@ -64,6 +66,7 @@ erDiagram
 | CLB | `clubs` | Câu lạc bộ |
 | | `teams` | Các ban trong CLB |
 | | `club_members` | Danh sách thành viên (có thể không có tài khoản), kèm vai trò |
+| | `club_member_teams` | Tập ban của một thành viên (một người thuộc nhiều ban; `club_members.team_id` = ban chính) |
 | | `club_terms` | Nhiệm kỳ của CLB (`draft`, `active`, `ended`) |
 | | `club_term_roles` | Danh sách Ban chủ nhiệm/Ban chủ chốt của một nhiệm kỳ |
 | Giao việc | `tasks` | Việc Ban chủ chốt giao (tiêu đề, hạn, `open`/`closed`) |
@@ -562,7 +565,7 @@ Hàm (`security definer`, `stable`, `set search_path = public`; thu hồi `publi
 
 - `is_club_head(p_club_id)`: người gọi là thành viên active, `role = 'owner'`, `is_head`.
 - `has_club_permission(p_club_id, p_permission text)`: người gọi active và (`role = 'owner'` hoặc (`role = 'admin'` và `p_permission = any(permissions)`)).
-- `my_club_team(p_club_id)`: `team_id` của người gọi trong CLB (null nếu không có).
+- `my_club_team(p_club_id)`: `team_id` (ban chính) của người gọi trong CLB (null nếu không có). Sau Đợt 6 phân quyền Ban chủ chốt vẫn theo ban chính này; chỉ việc hỏi "thành viên M có thuộc ban X không" mới đọc `club_member_teams` (mục 6.8).
 - `can_manage_task(p_club_id, p_team_id, p_kind)` / `can_manage_task_id(p_task_id)` (hàm phụ cho RLS giao việc): owner với mọi việc của CLB; admin với việc có `team_id = my_club_team`, cộng việc `team_id is null` loại `engagement`/`avatar` nếu có quyền `facebook`.
 - `is_club_admin` (owner hoặc admin) giữ nguyên nghĩa, dùng cho các chỗ đọc chung (thành viên, ban, đợt tuyển, nhiệm kỳ, `club_contribution`...).
 
@@ -847,6 +850,46 @@ Không đổi bảng. CLB đang quản lý thành viên trên Google Sheet; tả
   - Dòng đích là `owner`/`admin`: chỉ Chủ nhiệm (`is_club_head`) được đổi `team_id`; người khác thì giữ nguyên ban của dòng đó. `staff_team_skipped` chỉ đếm khi ban trong file khác ban hiện tại (ban trùng thì không đếm); các trường khác của dòng vẫn được cập nhật bình thường.
 - Hai lần import cùng một CLB được tuần tự hóa bằng `pg_advisory_xact_lock`.
 - Trả về `{ "inserted", "updated", "unchanged", "staff_team_skipped" }`.
+- Từ Đợt 6 (migration `20261118000000`), cột Ban **thêm** ban vào tập ban của thành viên thay vì đổi ban chính; xem mục 6.8 (các câu nói "đổi `team_id`" ở trên chỉ còn đúng cho ban chính khi nó đang null).
+
+### 6.8. Một thành viên thuộc nhiều ban (migration `20261118000000_member_teams.sql`)
+
+```sql
+create table club_member_teams (
+  member_id uuid not null references club_members(id) on delete cascade,
+  team_id   uuid not null references teams(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (member_id, team_id)
+);
+create index club_member_teams_team_idx on club_member_teams (team_id);
+```
+
+`club_member_teams` là **tập ban** của thành viên. `club_members.team_id` giữ nguyên nghĩa **ban chính** và luôn nằm trong tập (hoặc null khi tập rỗng). Migration backfill mỗi `club_members.team_id` khác null thành một dòng trong tập.
+
+Trigger (đều `security definer`, `set search_path = public`; hàm trigger thu hồi quyền của `public`/`anon`/`authenticated`, chỉ `service_role`):
+
+- `club_member_teams_club_check` (`enforce_member_team_club`, trước insert/update): ban phải cùng CLB với thành viên ("Ban phải thuộc cùng CLB với thành viên").
+- `club_members_sync_primary_team` (`sync_member_primary_team`, sau insert hoặc update `team_id` trên `club_members`, khi `team_id` khác null): thêm `(id, team_id)` vào tập, `on conflict do nothing`. **Chỉ thêm, không xóa ban cũ**, nên `admit_applications`, `activate_term` và API cũ đổi `team_id` vẫn đúng (ban cũ ở lại trong tập).
+- `club_member_teams_reassign_primary` (`reassign_primary_team_on_delete`, sau delete): nếu dòng bị xóa đúng bằng ban chính thì đặt `club_members.team_id` = ban còn lại **cũ nhất** theo `(created_at, team_id)`, hoặc null nếu hết. Cũng xử lý trường hợp xóa cả ban trong `teams`: FK `set null` của `club_members.team_id` chạy trước làm ban chính thành null, nên khi ban đã không còn trong `teams` thì ban chính null cũng được đặt lại. Không có vòng lặp giữa hai bảng: UPDATE `club_members` chỉ kích trigger đồng bộ, trigger đó chỉ INSERT `on conflict do nothing` (ban mới đã nằm trong tập) và không kích trigger xóa.
+
+RLS và grant: bật RLS; policy `admins or self read member teams` cho `authenticated` đọc dòng của thành viên khi `is_club_admin(club của thành viên)` hoặc thành viên đó là chính mình (`user_id = auth.uid()`). Không có policy ghi. `authenticated` chỉ có `select`; `anon` không có quyền gì; `service_role` toàn quyền.
+
+`set_member_teams(p_member_id uuid, p_team_ids uuid[]) returns void`: `security definer`, `set search_path = public`, **chỉ `service_role` được execute** (thu hồi `public`/`anon`/`authenticated`); API gọi bằng service-role sau khi đã kiểm tra quyền. Một transaction: khóa dòng thành viên (`for update`); mảng null hoặc chứa null, hoặc thành viên không tồn tại thì lỗi tiếng Việt; bỏ trùng giữ thứ tự; mọi ban phải thuộc CLB của thành viên ("Có ban không thuộc CLB của thành viên này"), sai thì không ghi gì. Ban chính = phần tử đầu (null nếu mảng rỗng); thay toàn bộ tập bằng mảng (dòng còn lại giữ `created_at`, dòng mới có `created_at` tăng dần theo thứ tự mảng).
+
+Hàm đọc "thuộc ban" đã đổi sang đọc tập (phân quyền Ban chủ chốt vẫn theo ban chính `my_club_team`):
+
+- `can_assign_task_member`: admin thêm được người nhận nếu ban chính của admin nằm trong tập ban của người đó.
+- `create_task`: người nhận do admin chọn phải có ban của admin trong tập; "cả ban" (`p_team_id`) lấy mọi thành viên đang hoạt động có ban đó trong tập (ban chính hoặc ban phụ). Chữ ký và grant giữ nguyên.
+- `club_contribution(p_club_id, p_from, p_to)`: trả thêm cột `team_ids uuid[]` (đặt ngay sau `team_id`): tất cả ban, ban chính đứng đầu rồi theo `created_at`; mảng rỗng khi không có ban. Cột `team_id` giữ nguyên là ban chính. Admin chỉ thấy thành viên có ban của mình trong tập. Đổi kiểu trả về nên hàm được drop rồi tạo lại, grant giữ như cũ.
+- `import_members`: **THÊM ban**. Thành viên đã có + cột Ban khác: giữ ban chính, thêm ban mới vào tập; ban chính chỉ đặt khi đang null. Ban đã có trong tập (kể cả ban phụ) thì không tính là thay đổi (`unchanged` nếu không có trường nào khác đổi). Thành viên mới: ban trong file là ban chính và là phần tử duy nhất của tập. Dòng đích là `owner`/`admin`: chỉ Chủ nhiệm thêm được ban; người khác bị bỏ qua và đếm `staff_team_skipped` (chỉ khi ban trong file chưa có trong tập của họ). Các khóa kết quả không đổi.
+
+Hai hàm khác cũng đã đổi để khớp tập ban:
+
+- `admit_applications`: ban của vị trí tuyển được THÊM vào tập ban của thành viên (kể cả thành viên sẵn có, khi khớp MSSV/email); ban chính chỉ đặt khi đang null. Chữ ký và grant giữ nguyên.
+- `activate_term`: nhiệm kỳ đổi ban = chuyển ban. Khi dòng nhiệm kỳ có `team_id` khác null và khác ban chính cũ, dòng tập của ban chính cũ bị xóa, các ban phụ khác giữ nguyên; ban mới thành ban chính (trigger đồng bộ thêm vào tập). Chữ ký và grant giữ nguyên.
+- `club_contribution`: người gọi không phải owner chỉ đếm việc có `tasks.team_id` = ban chính của mình hoặc `team_id is null` (admin ban A không thấy số việc do ban B giao). Owner đếm mọi việc.
+
+**Cách đổi tập ban.** Đổi tập ban phải đi qua `set_member_teams`, hoặc ghi `club_members.team_id` khác null (trigger đồng bộ chỉ THÊM ban đó vào tập, không gỡ ban cũ). Đặt `club_members.team_id = null` trực tiếp KHÔNG dọn tập: tập vẫn giữ các ban cũ và ban chính là null cho tới khi gọi `set_member_teams`. Gỡ ban chỉ làm tay qua API (`set_member_teams`) từ form sửa thành viên.
 
 ## Phụ lục: policy đọc CLB cho quản trị
 

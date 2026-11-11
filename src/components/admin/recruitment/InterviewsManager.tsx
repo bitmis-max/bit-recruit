@@ -16,7 +16,9 @@ type Session = { id: string; campaign_id: string; position_id: string | null; ro
 type Assignment = { id: string; session_id: string; application_id: string; comment: string | null; result: string; score: number | null };
 const resultLabel: Record<string, string> = { pending: "Chờ", pass: "Đạt", fail: "Không đạt", consider: "Cân nhắc" };
 type SupportAssignment = { session_id: string; member_id: string; duty: string | null };
-type Member = { id: string; full_name: string; student_code: string | null; role: string; is_active: boolean; team_id: string | null };
+type Member = { id: string; full_name: string; student_code: string | null; role: string; is_active: boolean; team_id: string | null; team_ids?: string[] };
+// Thành viên thuộc ban X khi X nằm trong tập ban (ban chính chỉ là một phần tử). teamId null = ca không gắn ban.
+const inTeam = (member: Member, teamId: string | null) => teamId ? (member.team_ids ?? (member.team_id ? [member.team_id] : [])).includes(teamId) : !member.team_id;
 type FormAnswer = { application_id: string; question_id: string; question_text: string; answer_text: string | null; answer_json: unknown };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
 const availabilityQuestionLabel = "Thời gian có thể tham gia phỏng vấn";
@@ -203,7 +205,8 @@ export function InterviewsManager() {
   async function saveSupport(session: Session) {
     if (!supabase || !canWrite) return;
     const wanted = supportSelection[session.id] ?? [];
-    if (wanted.some((id) => members.find((member) => member.id === id)?.team_id !== (positionById.get(session.position_id ?? "")?.team_id ?? null))) { setError("Chỉ có thể chọn thành viên thuộc ban của ca phỏng vấn."); return; }
+    const sessionTeamId = positionById.get(session.position_id ?? "")?.team_id ?? null;
+    if (wanted.some((id) => { const member = members.find((item) => item.id === id); return !member || !inTeam(member, sessionTeamId); })) { setError("Chỉ có thể chọn thành viên thuộc ban của ca phỏng vấn."); return; }
     const current = support.filter((row) => row.session_id === session.id).map((row) => row.member_id);
     const add = wanted.filter((id) => !current.includes(id));
     const remove = current.filter((id) => !wanted.includes(id));
@@ -342,10 +345,10 @@ export function InterviewsManager() {
       const helpers = support.filter((row) => row.session_id === session.id);
       const canDelete = canWrite && sessionAssignments.length === 0 && helpers.length === 0;
       const supportSearchText = normalizeSearchText(supportSearch);
-      const filteredSupportMembers = members.filter((member) => member.team_id === teamId
+      const filteredSupportMembers = members.filter((member) => inTeam(member, teamId)
         && (member.is_active || currentSupport.includes(member.id))
         && (!supportSearchText || [member.full_name, member.student_code].some((value) => normalizeSearchText(value).includes(supportSearchText))));
-      const hasActiveSupportMembers = members.some((member) => member.team_id === teamId && member.is_active);
+      const hasActiveSupportMembers = members.some((member) => inTeam(member, teamId) && member.is_active);
       const candidateSearchText = normalizeSearchText(candidateSearch);
       const filteredCandidates = candidates.filter((application) => !candidateSearchText
         || [application.full_name ?? "", application.student_code ?? "", application.class_name ?? ""].some((value) => normalizeSearchText(value).includes(candidateSearchText)));

@@ -1,5 +1,5 @@
 begin;
-select plan(7);
+select plan(8);
 
 -- anon may only execute the two public applicant functions.
 select is(
@@ -45,6 +45,12 @@ select ok(
   not has_function_privilege('anon', 'public.has_club_permission(uuid, text)', 'execute')
   and not has_function_privilege('anon', 'public.my_club_team(uuid)', 'execute'),
   'anon không gọi has_club_permission / my_club_team');
+
+select ok(
+  not has_function_privilege('anon', 'public.set_member_teams(uuid, uuid[])', 'execute')
+  and not has_function_privilege('authenticated', 'public.set_member_teams(uuid, uuid[])', 'execute')
+  and has_function_privilege('service_role', 'public.set_member_teams(uuid, uuid[])', 'execute'),
+  'set_member_teams chỉ service_role gọi được');
 
 select * from finish();
 rollback;

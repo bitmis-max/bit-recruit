@@ -8,7 +8,7 @@ Cập nhật: 2026-11-11 — Đợt 0–5 đã lên production. Còn lại: ngư
 - **DB thật** (`rftgnkgnyvtehnsjwuhp`): đã nâng cấp từ schema legacy, giữ dữ liệu (55 đơn, 2365 câu trả lời…). Migration local = remote: `20261023000000` (baseline, đánh dấu bằng `migration repair`) → `20261110` vai trò/nhiệm kỳ → `20261111` giao việc → `20261112` Facebook/khung avatar → `20261113` thu quyền anon → `20261114` import ứng viên → `20261115` phân quyền → `20261116` import thành viên.
 - **Dữ liệu quản trị hiện có:** 1 Chủ nhiệm (tài khoản BIT, owner `is_head`), 2 thành viên. Chưa ai khác có tài khoản / quyền.
 - **Test (local):** `npm test` 104/104, `npx supabase test db` 934/934 (7 file). tsc sạch, build sạch.
-- **Tài liệu:** hướng dẫn người dùng `docs/HUONG-DAN-SU-DUNG.md`; thiết kế DB `docs/database.md`; hợp đồng từng đợt `docs/CONTRACT-1.md` … `docs/CONTRACT-4.md`, `docs/CONTRACT.md` (Đợt 5).
+- **Tài liệu:** hướng dẫn người dùng `docs/HUONG-DAN-SU-DUNG.md`; thiết kế DB `docs/database.md`; hợp đồng từng đợt `docs/CONTRACT-1.md` … `docs/CONTRACT-5.md`, `docs/CONTRACT.md` (Đợt 6: nhiều ban).
 
 ## Chức năng đã có
 - Vai trò: Chủ nhiệm (`is_head`, duy nhất đổi nhiệm kỳ + cấp quyền), Ban chủ nhiệm (owner, toàn quyền vận hành), Ban chủ chốt (admin, quyền tick riêng: `events`, `recruitment`, `members`, `mail`, `facebook`; giao việc/đóng góp chỉ ban mình), Thành viên (`/me`), Ứng viên (không tài khoản).
@@ -49,6 +49,14 @@ Cập nhật: 2026-11-11 — Đợt 0–5 đã lên production. Còn lại: ngư
   - Danh sách thành viên: ẩn nút "Xóa" ở dòng Chủ nhiệm (và dòng BCN/BCC khi không phải Chủ nhiệm). Server vốn đã chặn.
 - Người dùng cần làm: commit/PR → merge; `npx supabase db push --remote`; dashboard Supabase: tắt "Allow new users to sign up" (hiện vẫn MỞ), bật Leaked password protection; sau đó thử thành viên tạo sẵn đăng nhập Google; xóa hẳn bucket `thumbnails`/`videos` trong Storage nếu muốn.
 - Để sau (người dùng chọn "tính sau"): Turnstile chống spam; thay `xlsx` (dùng cho import thành viên, import ứng viên, gửi mail); nâng `nodemailer` v10 (major).
+
+## Đợt 6: một thành viên thuộc nhiều ban (2026-11-11, nhánh `feat/multi-team` nối trên `fix/security-hardening`, CHƯA commit)
+- Hợp đồng: `docs/CONTRACT.md`. Quyết định người dùng: cho 1 người nhiều ban; import gặp người đã có thì THÊM ban (không ghi đè).
+- DB `20261118000000_member_teams.sql`: bảng `club_member_teams`; `club_members.team_id` = ban chính (dùng phân quyền Ban chủ chốt, `my_club_team` không đổi); RPC `set_member_teams` (chỉ service_role); sửa `can_assign_task_member`, `create_task`, `club_contribution` (+`team_ids`, admin chỉ đếm việc ban mình), `import_members`, `admit_applications` (người cũ đậu ban mới → thêm ban), `activate_term` (nhiệm kỳ đổi ban chính → gỡ ban chính cũ).
+- API `/api/admin/club-members`: `team_ids`; UI chọn nhiều ban + ban chính; Giao việc/Đóng góp/`/me`/Phỏng vấn/Xóa ban đọc tập ban. Hướng dẫn `docs/HUONG-DAN-SU-DUNG.md` mục 7.1, 7.4 đã cập nhật.
+- Kiểm chứng local: pgTAP 1041/1041, unit 111/111, tsc + build sạch; import 3 file thật (BCM 23, BTT 17, BTC 52) trên Supabase local → 91 người, Bảo Bảo (BCM+BTC) và Trung Đức (BTT+BTC) đủ 2 ban; sửa SĐT không mất ban; import lại không tạo trùng. Reviewer đã rà, các lỗi Cao/Trung bình đã sửa.
+- File import của người dùng (Downloads): `ban-chuyen-mon-import.xlsx`, `ban-truyen-thong-import.xlsx`, `ban-to-chuc-import.xlsx` — chỉ import SAU khi Đợt 6 lên DB thật. Link Facebook dạng /share/ đã đổi sang link trang cá nhân thật.
+- Còn để ngỏ (thấp): PATCH thành viên không nguyên tử (cập nhật trường rồi mới set ban); chưa có test cho API route.
 
 ## Còn mở / nợ kỹ thuật
 - Câu hỏi chưa trả lời: gộp "Kết nạp" + "Tạo tài khoản" thành 1 bước? (đang giữ 2 bước).

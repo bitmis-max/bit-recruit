@@ -8,7 +8,7 @@ import { facebookUrlPattern, roleLabel } from "../admin/roles";
 import { MyTasks } from "./MyTasks";
 
 type Membership = { id: string; club_id: string; team_id: string | null; full_name: string; role: string; title: string | null; phone: string | null; facebook_url: string | null; email: string | null };
-type Profile = Membership & { clubName: string; teamName: string | null };
+type Profile = Membership & { clubName: string; teamNames: string[] };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm";
 
 function ProfileCard({ profile, onSaved }: { profile: Profile; onSaved: (clubId: string, phone: string | null, facebookUrl: string | null) => void }) {
@@ -36,7 +36,7 @@ function ProfileCard({ profile, onSaved }: { profile: Profile; onSaved: (clubId:
 
   const info = [
     { label: "Câu lạc bộ", value: profile.clubName },
-    { label: "Ban", value: profile.teamName ?? "Chưa gán ban" },
+    { label: "Ban", value: profile.teamNames.length ? profile.teamNames.join(", ") : "Chưa gán ban" },
     { label: "Chức danh", value: profile.title || "Chưa có chức danh" },
     { label: "Vai trò", value: roleLabel(profile.role) },
   ];
@@ -81,7 +81,13 @@ export function MemberProfile() {
       if (memberError) { setError("Không tải được hồ sơ thành viên. Vui lòng thử lại."); setLoading(false); return; }
       const rows = (data ?? []) as Membership[];
       const clubIds = [...new Set(rows.map((row) => row.club_id))];
-      const teamIds = [...new Set(rows.map((row) => row.team_id).filter((id): id is string => !!id))];
+      // Tập ban của chính mình (RLS cho đọc dòng của mình); ban chính được xếp đầu.
+      const memberTeamResult = rows.length ? await supabase.from("club_member_teams").select("member_id,team_id,created_at").in("member_id", rows.map((row) => row.id)).order("created_at") : { data: [] };
+      if (!active) return;
+      const teamIdsByMember = new Map<string, string[]>();
+      for (const item of (memberTeamResult.data ?? []) as { member_id: string; team_id: string }[]) teamIdsByMember.set(item.member_id, [...(teamIdsByMember.get(item.member_id) ?? []), item.team_id]);
+      const orderedTeamIds = (row: Membership) => [...new Set([...(row.team_id ? [row.team_id] : []), ...(teamIdsByMember.get(row.id) ?? [])])];
+      const teamIds = [...new Set(rows.flatMap(orderedTeamIds))];
       const [clubResult, teamResult] = await Promise.all([
         clubIds.length ? supabase.from("clubs").select("id,name").in("id", clubIds) : { data: [] },
         teamIds.length ? supabase.from("teams").select("id,name").in("id", teamIds) : { data: [] },
@@ -89,7 +95,7 @@ export function MemberProfile() {
       if (!active) return;
       const clubNames = new Map((clubResult.data ?? []).map((club) => [club.id as string, club.name as string]));
       const teamNames = new Map((teamResult.data ?? []).map((team) => [team.id as string, team.name as string]));
-      setProfiles(rows.map((row) => ({ ...row, clubName: clubNames.get(row.club_id) ?? "Câu lạc bộ", teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null })));
+      setProfiles(rows.map((row) => ({ ...row, clubName: clubNames.get(row.club_id) ?? "Câu lạc bộ", teamNames: orderedTeamIds(row).map((id) => teamNames.get(id)).filter((name): name is string => !!name) })));
       setLoading(false);
     })();
     return () => { active = false; };

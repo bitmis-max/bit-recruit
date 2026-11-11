@@ -7,7 +7,7 @@ import { useCurrentAdminClub } from "../AdminClubContext";
 import { roleLabel } from "../roles";
 
 type Range = { from: string; to: string };
-type RawRow = { member_id: string; full_name: string; team_id: string | null; role: string; is_active: boolean; assigned: number; done_on_time: number; done_late: number; missed: number; pending: number };
+type RawRow = { member_id: string; full_name: string; team_id: string | null; team_ids: string[] | null; role: string; is_active: boolean; assigned: number; done_on_time: number; done_late: number; missed: number; pending: number };
 type Loaded = { key: string; rows: RawRow[]; teams: Map<string, string>; error: string };
 type Row = RawRow & { due: number; rate: number | null; flagged: boolean };
 type SortMode = "rate-asc" | "rate-desc" | "name";
@@ -83,7 +83,7 @@ export function ContributionBoard() {
 
   const loaded = result?.key === key ? result : null;
   // Ban chủ chốt chỉ xem thành viên trong ban của mình (máy chủ cũng lọc như vậy).
-  const rows = useMemo(() => (loaded?.rows ?? []).filter((raw) => isOwner || (!!teamId && raw.team_id === teamId)).map(toRow), [loaded, isOwner, teamId]);
+  const rows = useMemo(() => (loaded?.rows ?? []).filter((raw) => isOwner || (!!teamId && (raw.team_ids ?? []).includes(teamId))).map(toRow), [loaded, isOwner, teamId]);
   const flaggedCount = rows.filter((row) => row.flagged).length;
   const shown = useMemo(() => rows.filter((row) => !onlyFlagged || row.flagged).sort(compareRows(sort)), [rows, onlyFlagged, sort]);
 
@@ -131,7 +131,7 @@ export function ContributionBoard() {
             <tbody className="divide-y divide-zinc-100">{shown.map((row) => <tr key={row.member_id}>
               <th scope="row" className="sticky left-0 max-w-[220px] bg-white px-4 py-3 text-left font-normal">
                 <p className="break-words font-medium">{row.full_name}{!row.is_active && <span className="ml-2 text-xs font-normal text-zinc-500">Ngừng hoạt động</span>}</p>
-                <p className="mt-0.5 break-words text-xs text-zinc-500">{[row.team_id ? loaded.teams.get(row.team_id) : null, roleLabel(row.role)].filter(Boolean).join(" · ")}</p>
+                <p className="mt-0.5 break-words text-xs text-zinc-500">{[(row.team_ids ?? []).map((id) => loaded.teams.get(id)).filter(Boolean).join(", "), roleLabel(row.role)].filter(Boolean).join(" · ")}</p>
                 {row.flagged && <span className="mt-1 inline-block rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-800">Cần nhắc nhở</span>}
               </th>
               <td className="px-3 py-3 text-right tabular-nums">{row.assigned}</td>

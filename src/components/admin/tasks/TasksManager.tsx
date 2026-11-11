@@ -13,7 +13,7 @@ type Task = { id: string; title: string; description: string | null; due_at: str
 type Member = { id: string; full_name: string; team_id: string | null; is_active: boolean };
 type Team = { id: string; name: string };
 type Frame = { id: string; name: string };
-type LoadedData = { clubId: string; tasks: Task[]; members: Member[]; teams: Team[]; frames: Frame[]; loadedAt: number; error: string };
+type LoadedData = { clubId: string; tasks: Task[]; members: Member[]; memberTeams: Map<string, Set<string>>; teams: Team[]; frames: Frame[]; loadedAt: number; error: string };
 type Sender = { clubId: string; configured: boolean; isMe: boolean; senderName: string | null; error: string };
 type Draft = { status: AssigneeStatus; note: string };
 
@@ -64,15 +64,19 @@ export function TasksManager() {
     (async () => {
       const [taskResult, memberResult, teamResult, frameResult] = await Promise.all([
         supabase.from("tasks").select("id,title,description,due_at,status,kind,post_url,frame_id,task_assignees(member_id,status,note,completed_at)").eq("club_id", clubId).order("due_at", { ascending: true }),
-        supabase.from("club_members").select("id,full_name,team_id,is_active").eq("club_id", clubId).order("full_name"),
+        // Nhúng club_member_teams để biết đủ các ban của từng người (không chỉ ban chính).
+        supabase.from("club_members").select("id,full_name,team_id,is_active,club_member_teams(team_id)").eq("club_id", clubId).order("full_name"),
         supabase.from("teams").select("id,name").eq("club_id", clubId).order("name"),
         supabase.from("avatar_frames").select("id,name").eq("club_id", clubId).order("name"),
       ]);
       if (!active) return;
       const failure = taskResult.error ?? memberResult.error ?? teamResult.error ?? frameResult.error;
+      const memberRows = (memberResult.data ?? []) as unknown as (Member & { club_member_teams: { team_id: string }[] | null })[];
+      // Tập ban luôn gồm ban chính, kể cả khi bảng tập chưa trả dòng nào.
+      const memberTeams = new Map(memberRows.map((row) => [row.id, new Set([...(row.team_id ? [row.team_id] : []), ...(row.club_member_teams ?? []).map((item) => item.team_id)])]));
       setData({
         clubId, loadedAt: Date.now(), error: failure?.message ?? "",
-        tasks: (taskResult.data ?? []) as unknown as Task[], members: (memberResult.data ?? []) as Member[], teams: (teamResult.data ?? []) as Team[], frames: (frameResult.data ?? []) as Frame[],
+        tasks: (taskResult.data ?? []) as unknown as Task[], members: memberRows, memberTeams, teams: (teamResult.data ?? []) as Team[], frames: (frameResult.data ?? []) as Frame[],
       });
     })();
     return () => { active = false; };
@@ -96,6 +100,7 @@ export function TasksManager() {
   const tasks = useMemo(() => loaded?.tasks ?? [], [loaded]);
   const members = useMemo(() => loaded?.members ?? [], [loaded]);
   const teams = useMemo(() => loaded?.teams ?? [], [loaded]);
+  const memberTeams = useMemo(() => loaded?.memberTeams ?? new Map<string, Set<string>>(), [loaded]);
   const frames = useMemo(() => loaded?.frames ?? [], [loaded]);
   const loadedAt = loaded?.loadedAt ?? 0;
   const memberById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
@@ -107,7 +112,7 @@ export function TasksManager() {
   const canAssign = isOwner || !!teamId;
   const assignableTeams = isOwner ? teams : teams.filter((team) => team.id === teamId);
   const canAllMembers = isOwner || (can("facebook") && form.kind !== "general");
-  const activeMembers = members.filter((member) => member.is_active && (isOwner || member.team_id === teamId));
+  const activeMembers = members.filter((member) => member.is_active && (isOwner || (!!teamId && !!memberTeams.get(member.id)?.has(teamId))));
   const query = memberQuery.trim().toLowerCase();
   const shownMembers = query ? activeMembers.filter((member) => member.full_name.toLowerCase().includes(query)) : activeMembers;
   const isOverdue = (task: Task) => task.status === "open" && Date.parse(task.due_at) < loadedAt;
