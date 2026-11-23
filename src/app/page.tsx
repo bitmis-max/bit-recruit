@@ -61,8 +61,11 @@ export default function HomePage() {
         <PhotoCarousel photos={heroPhotos} className="hero-carousel" label="Ảnh hoạt động của CLB" />
         <div className="about-hero-shade" />
         <div className="about-hero-copy">
-          <h1>CLB Tin học Ngân hàng BIT - BAV</h1>
-          <p>Banking Information Technology: cùng học hỏi, sáng tạo và trưởng thành qua công nghệ.</p>
+          <h1><span className="about-hero-line">CLB Tin học Ngân&nbsp;hàng</span> <span className="about-hero-line">BIT&nbsp;-&nbsp;BAV</span></h1>
+            <p>
+              Banking Information Technology<br />
+              Học&nbsp;hỏi&nbsp;- Sáng&nbsp;tạo&nbsp;- Trưởng&nbsp;thành qua&nbsp;công nghệ.
+            </p>
           <div className="about-hero-actions">
             <Link href="/clubs" className="about-button about-button-primary">Giới thiệu <span aria-hidden="true">↗</span></Link>
           </div>

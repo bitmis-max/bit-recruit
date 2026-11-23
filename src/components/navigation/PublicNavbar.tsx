@@ -3,12 +3,21 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../../lib/supabase/client";
 
 type Membership = { role: string; club_id: string };
 type ClubOption = { id: string; name: string };
+
+// Các trang có ảnh hero tối ở đầu trang: thanh điều hướng trong suốt đè lên ảnh.
+const OVERLAY_PATHS = ["/clubs", "/events", "/positions"];
+
+const NAV_LINKS = [
+  { href: "/", label: "Trang chủ", isActive: (path: string) => path === "/" },
+  { href: "/clubs", label: "Giới thiệu", isActive: (path: string) => path.startsWith("/clubs") },
+  { href: "/events", label: "Sự kiện", isActive: (path: string) => path.startsWith("/events") },
+];
 
 export function PublicNavbar() {
   const pathname = usePathname();
@@ -47,8 +56,45 @@ export function PublicNavbar() {
   }, [supabase]);
 
   useEffect(() => { setMenuOpen(false); }, [pathname]);
+
+  const headerRef = useRef<HTMLElement>(null);
+  const linksRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const update = () => { header.dataset.scrolled = window.scrollY > 8 ? "true" : "false"; };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, [pathname]);
+
+  useEffect(() => {
+    const container = linksRef.current;
+    const bar = indicatorRef.current;
+    if (!container || !bar) return;
+    const place = (animate: boolean) => {
+      const current = container.querySelector<HTMLElement>('a[aria-current="page"]');
+      if (!current) { bar.style.opacity = "0"; return; }
+      if (!animate) bar.style.transition = "none";
+      bar.style.width = `${current.offsetWidth}px`;
+      bar.style.transform = `translateX(${current.offsetLeft}px)`;
+      bar.style.opacity = "1";
+      if (!animate) { void bar.offsetWidth; bar.style.transition = ""; }
+    };
+    place(bar.style.opacity === "1");
+    let firstCall = true;
+    const observer = new ResizeObserver(() => {
+      if (firstCall) { firstCall = false; return; }
+      place(false);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [pathname]);
   if (pathname.startsWith("/manage-clubs") || pathname === "/login") return null;
 
+  const isOverlay = pathname === "/" || OVERLAY_PATHS.some((base) => pathname === base || pathname.startsWith(`${base}/`));
   const name = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Tài khoản";
   const avatar = user?.user_metadata?.avatar_url as string | undefined;
 
@@ -66,16 +112,18 @@ export function PublicNavbar() {
   }
 
   return (
-    <header className="site-nav">
+    <header className="site-nav" ref={headerRef} data-overlay={isOverlay ? "true" : undefined}>
       <nav className="site-nav-inner" aria-label="Điều hướng chính">
         <Link href="/" className="site-brand" aria-label="BIT — Trang chủ">
           <Image src="/logo.png" alt="Logo BIT" width={40} height={40} className="site-brand-logo" priority unoptimized />
           <span>BIT<span className="site-brand-dot">.</span></span>
         </Link>
-        <div className="site-nav-links">
-          <Link href="/" className={pathname === "/" ? "active" : ""}>Trang chủ</Link>
-          <Link href="/clubs" className={pathname === "/clubs" ? "active" : ""}>Giới thiệu</Link>
-          <Link href="/events" className={pathname.startsWith("/events") ? "active" : ""}>Sự kiện</Link>
+        <div className="site-nav-links" ref={linksRef}>
+          {NAV_LINKS.map(({ href, label, isActive }) => {
+            const active = isActive(pathname);
+            return <Link key={href} href={href} className={active ? "active" : ""} aria-current={active ? "page" : undefined}>{label}</Link>;
+          })}
+          <span className="site-nav-indicator" ref={indicatorRef} aria-hidden="true" />
         </div>
         <div className="site-nav-account">
           {user ? (
@@ -94,7 +142,7 @@ export function PublicNavbar() {
         </div>
         <button className="mobile-menu-button" aria-label="Mở menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>☰</button>
         {menuOpen && <div className="mobile-nav-menu">
-          <Link href="/">Trang chủ</Link><Link href="/clubs">Giới thiệu</Link><Link href="/events">Sự kiện</Link>
+          {NAV_LINKS.map(({ href, label }) => <Link key={href} href={href}>{label}</Link>)}
           {user ? <>{managedClubs.map((club) => <button key={club.id} onClick={() => visitClub(club.id)}>Quản trị {club.name}</button>)}{hasMembership && <Link href="/me">Trang thành viên</Link>}<button onClick={() => void signOut()}>Đăng xuất</button></> : null}
         </div>}
       </nav>
