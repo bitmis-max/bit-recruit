@@ -23,6 +23,8 @@ const recruitmentPhotos = [
   { src: "/hero/4.png", alt: "Đội tuyển BIT tại giải esports" },
 ];
 
+const aboutValues = ["Học hỏi không ngừng", "Kết nối chân thành", "Phát triển cùng nhau"];
+
 async function getRecruitmentDeadline(now: Date) {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
@@ -62,10 +64,10 @@ export default function HomePage() {
         <div className="about-hero-shade" />
         <div className="about-hero-copy">
           <h1><span className="about-hero-line">CLB Tin học Ngân&nbsp;hàng</span> <span className="about-hero-line">BIT&nbsp;-&nbsp;BAV</span></h1>
-            <p>
-              Banking Information Technology<br />
-              Học&nbsp;hỏi&nbsp;- Sáng&nbsp;tạo&nbsp;- Trưởng&nbsp;thành qua&nbsp;công nghệ.
-            </p>
+          <p>
+            Banking Information Technology<br />
+            Cùng học&nbsp;hỏi&nbsp;- Sáng&nbsp;tạo&nbsp;- Trưởng&nbsp;thành qua công&nbsp;nghệ.
+          </p>
           <div className="about-hero-actions">
             <Link href="/clubs" className="about-button about-button-primary">Giới thiệu <span aria-hidden="true">↗</span></Link>
           </div>
@@ -92,32 +94,40 @@ export default function HomePage() {
           </div>
           <PhotoCarousel photos={aboutPhotos} className="about-carousel" label="Ảnh giới thiệu CLB" />
         </div>
-        <div className="about-values">
-          <span>Học hỏi không ngừng</span><span aria-hidden="true">✳</span>
-          <span>Kết nối chân thành</span><span aria-hidden="true">✳</span>
-          <span>Phát triển cùng nhau</span>
-        </div>
       </section>
 
-      <section className="about-section recruitment-section">
-        <div className="section-heading section-heading-centered">
-          <h2>Sự kiện tuyển CTV Gen 17</h2>
-          <p>Mỗi mùa tuyển thành viên là khởi đầu cho những tình bạn, ý tưởng và trải nghiệm mới tại BIT.</p>
+      <div className="about-marquee">
+        <div className="about-marquee-track">
+          {[0, 1, 2, 3].map((copy) => (
+            <div className="about-marquee-set" key={copy} aria-hidden={copy > 0 ? "true" : undefined}>
+              {aboutValues.map((value) => (
+                <span className="about-marquee-item" key={value}>{value}<span className="about-marquee-star" aria-hidden="true">✳</span></span>
+              ))}
+            </div>
+          ))}
         </div>
+      </div>
+
+      <section className="about-section recruitment-section">
         <div className="recruitment-feature">
           <div className="recruitment-copy">
+            <h2>Sự kiện tuyển CTV <span className="nowrap">Gen 17</span></h2>
+            <p className="recruitment-lead">Mỗi mùa tuyển thành viên là khởi đầu cho những tình bạn, ý tưởng và trải nghiệm mới tại BIT.</p>
             <h3>Bắt đầu từ một cuộc gặp</h3>
             <p>Sự kiện tuyển cộng tác viên là dịp để các bạn sinh viên làm quen với BIT, gặp gỡ những người bạn cùng sở thích và tìm hiểu cách CLB học tập, làm việc.</p>
             <p>Từ vòng đơn đến những buổi sinh hoạt đầu tiên, mỗi bước đều mở ra cơ hội để bạn thử sức, đóng góp và phát triển cùng cộng đồng.</p>
-            <Link href="/positions" className="about-text-link">Tìm hiểu cơ hội tham gia <span aria-hidden="true">→</span></Link>
+            <Link href="/positions" className="about-button about-button-primary">Tìm hiểu cơ hội tham gia <span aria-hidden="true">→</span></Link>
           </div>
           <div className="recruitment-gallery">
-            <PhotoCarousel photos={recruitmentPhotos} className="recruitment-carousel" label="Ảnh sự kiện tuyển cộng tác viên Gen 17" captions={["Ngày hội tuyển thành viên", "Cùng nhau học hỏi", "Hoạt động và kết nối"]} />
-            <p className="gallery-caption">Những khoảnh khắc trên hành trình trở thành một phần của BIT</p>
+            <PhotoCarousel photos={recruitmentPhotos} className="recruitment-carousel" label="Ảnh sự kiện tuyển cộng tác viên Gen 17" />
+            <p className="recruitment-photo-note">Những khoảnh khắc trên hành trình trở thành một phần của BIT</p>
           </div>
         </div>
-        <div className="recruitment-bottom">
-          <div><h3>Thanh xuân được tạo nên từ những điều cùng làm.</h3></div>
+      </section>
+
+      <section className="legacy-section">
+        <div className="legacy-inner">
+          <h2>Thanh xuân được tạo nên từ những điều cùng&nbsp;làm.</h2>
           <p>Được thành lập ngày 28 - 04 - 2010, BIT đã trở thành một phần trong thanh xuân của nhiều thế hệ sinh viên Khoa Công nghệ thông tin và Kinh tế số. Cùng nhau, chúng mình học công nghệ, tổ chức hoạt động và lưu lại những kỷ niệm đáng nhớ.</p>
         </div>
       </section>
