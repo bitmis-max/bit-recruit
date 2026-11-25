@@ -2,6 +2,7 @@ import Image from "next/image";
 import { Suspense } from "react";
 import { createSupabaseServerClient } from "../../lib/supabase/server";
 import { FlipClockCountdown } from "../../components/home/FlipClockCountdown";
+import { EventsHeroSlider } from "../../components/events/EventsHeroSlider";
 
 type ClubEvent = {
   id: string;
@@ -11,7 +12,12 @@ type ClubEvent = {
   sort_order: number;
 };
 
-const eventIntro = "Mặc dù là một CLB học thuật, song những sự kiện bổ ích và thú vị là một món ăn tinh thần không thể thiếu đối với đời sống học tập và giải trí của các thành viên BIT nói chung và các bạn sinh viên Khoa Công nghệ thông tin và Kinh tế số nói riêng. Với sứ mệnh tạo ra một môi trường sáng tạo và phát triển cho các tín đồ công nghệ, BIT tự hào giới thiệu mảng sự kiện đa dạng và phong phú, phục vụ cho sở thích và nhu cầu của cộng đồng sinh viên.";
+const heroPhotos = [
+  { src: "/hero/4.png", alt: "Thành viên BIT tại giải đấu esports" },
+  { src: "/hero/2.png", alt: "Thành viên BIT Gen 16" },
+  { src: "/hero/3.jpg", alt: "Hoạt động nghiên cứu khoa học của BIT" },
+  { src: "/hero/5.jpg", alt: "Buổi trao đổi và làm việc của các thành viên BIT" },
+];
 
 async function EventsLoadedSections() {
   const supabase = await createSupabaseServerClient();
@@ -86,15 +92,10 @@ export default function EventsPage() {
   return (
     <main className="events-page">
       <section className="events-hero" aria-labelledby="events-heading">
-        <Image src="/hero/4.png" alt="Các thành viên BIT trong một sự kiện của câu lạc bộ" fill priority sizes="100vw" className="events-hero-image" />
+        <EventsHeroSlider photos={heroPhotos} />
         <div className="events-hero-shade" />
         <h1 id="events-heading">BIT&apos;S EVENTS</h1>
       </section>
-      <div className="events-intro-wrap">
-        <section className="events-intro" aria-label="Giới thiệu sự kiện BIT">
-          <p>{eventIntro}</p>
-        </section>
-      </div>
       <Suspense fallback={null}><EventsLoadedSections /></Suspense>
     </main>
   );

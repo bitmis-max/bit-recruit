@@ -396,14 +396,17 @@ button:hover {
 
 /* Public events page */
 .events-page { min-height: 100vh; overflow: hidden; background: linear-gradient(180deg, #c9eef2 0%, #e4f4f4 37%, #c9eef2 100%); color: #102d55; }
-.events-hero { position: relative; display: grid; min-height: clamp(220px, 28vw, 310px); place-items: start center; overflow: hidden; background: #102e49; }
-.events-hero-image { object-fit: cover; object-position: center 40%; }
-.events-hero-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgb(4 18 32 / 54%), rgb(4 18 32 / 30%)), linear-gradient(0deg, rgb(4 18 32 / 35%), transparent 60%); }
+.events-hero { position: relative; display: grid; aspect-ratio: 16 / 9; place-items: start center; overflow: hidden; background: #102e49; }
+.events-hero-image { object-fit: cover; object-position: center; }
+.events-hero-slider { position: absolute; inset: 0; }
+.events-hero-slide { position: absolute; inset: 0; opacity: 0; transition: opacity .9s ease; }
+.events-hero-slide.is-active { opacity: 1; }
+.events-hero-dots { position: absolute; z-index: 2; right: 0; bottom: 14px; left: 0; display: flex; justify-content: center; gap: 8px; }
+.events-hero-dot { width: 9px; height: 9px; border: 0; border-radius: 50%; background: rgb(255 255 255 / 50%); padding: 0; cursor: pointer; }
+.events-hero-dot.is-active { background: white; }
+.events-hero-shade { position: absolute; z-index: 1; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgb(4 18 32 / 54%), rgb(4 18 32 / 30%)), linear-gradient(0deg, rgb(4 18 32 / 35%), transparent 60%); }
 .events-hero h1 { position: relative; z-index: 1; margin: 36px 20px 0; color: white; font-size: clamp(32px, 6vw, 64px); font-weight: 850; letter-spacing: -.04em; line-height: 1.05; text-align: center; text-shadow: 0 3px 16px rgb(0 0 0 / 42%); }
-.events-intro-wrap { position: relative; z-index: 2; width: min(1120px, calc(100% - 40px)); margin: 24px auto 48px; }
-.events-intro { display: flex; align-items: center; justify-content: center; gap: 24px; border: 2px solid #20d2df; border-radius: 32px; background: rgb(255 255 255 / 78%); padding: 13px 24px; box-shadow: 0 8px 20px rgb(16 45 85 / 8%); }
-.events-intro p { max-width: 58ch; margin: 0; color: #193762; font-size: 15px; line-height: 1.75; }
-.events-list { display: grid; width: min(1120px, calc(100% - 40px)); gap: 54px; margin: 0 auto; padding: 0 0 96px; }
+.events-list { display: grid; width: min(1120px, calc(100% - 40px)); gap: 54px; margin: 48px auto 0; padding: 0 0 96px; }
 .event-card { position: relative; border-radius: 28px; background: rgb(48 76 126 / 88%); padding: 46px 30px 30px; color: white; box-shadow: 0 16px 32px rgb(20 45 84 / 15%); animation: club-team-enter .34s ease both; }
 .event-card:nth-child(2) { animation-delay: .06s; }
 .event-card:nth-child(3) { animation-delay: .12s; }
@@ -424,12 +427,8 @@ button:hover {
 .events-empty { margin: 0; border: 1px solid rgb(23 52 92 / 12%); border-radius: 18px; background: rgb(255 255 255 / 75%); padding: 32px; color: #34516c; text-align: center; }
 .events-cta { width: 100%; max-width: none; padding: 76px 24px 88px; background: #f5f6f7; }
 @media (max-width: 760px) {
-  .events-hero { min-height: 225px; }
   .events-hero h1 { margin-top: 32px; }
-  .events-intro-wrap { width: calc(100% - 28px); margin-top: 20px; margin-bottom: 38px; }
-  .events-intro { align-items: flex-start; border-radius: 24px; padding: 14px; }
-  .events-intro p { font-size: 14px; }
-  .events-list { width: calc(100% - 28px); gap: 50px; padding-bottom: 72px; }
+  .events-list { width: calc(100% - 28px); gap: 50px; margin-top: 38px; padding-bottom: 72px; }
   .event-card { border-radius: 23px; padding: 43px 18px 20px; }
   .event-card:nth-child(odd), .event-card:nth-child(even) { width: 100%; justify-self: stretch; }
   .event-title { max-width: calc(100% - 20px); font-size: 13px; white-space: normal; }
