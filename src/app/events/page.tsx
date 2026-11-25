@@ -15,7 +15,6 @@ type ClubEvent = {
 const heroPhotos = [
   { src: "/hero/4.png", alt: "Thành viên BIT tại giải đấu esports" },
   { src: "/hero/2.png", alt: "Thành viên BIT Gen 16" },
-  { src: "/hero/3.jpg", alt: "Hoạt động nghiên cứu khoa học của BIT" },
   { src: "/hero/5.jpg", alt: "Buổi trao đổi và làm việc của các thành viên BIT" },
 ];
 
