@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useDialogFocus } from "./useDialogFocus";
 
 export type ApplicantAnswerDisplay = {
   question_text: string;
@@ -17,19 +18,12 @@ function formatAnswer(answer: ApplicantAnswerDisplay) {
 export function ApplicantAnswersModal({ applicantName, answers }: { applicantName: string; answers: ApplicantAnswerDisplay[] }) {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [open]);
+  const dialogRef = useDialogFocus<HTMLElement>(open, () => setOpen(false));
 
   return <>
     <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-emerald-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50">Xem câu trả lời</button>
     {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="applicant-answers-title" className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl">
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="applicant-answers-title" className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl outline-none">
         <header className="flex items-start justify-between gap-4 border-b bg-zinc-50 px-5 py-4">
           <div><h2 id="applicant-answers-title" className="font-semibold">Câu trả lời ứng tuyển</h2><p className="mt-1 text-sm text-zinc-600">{applicantName}</p></div>
           <button type="button" autoFocus onClick={() => setOpen(false)} aria-label="Đóng cửa sổ" className="rounded-md px-2 py-1 text-xl leading-none text-zinc-500 hover:bg-zinc-200">×</button>

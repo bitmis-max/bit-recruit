@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { facebookProfileKey } from "../../../lib/facebook/profile-key";
 import { FRAME_MATCH_THRESHOLD, ringCoverage, ringSignature, signatureDistance } from "../../../lib/facebook/frame-signature";
 import { buildBookmarklet, parseScanPayload } from "../../../lib/facebook/bookmarklet";
 import { frameImageUrl } from "../../frames/frameUrl";
 import { useCurrentAdminClub } from "../AdminClubContext";
+import { useReloadOnAdminChange } from "../adminClient";
+import { samePost } from "./postMatch";
 
 type ScanData = NonNullable<ReturnType<typeof parseScanPayload>>;
 type ScanItem = ScanData["items"][number];
@@ -31,9 +34,6 @@ const FRAME_MEASURE_SIZE = 192;
 const MIN_USABLE_CELLS = 4;
 const MIN_COVERAGE = 0.6;
 const noopSubscribe = () => () => {};
-
-// Thông báo từ RPC của dự án là tiếng Việt; lỗi gốc của Postgres/mạng thì đổi sang câu chung.
-const viMessage = (message: string | undefined, fallback: string) => message && /[àáâãèéêìíòóôõùúăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữự]/i.test(message) ? message : fallback;
 
 function readStoredPayload() {
   try { return window.sessionStorage.getItem(STORAGE_KEY) ?? ""; } catch { return ""; }
@@ -137,6 +137,8 @@ export function ScanImport() {
   const [unmatchedQuery, setUnmatchedQuery] = useState("");
   const [unmatchedLimit, setUnmatchedLimit] = useState(PAGE);
   const [busy, setBusy] = useState("");
+  // Đã bấm xác nhận "quét nhầm bài" cho việc nào (tự hết hiệu lực khi đổi việc).
+  const [ackMismatchTaskId, setAckMismatchTaskId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -149,6 +151,8 @@ export function ScanImport() {
   }, [capture, phase.kind]);
 
   const dataKey = `${clubId}|${reloadKey}`;
+  // Thành viên đổi ở tab khác: tải lại để đối chiếu không dùng danh sách cũ.
+  useReloadOnAdminChange(() => setReloadKey((key) => key + 1));
 
   useEffect(() => {
     if (!supabase || !clubId || !canWrite) return;
@@ -231,6 +235,9 @@ export function ScanImport() {
   });
   const selectedIds = rows.filter((row) => row.checked).map((row) => row.member.id);
   const eligibleCount = rows.filter((row) => row.eligible).length;
+  // Việc tương tác gắn với một bài cụ thể: nếu trang vừa quét không phải bài đó thì kết quả có thể là của bài khác.
+  const postMismatch = !!scan && task?.kind === "engagement" && !!task.post_url && !samePost(task.post_url, scan.source);
+  const mismatchAcked = !!task && ackMismatchTaskId === task.id;
   const missingStatus = (member: Member) => task?.task_assignees.find((row) => row.member_id === member.id)?.status ?? null;
   const query = unmatchedQuery.trim().toLowerCase();
   const filteredUnmatched = query ? unmatched.filter((item) => item.name.toLowerCase().includes(query) || item.key.includes(query)) : unmatched;
@@ -281,11 +288,11 @@ export function ScanImport() {
   }
 
   async function apply() {
-    if (!supabase || !task || !selectedIds.length) return;
+    if (!supabase || !task || !selectedIds.length || (postMismatch && !mismatchAcked)) return;
     setBusy("apply"); setError(""); setNotice("");
     const { data, error: rpcError } = await supabase.rpc("apply_task_scan", { p_task_id: task.id, p_member_ids: selectedIds });
     setBusy("");
-    if (rpcError) { setError(viMessage(rpcError.message, "Không đánh dấu được. Vui lòng thử lại.")); return; }
+    if (rpcError) { setError(friendlyError(rpcError, "Không đánh dấu được. Vui lòng thử lại.")); return; }
     const changed = typeof data === "number" ? data : selectedIds.length;
     setNotice(`Đã đánh dấu xong cho ${changed} người${changed < selectedIds.length ? ` (${selectedIds.length - changed} người đã được cập nhật từ trước)` : ""}. Bạn có thể quét thêm (ví dụ bình luận) và đánh dấu tiếp.`);
     setReloadKey((key) => key + 1);
@@ -367,7 +374,13 @@ export function ScanImport() {
                 <span className="mt-0.5 block break-words text-xs text-zinc-500">Trên Facebook: {row.item.name || row.item.key}{task && (row.assignee ? ` · ${assigneeLabel[row.assignee.status]}` : " · Không được giao việc này")}</span></span>
             </label>
           </li>)}</ul> : <p className="p-6 text-sm text-zinc-500">Chưa có người nào trong kết quả quét khớp với thành viên CLB. Hãy gắn tài khoản ở mục “Không khớp” bên dưới.</p>}
-          {task && <div className="flex flex-wrap items-center gap-3 border-t p-4"><button type="button" disabled={busy === "apply" || !selectedIds.length} onClick={() => void apply()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "apply" ? "Đang lưu…" : `Đánh dấu xong cho ${selectedIds.length} người`}</button><p className="text-xs text-zinc-500">Chỉ đổi người đang “Chờ”, không đụng người đã xong hoặc đã bị đánh dấu chưa hoàn thành.</p></div>}
+          {task && postMismatch && <div role="alert" className="border-t border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <p className="font-semibold">Trang vừa quét có vẻ không phải bài viết của việc này.</p>
+            <p className="mt-1 break-all text-xs">Bài của việc: {task.post_url}</p>
+            <p className="mt-1 break-all text-xs">Trang đã quét: {scan?.source}</p>
+            <label className="mt-3 flex cursor-pointer items-start gap-2"><input type="checkbox" checked={mismatchAcked} onChange={(event) => setAckMismatchTaskId(event.target.checked ? task.id : "")} className="mt-0.5 size-4 shrink-0" /><span>Tôi đã kiểm tra: danh sách này đúng là của bài viết của việc, vẫn đánh dấu xong.</span></label>
+          </div>}
+          {task && <div className="flex flex-wrap items-center gap-3 border-t p-4"><button type="button" disabled={busy === "apply" || !selectedIds.length || (postMismatch && !mismatchAcked)} onClick={() => void apply()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "apply" ? "Đang lưu…" : `Đánh dấu xong cho ${selectedIds.length} người`}</button><p className="text-xs text-zinc-500">Chỉ đổi người đang “Chờ”, không đụng người đã xong hoặc đã bị đánh dấu chưa hoàn thành.</p></div>}
         </div>
 
         <div className="overflow-hidden rounded-xl border bg-white">

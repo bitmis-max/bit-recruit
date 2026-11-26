@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { friendlyError } from "../../lib/ui/friendly-error";
 
 export function ConnectGoogleMailButton() {
   const [busy, setBusy] = useState(false);
@@ -39,7 +40,7 @@ export function ConnectGoogleMailButton() {
       },
     });
     if (authError) {
-      setError(authError.message);
+      setError(friendlyError(authError, "Không kết nối được Google. Hãy thử lại."));
       setBusy(false);
     }
   }

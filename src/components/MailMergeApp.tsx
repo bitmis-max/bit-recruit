@@ -16,7 +16,6 @@ import { useTemplates } from "../hooks/useTemplates";
 import { useSender } from "../hooks/useSender";
 
 import { SetupGuide } from "./auth/SetupGuide";
-import { getSupabaseClient } from "../lib/supabase/client";
 import { useCurrentAdminClub } from "./admin/AdminClubContext";
 
 export function MailMergeApp() {
@@ -41,10 +40,9 @@ export function MailMergeApp() {
     handleCreateTemplate,
     handleDeleteTemplate,
     handleTemplateSelect,
-  } = useTemplates();
+  } = useTemplates(clubId);
 
   const [importError, setImportError] = useState<string | null>(null);
-  const [importingApplications, setImportingApplications] = useState(false);
   const [importedImage, setImportedImage] = useState<EmailImageAsset | null>(null);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [insertVariable, setInsertVariable] = useState<
@@ -56,11 +54,12 @@ export function MailMergeApp() {
     progress,
     sendingError,
     canSendBulk,
-    handleSendBulk,
+    handleSend,
     handleSendSelf,
   } = useSender({
     session,
     supabaseConfigured,
+    clubId,
     rows,
     setRows,
     subject,
@@ -102,67 +101,6 @@ export function MailMergeApp() {
       void file;
     }
   }, [setRows, setSelectedId]);
-
-  const handleImportApplications = useCallback(async () => {
-    const supabase = getSupabaseClient();
-    if (!supabase || !clubId) {
-      setImportError("Không thể tải dữ liệu ứng tuyển của CLB hiện tại.");
-      return;
-    }
-
-    setImportingApplications(true);
-    setImportError(null);
-    try {
-      const { data: campaigns, error: campaignError } = await supabase
-        .from("recruitment_campaigns")
-        .select("id,name")
-        .eq("club_id", clubId);
-      if (campaignError) throw campaignError;
-      if (!campaigns?.length) throw new Error("CLB chưa có đợt tuyển nào.");
-
-      const campaignIds = campaigns.map((campaign) => campaign.id);
-      const [
-        { data: applications, error: applicationError },
-        { data: positions, error: positionError },
-      ] = await Promise.all([
-        supabase.from("applications")
-          .select("campaign_id,position_id,email,full_name,phone,student_code,class_name")
-          .in("campaign_id", campaignIds)
-          .order("submitted_at", { ascending: false }),
-        supabase.from("recruitment_positions")
-          .select("id,name")
-          .in("campaign_id", campaignIds),
-      ]);
-      if (applicationError) throw applicationError;
-      if (positionError) throw positionError;
-      if (!applications?.length) throw new Error("Chưa có đơn ứng tuyển trong các đợt tuyển của CLB.");
-
-      const campaignById = new Map(campaigns.map((campaign) => [campaign.id, campaign.name]));
-      const positionById = new Map((positions ?? []).map((position) => [position.id, position.name]));
-      const columns = ["email", "full_name", "phone", "student_code", "class_name", "campaign_name", "position_name"];
-      const rows = applications.flatMap((application) => {
-        const email = application.email?.trim();
-        if (!email) return [];
-        return [{
-          email,
-          full_name: application.full_name,
-          phone: application.phone ?? "",
-          student_code: application.student_code ?? "",
-          class_name: application.class_name ?? "",
-          campaign_name: campaignById.get(application.campaign_id) ?? "",
-          position_name: positionById.get(application.position_id) ?? "",
-        }];
-      });
-      if (!rows.length) throw new Error("Không tìm thấy đơn ứng tuyển có địa chỉ email.");
-
-      handleDataParsed({ columns, rows });
-      setImportError(null);
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : "Không thể nhập dữ liệu đơn ứng tuyển.");
-    } finally {
-      setImportingApplications(false);
-    }
-  }, [clubId, handleDataParsed]);
 
   const handleImageParsed = useCallback((image: EmailImageAsset) => {
     setImportedImage(image);
@@ -286,17 +224,19 @@ export function MailMergeApp() {
           <ImportPanel
             onDataParsed={handleDataParsed}
             onImageParsed={handleImageParsed}
-            onImportApplications={() => void handleImportApplications()}
-            importingApplications={importingApplications}
+            clubId={clubId}
             externalError={importError}
           />
 
           <SendControls
+            rows={rows}
+            subject={subject}
+            html={html}
             canSendBulk={canSendBulk}
             progress={progress}
             sending={sending}
             errorMessage={lastError}
-            onSendBulk={handleSendBulk}
+            onSendBulk={(targets) => void handleSend(targets)}
             onSendSelf={() => handleSendSelf(selectedRecipient)}
           />
           <RecipientsTable

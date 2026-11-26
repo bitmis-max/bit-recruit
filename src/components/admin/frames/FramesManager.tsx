@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
+import { useDialog } from "../useDialog";
 import { frameImageUrl, type AvatarFrame } from "../../frames/frameUrl";
 
 type Frame = AvatarFrame & { created_at: string };
@@ -25,14 +27,14 @@ export function FramesManager() {
   const [copiedId, setCopiedId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useDialog<HTMLDivElement>(() => { if (busy !== "delete") setConfirmFrame(null); }, !!confirmFrame);
 
   useEffect(() => {
     if (!supabase || !clubId) return;
     let active = true;
     (async () => {
       const { data, error: loadError } = await supabase.from("avatar_frames").select("id,name,image_path,created_at").eq("club_id", clubId).order("created_at", { ascending: false });
-      if (active) setLoaded({ key: `${clubId}|${reloadKey}`, rows: (data ?? []) as Frame[], error: loadError?.message ?? "" });
+      if (active) setLoaded({ key: `${clubId}|${reloadKey}`, rows: (data ?? []) as Frame[], error: loadError ? friendlyError(loadError, "Không tải được danh sách khung. Vui lòng thử lại.") : "" });
     })();
     return () => { active = false; };
   }, [supabase, clubId, reloadKey]);
@@ -41,7 +43,6 @@ export function FramesManager() {
   const frames = loaded?.rows ?? [];
   const loading = !!supabase && !current;
   const load = () => setReloadKey((key) => key + 1);
-  useEffect(() => { if (confirmFrame) cancelRef.current?.focus(); }, [confirmFrame]);
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -129,11 +130,11 @@ export function FramesManager() {
       </div>
     </div>
 
-    {confirmFrame && <div role="presentation" onKeyDown={(event) => { if (event.key === "Escape" && busy !== "delete") setConfirmFrame(null); }} className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="delete-frame-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+    {confirmFrame && <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="delete-frame-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl outline-none">
         <h2 id="delete-frame-title" className="break-words text-lg font-bold">Xóa khung “{confirmFrame.name}”?</h2>
         <p className="mt-3 text-sm text-zinc-700">Link công khai của khung sẽ không dùng được nữa. Các việc “Thay avatar” đang dùng khung này vẫn còn nhưng không còn gắn khung.</p>
-        <div className="mt-5 flex justify-end gap-2"><button ref={cancelRef} type="button" disabled={busy === "delete"} onClick={() => setConfirmFrame(null)} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50">Hủy</button><button type="button" disabled={busy === "delete"} onClick={() => void remove()} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "delete" ? "Đang xóa…" : "Xóa khung"}</button></div>
+        <div className="mt-5 flex justify-end gap-2"><button data-autofocus type="button" disabled={busy === "delete"} onClick={() => setConfirmFrame(null)} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50">Hủy</button><button type="button" disabled={busy === "delete"} onClick={() => void remove()} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "delete" ? "Đang xóa…" : "Xóa khung"}</button></div>
       </div>
     </div>}
   </section>;

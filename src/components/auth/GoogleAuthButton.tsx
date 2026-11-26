@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
 import { safeNextPath } from "../../lib/auth/safe-next";
+import { friendlyError } from "../../lib/ui/friendly-error";
 
 export function GoogleAuthButton({ next }: { next?: string }) {
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +27,7 @@ export function GoogleAuthButton({ next }: { next?: string }) {
       options: { redirectTo: callback.toString() },
     });
     if (authError) {
-      setError(authError.message);
+      setError(friendlyError(authError, "Không bắt đầu được đăng nhập Google. Vui lòng thử lại."));
       setLoading(false);
     }
   }

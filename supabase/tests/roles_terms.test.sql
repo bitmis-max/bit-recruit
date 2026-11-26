@@ -75,6 +75,9 @@ insert into public.interview_sessions (id, campaign_id, position_id, start_time,
   ('00000000-0000-0000-0000-00000000bb01', '00000000-0000-0000-0000-000000000c91', '00000000-0000-0000-0000-000000000a91', now() + interval '1 day', now() + interval '1 day 1 hour');
 insert into public.interview_assignments (application_id, session_id) values
   ('00000000-0000-0000-0000-00000000aa01', '00000000-0000-0000-0000-00000000bb01');
+-- Đợt 7: trigger tự thêm câu hỏi ca phỏng vấn (bắt buộc) khi tạo ca; bỏ đi để test nộp đơn giữ nguyên bối cảnh.
+delete from public.form_questions
+  where form_id = '00000000-0000-0000-0000-000000000f91' and question_text = 'Thời gian có thể tham gia phỏng vấn';
 insert into public.application_answers (application_id, question_id, answer_text) values
   ('00000000-0000-0000-0000-00000000aa01', '00000000-0000-0000-0000-000000000093', 'https://facebook.com/p1');
 

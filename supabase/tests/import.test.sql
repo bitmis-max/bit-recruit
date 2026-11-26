@@ -196,13 +196,13 @@ select results_eq(
 -- 2d. Câu hỏi
 select results_eq(
   $$select question_text from public.tap_q where campaign_id = '00000000-0000-0000-0000-00000000ca01' and pos = 'Kỹ thuật' order by order_index$$,
-  $$values ('Tại sao bạn muốn tham gia?'::text), ('Kỹ năng'::text), ('Họ tên'::text)$$,
-  'câu hỏi: form mới có 3 câu theo thứ tự p_questions, bỏ phần tử rỗng/khoảng trắng');
+  $$values ('Tại sao bạn muốn tham gia?'::text), ('Kỹ năng'::text), ('Họ tên'::text), ('Thời gian có thể tham gia phỏng vấn'::text)$$,
+  'câu hỏi: form mới có 3 câu theo thứ tự p_questions (bỏ phần tử rỗng/khoảng trắng) + câu ca phỏng vấn do trigger thêm (Đợt 7)');
 select is((select count(*) from public.tap_q where campaign_id = '00000000-0000-0000-0000-00000000ca01' and pos = 'Kỹ thuật'
              and qtype = 'text' and not is_required and field_key is null)::int, 3,
   'câu hỏi: câu mới là text, không bắt buộc, field_key null');
-select is((select count(*) from public.tap_q where campaign_id = '00000000-0000-0000-0000-00000000ca01' and pos = 'Truyền thông')::int, 4,
-  'câu hỏi: form Truyền thông có 4 câu (2 có sẵn + "Kỹ năng" + "Họ tên" field_key null)');
+select is((select count(*) from public.tap_q where campaign_id = '00000000-0000-0000-0000-00000000ca01' and pos = 'Truyền thông')::int, 5,
+  'câu hỏi: form Truyền thông có 5 câu (2 có sẵn + "Kỹ năng" + "Họ tên" field_key null + câu ca phỏng vấn do trigger thêm khi tạo ca, Đợt 7)');
 select is((select count(*) from public.tap_q where campaign_id = '00000000-0000-0000-0000-00000000ca01' and pos = 'Truyền thông' and question_text = 'Tại sao bạn muốn tham gia?')::int, 1,
   'câu hỏi: dùng lại câu "Tại sao..." có sẵn, không tạo trùng');
 select is((select qid from public.tap_q where campaign_id = '00000000-0000-0000-0000-00000000ca01' and pos = 'Truyền thông' and question_text = 'Tại sao bạn muốn tham gia?'),
@@ -326,7 +326,7 @@ select is((select r from public.tap_res where tag = 'run2'),
   'lần 2: 5 đơn có email bị bỏ qua, 2 đơn không email vẫn nhập, không tạo mới vị trí/form/ca');
 select is((select count(*) from public.recruitment_positions where campaign_id = '00000000-0000-0000-0000-00000000ca01')::int, 3, 'lần 2: vẫn 3 vị trí');
 select is((select count(*) from public.application_forms f join public.recruitment_positions p on p.id = f.position_id where p.campaign_id = '00000000-0000-0000-0000-00000000ca01')::int, 2, 'lần 2: vẫn 2 form');
-select is((select count(*) from public.tap_q where campaign_id = '00000000-0000-0000-0000-00000000ca01')::int, 7, 'lần 2: vẫn 7 câu hỏi (4 + 3), không thêm trùng');
+select is((select count(*) from public.tap_q where campaign_id = '00000000-0000-0000-0000-00000000ca01')::int, 9, 'lần 2: vẫn 9 câu hỏi (5 + 4, gồm câu ca phỏng vấn do trigger thêm), không thêm trùng');
 select is((select count(*) from public.interview_sessions where campaign_id = '00000000-0000-0000-0000-00000000ca01')::int, 3, 'lần 2: vẫn 3 ca');
 select is((select count(*) from public.applications where campaign_id = '00000000-0000-0000-0000-00000000ca01')::int, 8, 'lần 2: 8 đơn (6 + 2 đơn không email)');
 select is((select count(*) from public.tap_a where campaign_id = '00000000-0000-0000-0000-00000000ca01')::int, 3, 'lần 2: vẫn 3 câu trả lời');

@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { friendlyError } from "../../../lib/ui/friendly-error";
+import { useDialogFocus } from "./useDialogFocus";
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { buildImportPayload, importResultMessage, mappingOptions, readApplicantFile, type ImportData, type ImportPayload, type ImportResult } from "./applicantImport";
 
@@ -39,14 +41,7 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
     openButton.current?.focus();
   }, [running]);
 
-  useEffect(() => {
-    if (!data) return;
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") close();
-    }
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [data, close]);
+  const dialogRef = useDialogFocus<HTMLElement>(!!data, close);
 
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const input = event.target;
@@ -59,7 +54,7 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
       setImportError("");
       setData(parsed);
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Không đọc được file.");
+      onError(friendlyError(e, "Không đọc được file."));
     } finally {
       setReading(false);
       input.value = "";
@@ -77,7 +72,7 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
       p_rows: payload.value.rows,
     });
     setRunning(false);
-    if (error) { setImportError(error.message); return; }
+    if (error) { setImportError(friendlyError(error, "Không import được. Hãy kiểm tra file rồi thử lại.")); return; }
     setData(null); setFormMeta({ name: "", description: "" });
     openButton.current?.focus();
     await onImported(importResultMessage((result ?? {}) as ImportResult));
@@ -89,7 +84,7 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
     <input ref={fileInput} type="file" accept=".xlsx,.xls,.csv" aria-label="Chọn file Excel hoặc CSV để import" tabIndex={-1} className="hidden" onChange={(event) => void chooseFile(event)} />
     <button ref={openButton} type="button" disabled={disabled || reading || !supabase || !campaignId} title={campaignId ? undefined : "Chọn đợt tuyển trước khi import"} onClick={() => fileInput.current?.click()} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">{reading ? "Đang đọc file…" : "Import Excel"}</button>
     {data && <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-4">
-      <section role="dialog" aria-modal="true" aria-labelledby="applicant-import-title" className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="applicant-import-title" className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl outline-none">
         <header className="flex items-start justify-between gap-4 border-b bg-zinc-50 px-5 py-4">
           <div>
             <h2 id="applicant-import-title" className="font-semibold">Ghép cột dữ liệu từ file</h2>

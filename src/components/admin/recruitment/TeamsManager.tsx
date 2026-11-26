@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
 
 type Team = { id: string; club_id: string; name: string; description: string | null; image_url: string | null; created_at: string };
@@ -44,7 +45,7 @@ export function TeamsManager() {
     const { data, error: queryError } = await supabase.from("teams")
       .select("id,club_id,name,description,image_url,created_at").eq("club_id", clubId).order("name");
     if (queryError) {
-      setError(queryError.message);
+      setError(friendlyError(queryError, "Không tải được danh sách ban. Vui lòng thử lại."));
     } else {
       const rows = (data ?? []) as Team[];
       setTeams(rows);
@@ -99,7 +100,7 @@ export function TeamsManager() {
       uploadedPath = `${clubId}/${teamId}/${crypto.randomUUID()}.${extension}`;
       // Each upload gets a unique path, so long-lived browser/CDN caching is safe.
       const { error: uploadError } = await supabase.storage.from(teamImageBucket).upload(uploadedPath, imageFile, { contentType: imageFile.type, cacheControl: "31536000", upsert: false });
-      if (uploadError) { setError(uploadError.message); setBusy(false); return; }
+      if (uploadError) { setError(friendlyError(uploadError, "Không tải được ảnh lên. Vui lòng thử lại.")); setBusy(false); return; }
       imageUrl = supabase.storage.from(teamImageBucket).getPublicUrl(uploadedPath).data.publicUrl;
     }
     const result = selected && !isCreating
@@ -108,7 +109,7 @@ export function TeamsManager() {
     setBusy(false);
     if (result.error) {
       if (uploadedPath) await supabase.storage.from(teamImageBucket).remove([uploadedPath]);
-      setError(result.error.message); return;
+      setError(friendlyError(result.error, "Không lưu được ban. Vui lòng thử lại.")); return;
     }
     const saved = result.data as Team;
     const oldImagePath = teamImageStoragePath(oldImageUrl, clubId, teamId);
@@ -126,12 +127,19 @@ export function TeamsManager() {
     if (!window.confirm(`Xóa ban “${selected.name}”?`)) return;
     setBusy(true); setError(null); setNotice(null);
     // Đếm theo tập ban (gồm cả người có ban này là ban phụ), không chỉ ban chính.
-    const [members, positions] = await Promise.all([
+    // Việc chưa đóng (tasks.team_id) cũng chặn xóa: ban bị xóa thì việc mất ban sở hữu.
+    const [members, positions, openTasks] = await Promise.all([
       supabase.from("club_member_teams").select("member_id", { count: "exact", head: true }).eq("team_id", selected.id),
       supabase.from("recruitment_positions").select("id", { count: "exact", head: true }).eq("team_id", selected.id),
+      supabase.from("tasks").select("id", { count: "exact", head: true }).eq("team_id", selected.id).eq("status", "open"),
     ]);
-    if (members.error || positions.error) {
-      setError(members.error?.message ?? positions.error?.message ?? "Không kiểm tra được dữ liệu liên quan.");
+    if (members.error || positions.error || openTasks.error) {
+      setError(friendlyError(members.error ?? positions.error ?? openTasks.error, "Không kiểm tra được dữ liệu liên quan."));
+      setBusy(false);
+      return;
+    }
+    if ((openTasks.count ?? 0) > 0) {
+      setError(`Ban còn ${openTasks.count} việc chưa đóng. Hãy đóng hoặc xóa các việc đó ở mục Giao việc trước khi xóa ban.`);
       setBusy(false);
       return;
     }
@@ -142,7 +150,7 @@ export function TeamsManager() {
     }
     const { error: deleteError } = await supabase.from("teams").delete().eq("id", selected.id).eq("club_id", clubId);
     setBusy(false);
-    if (deleteError) { setError(deleteError.message); return; }
+    if (deleteError) { setError(friendlyError(deleteError, "Không xóa được ban. Vui lòng thử lại.")); return; }
     const imagePath = teamImageStoragePath(selected.image_url, clubId, selected.id);
     if (imagePath) await supabase.storage.from(teamImageBucket).remove([imagePath]);
     const rows = teams.filter((team) => team.id !== selected.id);

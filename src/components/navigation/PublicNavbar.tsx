@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { setAdminClubCookie } from "../admin/adminClient";
 
 type Membership = { role: string; club_id: string };
 type ClubOption = { id: string; name: string };
@@ -106,7 +107,7 @@ export function PublicNavbar() {
   }
 
   function visitClub(clubId: string) {
-    document.cookie = `admin_club=${encodeURIComponent(clubId)}; Path=/manage-clubs; SameSite=Lax; Max-Age=2592000`;
+    setAdminClubCookie(clubId);
     setMenuOpen(false);
     router.push("/manage-clubs");
   }

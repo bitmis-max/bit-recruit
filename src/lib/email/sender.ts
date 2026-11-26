@@ -1,8 +1,8 @@
-import { getSupabaseClient } from "../supabase/client";
 import type { EmailAttachment } from "./template";
 
 export type SendEmailPayload = {
   to: string;
+  /** Chỉ dạng `Tên hiển thị <email>`; máy chủ bỏ địa chỉ và luôn gửi từ Gmail của người gọi. */
   from?: string;
   subject: string;
   html: string;
@@ -13,85 +13,34 @@ export type SendEmailPayload = {
   variables?: Record<string, string>;
   recipientId?: string;
   campaignId?: string;
-  clubId?: string;
+  /** CLB đang chọn (bắt buộc: máy chủ kiểm quyền theo CLB này). */
+  clubId: string;
 };
 
 const DEBUG = process.env.NEXT_PUBLIC_EMAIL_DEBUG === "true";
 
-type SendStage =
-  | "validate-env"
-  | "invoke-api-route"
-  | "api-route-response"
-  | "invoke-function"
-  | "function-response"
-  | "mock-send";
-
-function debugLog(stage: SendStage, message: string, detail?: unknown) {
+function debugLog(message: string, detail?: unknown) {
   if (!DEBUG) return;
-  const payload = detail ? { detail } : undefined;
-  console.info(`[send-email][${stage}] ${message}`, payload ?? "");
+  console.info(`[send-email] ${message}`, detail ?? "");
 }
 
 export async function sendEmail(payload: SendEmailPayload) {
-  const supabase = getSupabaseClient();
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  // Admin mail writes must pass through the server role check in this route.
-  const useApiRoute = true;
-
-  if (!url || !anonKey) {
-    debugLog(
-      "validate-env",
-      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY"
-    );
-  }
-
-  if (useApiRoute) {
-    const clubId = payload.clubId ?? document.cookie.split("; ").map((part) => part.trim()).find((part) => part.startsWith("admin_club="))?.slice("admin_club=".length);
-    debugLog("invoke-api-route", "Calling /api/send-email", {
-      to: payload.to,
-      from: payload.from,
-    });
-    const response = await fetch("/api/send-email", {
+  debugLog("Calling /api/send-email", { to: payload.to });
+  let response: Response;
+  try {
+    response = await fetch("/api/send-email", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ ...payload, clubId: clubId ? decodeURIComponent(clubId) : undefined }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
-    const data = await response.json();
-    if (!response.ok) {
-      debugLog("api-route-response", "API route error", data);
-      throw new Error(data?.error ?? "API route error");
-    }
-    debugLog("api-route-response", "API route ok", data);
-    return data;
+  } catch {
+    throw new Error("Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.");
   }
-
-  if (supabase) {
-    debugLog("invoke-function", "Calling send-email Edge Function", {
-      to: payload.to,
-      from: payload.from,
-    });
-    const { data, error } = await supabase.functions.invoke("send-email", {
-      body: payload,
-    });
-
-    if (error) {
-      debugLog("function-response", "Edge Function returned error", {
-        name: error.name,
-        message: error.message,
-        context: error.context,
-      });
-      throw error;
-    }
-
-    debugLog("function-response", "Edge Function ok", data);
-
-    return data;
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    debugLog("API route error", data);
+    throw new Error(typeof data?.error === "string" ? data.error : "Gửi mail không thành công. Hãy thử lại.");
   }
-
-  debugLog("mock-send", "Supabase not configured; using mock send");
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  return { ok: true };
+  debugLog("API route ok", data);
+  return data;
 }

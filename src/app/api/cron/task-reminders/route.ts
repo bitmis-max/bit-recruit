@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+// Ngân sách thời gian: dừng giữ chỗ người mới sau 50 giây (maxDuration = 60).
+const BUDGET_MS = 50_000;
 
 // So sánh băm SHA-256 (cùng độ dài) để timingSafeEqual không ném lỗi và không lộ độ dài secret.
 function secretMatches(header: string | null, secret: string) {
@@ -17,6 +19,7 @@ function secretMatches(header: string | null, secret: string) {
 }
 
 export async function GET(request: Request) {
+  const deadlineMs = Date.now() + BUDGET_MS;
   const secret = process.env.CRON_SECRET;
   if (!secret) return NextResponse.json({ error: "Máy chủ chưa cấu hình CRON_SECRET." }, { status: 503 });
   if (!secretMatches(request.headers.get("authorization"), secret)) {
@@ -33,7 +36,7 @@ export async function GET(request: Request) {
   if (clubsError) return NextResponse.json({ error: "Không tải được danh sách CLB." }, { status: 500 });
 
   const now = new Date();
-  const result = { clubs: 0, sent: 0, failed: 0, skippedNoSender: 0 };
+  const result = { clubs: 0, sent: 0, failed: 0, skippedNoSender: 0, deferred: 0 };
   for (const club of clubs ?? []) {
     if (!(await findValidSender(admin, club.id, club.mail_sender_user_id))) {
       result.skippedNoSender += 1;
@@ -61,9 +64,10 @@ export async function GET(request: Request) {
         result.failed += people;
         continue;
       }
-      const sentResult = await sendReminderMails(admin, { sender, clubName: club.name, baseUrl }, before, overdue);
+      const sentResult = await sendReminderMails(admin, { sender, clubName: club.name, baseUrl, deadlineMs }, before, overdue);
       result.sent += sentResult.sent;
       result.failed += sentResult.failed;
+      result.deferred += sentResult.deferred;
     } catch (error) {
       console.error("[cron/task-reminders] Lỗi khi xử lý một CLB.", error instanceof Error ? error.message : "");
     }

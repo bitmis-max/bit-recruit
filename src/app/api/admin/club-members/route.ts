@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getClubAdminContext } from "../../../../lib/admin/api";
 import { EMAIL_PATTERN } from "../../../../lib/admin/accounts";
 import { isClubPermission } from "../../../../lib/admin/permissions";
+import { revokeMailTokenIfNoStaffRole } from "../../../../lib/admin/mail-token";
+import { friendlyError } from "../../../../lib/ui/friendly-error";
 import { orderTeamIds, readTeamIds, teamsChanged, teamsErrorMessage } from "../../../../lib/admin/member-teams";
 
 const roles = new Set(["owner", "admin", "member"]);
@@ -10,6 +12,26 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const FACEBOOK_PATTERN = /^https:\/\/(www\.|m\.|web\.)?(facebook|fb)\.com\/.+/;
 const MEMBER_COLUMNS = "id,club_id,team_id,user_id,full_name,student_code,class_name,role,is_active,created_at,email,phone,facebook_url,title,permissions,is_head";
 const HEAD_ONLY_MESSAGE = "Chỉ Chủ nhiệm mới có thể đổi vai trò hoặc quyền của thành viên.";
+const STAFF_EDIT_MESSAGE = "Chỉ Chủ nhiệm mới có thể sửa thông tin thành viên Ban chủ nhiệm hoặc Ban chủ chốt.";
+const MAX_FULL_NAME = 200; // khớp import_members
+const MAX_STUDENT_CODE = 100;
+const MAX_CLASS_NAME = 100;
+
+// Ghi log phía server (chỉ mã và thông báo của DB, không ghi dữ liệu người dùng) rồi trả câu tiếng Việt cho client.
+function fail(scope: string, error: { code?: string; message?: string }, fallback: string, status: number) {
+  // Bỏ phần "Key (cột)=(giá trị)" khỏi log để không ghi email/MSSV.
+  console.error(`[api/admin/club-members] ${scope}: ${error.code ?? ""} ${(error.message ?? "").replace(/\([^)]*\)=\([^)]*\)/g, "(...)")}`);
+  return NextResponse.json({ error: friendlyError(error, fallback) }, { status });
+}
+
+// Kiểm độ dài họ tên, MSSV, lớp (chỉ trường có mặt). Trả về thông báo lỗi hoặc null.
+function checkBasicLengths(fullName: string | undefined, studentCode: string | undefined, className: string | undefined) {
+  if (fullName !== undefined && !fullName) return "Tên thành viên không được để trống.";
+  if (fullName !== undefined && fullName.length > MAX_FULL_NAME) return `Họ tên không được vượt quá ${MAX_FULL_NAME} ký tự.`;
+  if (studentCode !== undefined && studentCode.length > MAX_STUDENT_CODE) return `Mã sinh viên không được vượt quá ${MAX_STUDENT_CODE} ký tự.`;
+  if (className !== undefined && className.length > MAX_CLASS_NAME) return `Tên lớp không được vượt quá ${MAX_CLASS_NAME} ký tự.`;
+  return null;
+}
 
 // Mảng quyền hợp lệ (bỏ trùng, giữ thứ tự); null nếu không phải mảng con của các mã quyền.
 function readPermissions(value: unknown): string[] | null {
@@ -19,16 +41,15 @@ function readPermissions(value: unknown): string[] | null {
 
 const samePermissions = (a: string[], b: string[]) => a.length === b.length && a.every((code) => b.includes(code));
 
-// Khóa, mở khóa, xóa, đổi ban của dòng owner/admin (hoặc của chính mình khi `includeSelf`) chỉ Chủ nhiệm làm được.
+// Sửa, khóa, xóa dòng owner/admin chỉ Chủ nhiệm làm được.
 // Trả về Response lỗi 403 nếu bị chặn, ngược lại null.
 function requireHeadForStaffRow(
-  context: { isHead: boolean; user: { id: string } },
-  row: { role: string; user_id: string | null },
+  context: { isHead: boolean },
+  row: { role: string },
   action: string,
-  includeSelf = false,
 ) {
   if (context.isHead) return null;
-  if (row.role === "owner" || row.role === "admin" || (includeSelf && row.user_id === context.user.id)) {
+  if (row.role === "owner" || row.role === "admin") {
     return NextResponse.json({ error: `Chỉ Chủ nhiệm mới có thể ${action}.` }, { status: 403 });
   }
   return null;
@@ -44,7 +65,7 @@ function readContactFields(body: Record<string, unknown> | null): { fields: Reco
   }
   if (body?.phone !== undefined) {
     const phone = text(body.phone);
-    if (phone.length > 30) return { error: "Số điện thoại quá dài." };
+    if (phone.length > 100) return { error: "Số điện thoại quá dài." };
     fields.phone = phone || null;
   }
   if (body?.facebook_url !== undefined) {
@@ -60,9 +81,13 @@ function readContactFields(body: Record<string, unknown> | null): { fields: Reco
   return { fields };
 }
 
-function dbError(error: { code?: string; message: string }) {
-  if (error.code === "23505") return "Email hoặc mã sinh viên này đã có trong CLB.";
-  return error.message;
+// Lỗi ghi DB (400): trùng email/MSSV có câu riêng, còn lại qua friendlyError.
+function writeFail(scope: string, error: { code?: string; message?: string }, fallback: string) {
+  if (error.code === "23505") {
+    console.error(`[api/admin/club-members] ${scope}: ${error.code}`);
+    return NextResponse.json({ error: "Email hoặc mã sinh viên này đã có trong CLB." }, { status: 400 });
+  }
+  return fail(scope, error, fallback, 400);
 }
 
 const INVALID_TEAMS_MESSAGE = "Danh sách ban không hợp lệ.";
@@ -106,7 +131,7 @@ export async function GET(request: NextRequest) {
     context.admin.from("club_members").select(MEMBER_COLUMNS).eq("club_id", clubId).order("full_name"),
     context.admin.from("teams").select("id,name").eq("club_id", clubId).order("name"),
   ]);
-  if (memberResult.error || teamResult.error) return NextResponse.json({ error: memberResult.error?.message ?? teamResult.error?.message }, { status: 500 });
+  if (memberResult.error || teamResult.error) return fail("GET", (memberResult.error ?? teamResult.error)!, "Không tải được danh sách thành viên.", 500);
   const members = memberResult.data ?? [];
   const teams = teamResult.data ?? [];
   let teamRows: TeamRow[] = [];
@@ -115,7 +140,7 @@ export async function GET(request: NextRequest) {
     for (let from = 0; ; from += 1000) {
       const { data, error } = await context.admin.from("club_member_teams").select("member_id,team_id,created_at")
         .in("team_id", teams.map((team) => team.id)).order("member_id").order("team_id").range(from, from + 999);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return fail("GET teams", error, "Không tải được danh sách ban của thành viên.", 500);
       teamRows = teamRows.concat((data ?? []) as TeamRow[]);
       if ((data ?? []).length < 1000) break;
     }
@@ -135,6 +160,10 @@ export async function POST(request: NextRequest) {
   const fullName = text(body?.full_name);
   const role = text(body?.role) || "member";
   if (!fullName || !roles.has(role)) return NextResponse.json({ error: "Tên thành viên hoặc vai trò không hợp lệ." }, { status: 400 });
+  const studentCode = text(body?.student_code);
+  const className = text(body?.class_name);
+  const lengthError = checkBasicLengths(fullName, studentCode, className);
+  if (lengthError) return NextResponse.json({ error: lengthError }, { status: 400 });
   let permissions: string[] = [];
   if (body?.permissions !== undefined) {
     const parsed = readPermissions(body.permissions);
@@ -158,13 +187,13 @@ export async function POST(request: NextRequest) {
     ...contact.fields,
     club_id: clubId,
     full_name: fullName,
-    student_code: text(body?.student_code) || null,
-    class_name: text(body?.class_name) || null,
+    student_code: studentCode || null,
+    class_name: className || null,
     role,
     permissions,
     is_active: body?.is_active !== false,
   }).select(MEMBER_COLUMNS).single();
-  if (error) return NextResponse.json({ error: dbError(error) }, { status: 400 });
+  if (error) return writeFail("POST", error, "Không thêm được thành viên. Vui lòng thử lại.");
   if (teamIds.length) {
     const { error: teamsError } = await context.admin.rpc("set_member_teams", { p_member_id: data.id, p_team_ids: teamIds });
     if (teamsError) {
@@ -187,10 +216,15 @@ export async function PATCH(request: NextRequest) {
   const { data: current, error: lookupError } = await context.admin.from("club_members").select("id,user_id,role,permissions,is_head,is_active,team_id")
     .eq("id", memberId).eq("club_id", clubId).maybeSingle();
   if (lookupError || !current) return NextResponse.json({ error: "Không tìm thấy thành viên trong CLB này." }, { status: 404 });
-  if (body?.is_active !== undefined && Boolean(body.is_active) !== current.is_active) {
-    const blocked = requireHeadForStaffRow(context, current, "khóa hoặc mở khóa thành viên Ban chủ nhiệm hoặc Ban chủ chốt");
-    if (blocked) return blocked;
+  // Dòng owner/admin: người gọi không phải Chủ nhiệm thì không sửa được trường nào (kể cả của chính mình).
+  if ((current.role === "owner" || current.role === "admin") && !context.isHead) {
+    return NextResponse.json({ error: STAFF_EDIT_MESSAGE }, { status: 403 });
   }
+  const fullName = body?.full_name !== undefined ? text(body.full_name) : undefined;
+  const studentCode = body?.student_code !== undefined ? text(body.student_code) : undefined;
+  const className = body?.class_name !== undefined ? text(body.class_name) : undefined;
+  const lengthError = checkBasicLengths(fullName, studentCode, className);
+  if (lengthError) return NextResponse.json({ error: lengthError }, { status: 400 });
   let nextTeamIds = readTeamIds(body);
   if (nextTeamIds === null) return NextResponse.json({ error: INVALID_TEAMS_MESSAGE }, { status: 400 });
   let teamsToWrite: string[] | null = null;
@@ -199,14 +233,7 @@ export async function PATCH(request: NextRequest) {
     if (!currentTeamIds) return NextResponse.json({ error: "Không đọc được ban của thành viên." }, { status: 500 });
     // Đường cũ (chỉ team_id): đặt làm ban chính, giữ các ban còn lại.
     if (body?.team_ids === undefined) nextTeamIds = [nextTeamIds[0], ...currentTeamIds.filter((id) => id !== nextTeamIds![0])];
-    if (teamsChanged(currentTeamIds, current.team_id ?? null, nextTeamIds)) {
-      const blocked = requireHeadForStaffRow(context, current, "đổi ban của thành viên Ban chủ nhiệm, Ban chủ chốt hoặc của chính mình", true);
-      if (blocked) return blocked;
-      teamsToWrite = nextTeamIds;
-    }
-  }
-  if (current.role === "owner" && context.role !== "owner") {
-    return NextResponse.json({ error: "Chỉ Ban chủ nhiệm mới có thể thay đổi thành viên Ban chủ nhiệm." }, { status: 403 });
+    if (teamsChanged(currentTeamIds, current.team_id ?? null, nextTeamIds)) teamsToWrite = nextTeamIds;
   }
   if (current.user_id === context.user.id) {
     if (body?.is_active === false) return NextResponse.json({ error: "Không thể tự khóa tài khoản đang quản trị." }, { status: 400 });
@@ -240,9 +267,9 @@ export async function PATCH(request: NextRequest) {
   const update: Record<string, unknown> = {};
   if (roleChanged && nextRole !== "admin") update.permissions = [];
   else if (permissionsChanged) update.permissions = nextPermissions;
-  if (body?.full_name !== undefined) update.full_name = text(body.full_name);
-  if (body?.student_code !== undefined) update.student_code = text(body.student_code) || null;
-  if (body?.class_name !== undefined) update.class_name = text(body.class_name) || null;
+  if (fullName !== undefined) update.full_name = fullName;
+  if (studentCode !== undefined) update.student_code = studentCode || null;
+  if (className !== undefined) update.class_name = className || null;
   if (teamsToWrite && !(await teamsBelongToClub(context.admin, clubId, teamsToWrite))) {
     return NextResponse.json({ error: TEAM_NOT_IN_CLUB_MESSAGE }, { status: 400 });
   }
@@ -256,7 +283,12 @@ export async function PATCH(request: NextRequest) {
   }
   if (Object.keys(update).length) {
     const { error } = await context.admin.from("club_members").update(update).eq("id", memberId).eq("club_id", clubId);
-    if (error) return NextResponse.json({ error: dbError(error) }, { status: 400 });
+    if (error) return writeFail("PATCH", error, "Không lưu được thông tin thành viên. Vui lòng thử lại.");
+    // Khóa hoặc hạ xuống member: thu hồi token Gmail nếu tài khoản không còn là owner/admin đang hoạt động ở CLB nào.
+    // Chạy sau khi dòng đã cập nhật; lỗi xóa token chỉ ghi log.
+    if (update.is_active === false || (roleChanged && nextRole === "member")) {
+      await revokeMailTokenIfNoStaffRole(context.admin, current.user_id ?? null);
+    }
   }
   if (teamsToWrite) {
     const { error: teamsError } = await context.admin.rpc("set_member_teams", { p_member_id: memberId, p_team_ids: teamsToWrite });
@@ -281,9 +313,14 @@ export async function DELETE(request: NextRequest) {
   if (member.user_id === context.user.id) return NextResponse.json({ error: "Không thể xóa thành viên đang dùng để quản trị CLB." }, { status: 400 });
   const { count: supportCount, error: supportError } = await context.admin.from("interview_session_members")
     .select("session_id", { count: "exact", head: true }).eq("member_id", memberId);
-  if (supportError) return NextResponse.json({ error: supportError.message }, { status: 500 });
+  if (supportError) return fail("DELETE support", supportError, "Không kiểm tra được lịch sử của thành viên.", 500);
   if (supportCount) return NextResponse.json({ error: "Thành viên đã được gán hỗ trợ phỏng vấn. Hãy gỡ khỏi các ca hoặc tạm ngừng hoạt động để giữ lịch sử." }, { status: 409 });
+  const { count: taskCount, error: taskError } = await context.admin.from("task_assignees")
+    .select("task_id", { count: "exact", head: true }).eq("member_id", memberId);
+  if (taskError) return fail("DELETE tasks", taskError, "Không kiểm tra được lịch sử việc của thành viên.", 500);
+  if (taskCount) return NextResponse.json({ error: "Thành viên đã có lịch sử việc. Hãy tạm khóa (bỏ tick Đang hoạt động) thay vì xóa để giữ lịch sử." }, { status: 409 });
   const { error } = await context.admin.from("club_members").delete().eq("id", memberId).eq("club_id", clubId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) return fail("DELETE", error, "Không xóa được thành viên. Vui lòng thử lại.", 400);
+  await revokeMailTokenIfNoStaffRole(context.admin, member.user_id ?? null);
   return NextResponse.json({ ok: true });
 }

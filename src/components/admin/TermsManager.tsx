@@ -1,7 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { friendlyError } from "../../lib/ui/friendly-error";
+import { notifyMembersChanged, useReloadOnAdminChange } from "./adminClient";
+import { useDialog } from "./useDialog";
 import { useCurrentAdminClub } from "./AdminClubContext";
 import { roleLabel } from "./roles";
 import { CLUB_PERMISSIONS, isClubPermission } from "../../lib/admin/permissions";
@@ -25,6 +29,7 @@ function serialize(rows: TermRole[]) {
 
 export function TermsManager() {
   const supabase = getSupabaseClient();
+  const router = useRouter();
   const { id: clubId, role, isHead } = useCurrentAdminClub();
   const [terms, setTerms] = useState<Term[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -40,7 +45,7 @@ export function TermsManager() {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useDialog<HTMLDivElement>(() => { if (!busy) setConfirming(false); }, confirming);
 
   const load = useCallback(async () => {
     if (!supabase || !clubId) { setLoading(false); return; }
@@ -51,7 +56,7 @@ export function TermsManager() {
       supabase.from("teams").select("id,name").eq("club_id", clubId).order("name"),
     ]);
     const failure = termResult.error ?? memberResult.error ?? teamResult.error;
-    if (failure) setError(failure.message);
+    if (failure) setError(friendlyError(failure, "Không tải được nhiệm kỳ. Vui lòng thử lại."));
     else {
       const rows = (termResult.data ?? []) as Term[];
       setTerms(rows); setMembers((memberResult.data ?? []) as Member[]); setTeams((teamResult.data ?? []) as Team[]);
@@ -62,12 +67,14 @@ export function TermsManager() {
   }, [supabase, clubId]);
 
   useEffect(() => { void load(); }, [load]);
+  // Thành viên hoặc ban đổi ở màn khác: tải lại danh sách để chọn người không bị cũ.
+  useReloadOnAdminChange(() => void load());
 
   const loadRoles = useCallback(async () => {
     if (!supabase || !selectedId) { setRoles([]); setSavedRoles("[]"); return; }
     setRolesLoading(true);
     const { data, error: rolesError } = await supabase.from("club_term_roles").select("member_id,role,title,team_id,permissions,is_head").eq("term_id", selectedId);
-    if (rolesError) setError(rolesError.message);
+    if (rolesError) setError(friendlyError(rolesError, "Không tải được danh sách của nhiệm kỳ."));
     else {
       const rows = ((data ?? []) as { member_id: string; role: "owner" | "admin"; title: string | null; team_id: string | null; permissions: string[] | null; is_head: boolean | null }[]).map((row) => ({ member_id: row.member_id, role: row.role, title: row.title ?? "", team_id: row.team_id ?? "", permissions: row.permissions ?? [], is_head: row.is_head === true && row.role === "owner" }));
       setRoles(rows); setSavedRoles(serialize(rows));
@@ -76,8 +83,6 @@ export function TermsManager() {
   }, [supabase, selectedId]);
 
   useEffect(() => { void loadRoles(); }, [loadRoles]);
-
-  useEffect(() => { if (confirming) cancelRef.current?.focus(); }, [confirming]);
 
   const selected = terms.find((term) => term.id === selectedId) ?? null;
   const canEdit = isHead && selected?.status === "draft";
@@ -91,6 +96,13 @@ export function TermsManager() {
   const demoted = members.filter((member) => member.is_active && !roles.some((row) => row.member_id === member.id) && member.role !== "member");
   const droppedCount = members.filter((member) => member.is_active && !roles.some((row) => row.member_id === member.id)).length;
 
+  // Đang sửa dở danh sách mà chuyển nhiệm kỳ khác thì các thay đổi chưa lưu sẽ mất: hỏi trước.
+  function selectTerm(id: string) {
+    if (id === selectedId) return;
+    if (dirty && !window.confirm("Danh sách của nhiệm kỳ này có thay đổi chưa lưu. Chuyển sang nhiệm kỳ khác sẽ mất các thay đổi đó. Vẫn chuyển?")) return;
+    setSelectedId(id); setConfirming(false);
+  }
+
   async function createTerm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !isHead) return;
@@ -98,7 +110,7 @@ export function TermsManager() {
     setBusy(true); setError(""); setNotice("");
     const { data, error: insertError } = await supabase.from("club_terms").insert({ club_id: clubId, name: form.name.trim(), start_date: form.start_date || null, end_date: form.end_date || null }).select("id").single();
     setBusy(false);
-    if (insertError) { setError(insertError.message); return; }
+    if (insertError) { setError(friendlyError(insertError, "Không tạo được nhiệm kỳ.")); return; }
     setForm(emptyForm); setNotice("Đã tạo nhiệm kỳ nháp. Hãy chọn Ban chủ nhiệm (đúng một Chủ nhiệm) và Ban chủ chốt kèm quyền rồi lưu danh sách.");
     setSelectedId(data.id);
     await load();
@@ -145,15 +157,15 @@ export function TermsManager() {
     // Bỏ cờ Chủ nhiệm cũ trước để không vướng ràng buộc "tối đa một Chủ nhiệm" khi đổi người.
     if (saved.some((row) => row.is_head)) {
       const { error: clearError } = await supabase.from("club_term_roles").update({ is_head: false }).eq("term_id", selected.id).eq("is_head", true);
-      if (clearError) { setBusy(false); setError(clearError.message); return; }
+      if (clearError) { setBusy(false); setError(friendlyError(clearError, "Không lưu được danh sách.")); return; }
     }
     if (roles.length) {
       const { error: upsertError } = await supabase.from("club_term_roles").upsert(roles.map((row) => ({ term_id: selected.id, member_id: row.member_id, role: row.role, title: row.title.trim() || null, team_id: row.team_id || null, permissions: row.role === "admin" ? row.permissions : [], is_head: row.role === "owner" && row.is_head })), { onConflict: "term_id,member_id" });
-      if (upsertError) { setBusy(false); setError(upsertError.message); return; }
+      if (upsertError) { setBusy(false); setError(friendlyError(upsertError, "Không lưu được danh sách.")); return; }
     }
     if (removed.length) {
       const { error: deleteError } = await supabase.from("club_term_roles").delete().eq("term_id", selected.id).in("member_id", removed);
-      if (deleteError) { setBusy(false); setError(deleteError.message); return; }
+      if (deleteError) { setBusy(false); setError(friendlyError(deleteError, "Không lưu được danh sách.")); return; }
     }
     setBusy(false); setNotice("Đã lưu danh sách Ban chủ nhiệm và Ban chủ chốt.");
     await loadRoles();
@@ -164,9 +176,12 @@ export function TermsManager() {
     setBusy(true); setError(""); setNotice("");
     const { error: rpcError } = await supabase.rpc("activate_term", { p_term_id: selected.id });
     setBusy(false); setConfirming(false);
-    if (rpcError) { setError(rpcError.message); return; }
+    if (rpcError) { setError(friendlyError(rpcError, "Không kích hoạt được nhiệm kỳ.")); return; }
     setNotice(`Đã kích hoạt nhiệm kỳ "${selected.name}".`);
-    await load(); await loadRoles();
+    await loadRoles();
+    // Vai trò cả CLB vừa đổi: báo các màn khác tải lại và làm mới vai trò/menu của chính người dùng.
+    notifyMembersChanged();
+    router.refresh();
   }
 
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
@@ -186,7 +201,7 @@ export function TermsManager() {
         </form>}
         <div className="overflow-hidden rounded-xl border bg-white">
           <div className="flex items-center justify-between border-b p-4"><h2 className="font-semibold">Các nhiệm kỳ ({terms.length})</h2><button type="button" onClick={() => void load()} className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Làm mới</button></div>
-          {loading ? <p className="p-6 text-sm text-zinc-500">Đang tải nhiệm kỳ…</p> : terms.length ? <ul className="divide-y divide-zinc-100">{terms.map((term) => <li key={term.id}><button type="button" aria-current={term.id === selectedId} onClick={() => { setSelectedId(term.id); setConfirming(false); }} className={`block w-full p-4 text-left hover:bg-zinc-50 ${term.id === selectedId ? "bg-emerald-50/60" : ""}`}><span className="flex items-start justify-between gap-2"><span className="min-w-0 break-words font-medium">{term.name}</span><span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClass[term.status]}`}>{statusLabel[term.status]}</span></span><span className="mt-1 block text-xs text-zinc-500">{formatDate(term.start_date)} – {formatDate(term.end_date)}</span></button></li>)}</ul> : <p className="p-6 text-sm text-zinc-500">CLB chưa có nhiệm kỳ nào.</p>}
+          {loading ? <p className="p-6 text-sm text-zinc-500">Đang tải nhiệm kỳ…</p> : terms.length ? <ul className="divide-y divide-zinc-100">{terms.map((term) => <li key={term.id}><button type="button" aria-current={term.id === selectedId} onClick={() => selectTerm(term.id)} className={`block w-full p-4 text-left hover:bg-zinc-50 ${term.id === selectedId ? "bg-emerald-50/60" : ""}`}><span className="flex items-start justify-between gap-2"><span className="min-w-0 break-words font-medium">{term.name}</span><span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClass[term.status]}`}>{statusLabel[term.status]}</span></span><span className="mt-1 block text-xs text-zinc-500">{formatDate(term.start_date)} – {formatDate(term.end_date)}</span></button></li>)}</ul> : <p className="p-6 text-sm text-zinc-500">CLB chưa có nhiệm kỳ nào.</p>}
         </div>
       </div>
 
@@ -219,8 +234,8 @@ export function TermsManager() {
         </>}
       </div>
     </div>
-    {confirming && selected && <div role="presentation" onKeyDown={(event) => { if (event.key === "Escape" && !busy) setConfirming(false); }} className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="activate-term-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+    {confirming && selected && <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="activate-term-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl outline-none">
         <h2 id="activate-term-title" className="text-lg font-bold">Kích hoạt “{selected.name}”?</h2>
         <div className="mt-3 space-y-2 text-sm text-zinc-700">
           <p className="rounded-lg bg-emerald-50 p-3 text-emerald-900"><strong>{headMember?.full_name ?? "Người được chọn"}</strong> sẽ trở thành Chủ nhiệm của CLB. Chỉ Chủ nhiệm mới được kích hoạt nhiệm kỳ và cấp quyền.</p>
@@ -228,7 +243,7 @@ export function TermsManager() {
           <p className="rounded-lg bg-amber-50 p-3 text-amber-900"><strong>Mọi người không có trong danh sách sẽ trở thành Thành viên</strong> và mất chức danh hiện tại ({droppedCount} người{demoted.length ? `, trong đó ${demoted.length} người đang giữ vai trò quản trị` : ""}).</p>
           <p className="text-xs text-zinc-500">Thao tác này không hoàn tác tự động; muốn đổi lại phải kích hoạt một nhiệm kỳ khác.</p>
         </div>
-        <div className="mt-5 flex justify-end gap-2"><button ref={cancelRef} type="button" disabled={busy} onClick={() => setConfirming(false)} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50">Hủy</button><button type="button" disabled={busy} onClick={() => void activate()} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang kích hoạt…" : "Kích hoạt nhiệm kỳ"}</button></div>
+        <div className="mt-5 flex justify-end gap-2"><button data-autofocus type="button" disabled={busy} onClick={() => setConfirming(false)} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50">Hủy</button><button type="button" disabled={busy} onClick={() => void activate()} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang kích hoạt…" : "Kích hoạt nhiệm kỳ"}</button></div>
       </div>
     </div>}
   </section>;

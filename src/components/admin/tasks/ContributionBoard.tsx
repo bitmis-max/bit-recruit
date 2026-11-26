@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
 import { roleLabel } from "../roles";
+import { useReloadOnAdminChange } from "../adminClient";
 
 type Range = { from: string; to: string };
 type RawRow = { member_id: string; full_name: string; team_id: string | null; team_ids: string[] | null; role: string; is_active: boolean; assigned: number; done_on_time: number; done_late: number; missed: number; pending: number };
@@ -75,11 +77,14 @@ export function ContributionBoard() {
         key: `${clubId}|${applied.from}|${applied.to}|${reloadKey}`,
         rows: (rpcResult.data ?? []) as RawRow[],
         teams: new Map((teamResult.data ?? []).map((team) => [team.id as string, team.name as string])),
-        error: rpcResult.error?.message ?? "",
+        error: rpcResult.error ? friendlyError(rpcResult.error, "Không tải được bảng đóng góp. Vui lòng thử lại.") : "",
       });
     })();
     return () => { active = false; };
   }, [supabase, clubId, canWrite, applied, reloadKey]);
+
+  // Thành viên hoặc ban đổi ở tab khác: tính lại bảng.
+  useReloadOnAdminChange(() => setReloadKey((value) => value + 1));
 
   const loaded = result?.key === key ? result : null;
   // Ban chủ chốt chỉ xem thành viên trong ban của mình (máy chủ cũng lọc như vậy).

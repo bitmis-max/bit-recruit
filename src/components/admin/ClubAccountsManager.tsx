@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useCurrentAdminClub } from "./AdminClubContext";
 import { roleLabel } from "./roles";
+import { notifyMembersChanged, requestJson, useReloadOnAdminChange } from "./adminClient";
 
 type AccountRow = { memberId: string; memberName: string; role: string; account: { id: string; email: string; fullName: string } | null };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
@@ -23,38 +24,38 @@ export function ClubAccountsManager() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const response = await fetch(`/api/admin/accounts?clubId=${encodeURIComponent(clubId)}`);
-    const result = await response.json();
-    if (!response.ok) setError(result.error ?? "Không tải được tài khoản.");
-    else { setRows(result.accounts ?? []); setError(""); }
+    const result = await requestJson<{ accounts: AccountRow[] }>(`/api/admin/accounts?clubId=${encodeURIComponent(clubId)}`, undefined, "Không tải được tài khoản.");
+    if (!result.ok) setError(result.error);
+    else { setRows(result.data.accounts ?? []); setError(""); }
     setLoading(false);
   }, [clubId]);
 
   useEffect(() => { void load(); }, [load]);
+  // Thành viên đổi ở màn khác (thêm, xóa, khóa, import, nhiệm kỳ): tải lại danh sách.
+  useReloadOnAdminChange(() => void load());
 
   async function assign(mode: "invite" | "link" | "create") {
     setBusy(true); setError(""); setNotice("");
-    const response = await fetch("/api/admin/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clubId, memberId, email, mode }) });
-    const result = await response.json(); setBusy(false);
-    if (!response.ok) { setError(result.error ?? "Không gán được tài khoản."); return; }
-    setEmail(""); setNotice(mode === "invite" ? "Đã gửi email mời tạo tài khoản và gán vào thành viên." : mode === "create" ? "Đã tạo tài khoản và gán vào thành viên. Thành viên đăng nhập bằng Google với email này." : "Đã gán tài khoản hiện có vào thành viên."); await load();
+    const result = await requestJson<object>("/api/admin/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clubId, memberId, email, mode }) }, "Không gán được tài khoản.");
+    setBusy(false);
+    if (!result.ok) { setError(result.error); return; }
+    setMemberId(""); setEmail(""); setNotice(mode === "invite" ? "Đã gửi email mời tạo tài khoản và gán vào thành viên." : mode === "create" ? "Đã tạo tài khoản và gán vào thành viên. Thành viên đăng nhập bằng Google với email này." : "Đã gán tài khoản hiện có vào thành viên."); notifyMembersChanged();
   }
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!editing?.account) return;
     setBusy(true); setError("");
-    const response = await fetch("/api/admin/accounts", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clubId, accountId: editing.account.id, email: editEmail, fullName: editName }) });
-    const result = await response.json(); setBusy(false);
-    if (!response.ok) { setError(result.error ?? "Không cập nhật được tài khoản."); return; }
-    setEditing(null); setNotice("Đã cập nhật tài khoản."); await load();
+    const result = await requestJson<object>("/api/admin/accounts", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clubId, accountId: editing.account.id, email: editEmail, fullName: editName }) }, "Không cập nhật được tài khoản.");
+    setBusy(false);
+    if (!result.ok) { setError(result.error); return; }
+    setEditing(null); setNotice("Đã cập nhật tài khoản."); notifyMembersChanged();
   }
 
   async function unlink(row: AccountRow) {
     if (!row.account || !confirm(`Gỡ tài khoản ${row.account.email} khỏi CLB này? Tài khoản đăng nhập vẫn được giữ nguyên.`)) return;
-    const response = await fetch(`/api/admin/accounts?clubId=${encodeURIComponent(clubId)}&accountId=${encodeURIComponent(row.account.id)}`, { method: "DELETE" });
-    const result = await response.json();
-    if (!response.ok) setError(result.error ?? "Không gỡ được tài khoản.");
-    else { setNotice("Đã gỡ liên kết tài khoản khỏi CLB."); await load(); }
+    const result = await requestJson<object>(`/api/admin/accounts?clubId=${encodeURIComponent(clubId)}&accountId=${encodeURIComponent(row.account.id)}`, { method: "DELETE" }, "Không gỡ được tài khoản.");
+    if (!result.ok) setError(result.error);
+    else { setNotice("Đã gỡ liên kết tài khoản khỏi CLB."); notifyMembersChanged(); }
   }
 
   const unassigned = rows.filter((row) => !row.account);
@@ -64,12 +65,12 @@ export function ClubAccountsManager() {
     <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Không gian CLB</p><h1 className="mt-1 text-3xl font-bold">Quản lý tài khoản</h1><p className="mt-2 text-sm text-zinc-600">Tài khoản được liên kết với thành viên của CLB đang chọn.</p></header>
     {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
     {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    <form onSubmit={(event) => { event.preventDefault(); void assign("invite"); }} className="mb-6 grid gap-4 rounded-xl border bg-white p-5 md:grid-cols-[1fr_1fr_auto] md:items-end">
+    <form onSubmit={(event) => { event.preventDefault(); void assign("create"); }} className="mb-6 grid gap-4 rounded-xl border bg-white p-5 md:grid-cols-[1fr_1fr_auto] md:items-end">
       <label className="text-sm">Thành viên chưa có tài khoản<select required value={memberId} onChange={(event) => setMemberId(event.target.value)} className={inputClass}><option value="">Chọn thành viên</option>{unassigned.map((row) => <option key={row.memberId} value={row.memberId}>{row.memberName} · {roleLabel(row.role)}</option>)}</select></label>
       <label className="text-sm">Email tài khoản<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className={inputClass} placeholder="ten@vi-du.vn" /></label>
-      <button disabled={!canWrite || busy || !unassigned.length} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Gửi lời mời & gán</button>
-      <p className="text-xs text-zinc-500 md:col-span-3">Nếu email đã có tài khoản, dùng “Gán tài khoản hiện có”. Nếu chưa, chọn “Gửi lời mời & gán” (hệ thống gửi email mời) hoặc “Tạo tài khoản” (không gửi email, thành viên đăng nhập bằng Google với đúng email này).</p>
-      <div className="flex flex-wrap gap-4 md:col-span-3"><button type="button" disabled={!canWrite || busy || !memberId || !email} onClick={() => void assign("create")} className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 disabled:opacity-50">Tạo tài khoản (đăng nhập bằng Google)</button>
+      <button type="submit" disabled={!canWrite || busy || !unassigned.length} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Tạo tài khoản (đăng nhập bằng Google)</button>
+      <p className="text-xs text-zinc-500 md:col-span-3">Mặc định là “Tạo tài khoản”: không gửi email, thành viên đăng nhập bằng Google với đúng email này (Enter trong ô email cũng làm việc này). Nếu email đã có tài khoản, dùng “Gán tài khoản hiện có”. “Gửi lời mời & gán” sẽ gửi email mời thật.</p>
+      <div className="flex flex-wrap gap-4 md:col-span-3"><button type="button" disabled={!canWrite || busy || !memberId || !email} onClick={() => void assign("invite")} className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 disabled:opacity-50">Gửi lời mời & gán</button>
       <button type="button" disabled={!canWrite || busy || !memberId || !email} onClick={() => void assign("link")} className="w-fit text-sm font-semibold text-emerald-800 disabled:opacity-50">Gán tài khoản hiện có</button></div>
     </form>
     {!canWrite && <p className="mb-4 text-sm text-amber-800">Vai trò hiện tại chỉ có quyền xem.</p>}

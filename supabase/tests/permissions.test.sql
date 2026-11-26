@@ -160,6 +160,8 @@ insert into public.interview_sessions (id, campaign_id, position_id, start_time,
   (public.u('b92'), public.u('c91'), public.u('a91'), now() + interval '2 days', now() + interval '2 days 1 hour'),
   (public.u('b93'), public.u('c91'), public.u('a91'), now() + interval '3 days', now() + interval '3 days 1 hour');
 insert into public.interview_assignments (application_id, session_id) values (public.u('aa91'), public.u('b92'));
+-- Đợt 7: trigger tự thêm câu hỏi ca phỏng vấn khi tạo ca; bỏ đi để các test form bên dưới giữ nguyên bối cảnh 2 câu.
+delete from public.form_questions where form_id = public.u('f91') and question_text = 'Thời gian có thể tham gia phỏng vấn';
 insert into public.application_answers (application_id, question_id, answer_text) values (public.u('aa91'), public.u('92'), 'x@y.z');
 insert into public.form_templates (id, name, is_default) values (public.u('7001'), 'Mẫu quyền', false);
 insert into public.form_template_questions (template_id, question_text, question_type, order_index) values
@@ -308,6 +310,8 @@ select is((select count(*) from public.form_templates)::int, 0, 'member KHÔNG �
 reset role;
 
 -- 1f. RPC biểu mẫu
+-- Đợt 7: ca phỏng vấn thêm ở test trước đã kích trigger thêm câu hỏi; bỏ đi để payload 2 câu bên dưới khớp.
+delete from public.form_questions where form_id = public.u('f91') and question_text = 'Thời gian có thể tham gia phỏng vấn';
 select public.tap_as(public.u('a3'));
 select throws_like(
   $$select public.create_application_form_from_template(public.u('a92'), public.u('7001'), 'Form từ mẫu')$$, '%',
@@ -1013,6 +1017,9 @@ select throws_like(
 select lives_ok(
   $$update public.club_members set full_name = 'Chủ nhiệm B đổi tên' where id = public.u('f1')$$,
   'sửa thông tin khác của Chủ nhiệm thì được');
+-- Đợt 7: đợt tuyển còn đơn thì không xóa dây chuyền được (FK RESTRICT); dọn đơn trước khi xóa CLB.
+delete from public.applications
+  where campaign_id in (select id from public.recruitment_campaigns where club_id = public.u('c2'));
 select lives_ok(
   $$delete from public.clubs where id = public.u('c2')$$,
   'xóa cả CLB (cascade thành viên) không bị trigger chặn');

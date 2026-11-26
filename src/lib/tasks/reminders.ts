@@ -93,3 +93,8 @@ export function buildReminderEmail(
   sections.push(`<p>Trân trọng,<br>${escapeHtml(clubName)}</p>`);
   return { subject, html: sections.join("\n") };
 }
+
+/** Đã quá ngân sách thời gian chưa? `deadlineMs` undefined = không giới hạn. */
+export function isPastDeadline(deadlineMs: number | undefined, nowMs: number = Date.now()): boolean {
+  return deadlineMs !== undefined && nowMs > deadlineMs;
+}

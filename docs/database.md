@@ -273,8 +273,8 @@ create table form_questions (
 
 create table applications (
   id uuid primary key default gen_random_uuid(),
-  campaign_id uuid not null references recruitment_campaigns(id) on delete cascade,
-  position_id uuid not null references recruitment_positions(id) on delete cascade,
+  campaign_id uuid not null references recruitment_campaigns(id) on delete restrict, -- Đợt 7: không xóa dây chuyền mất đơn
+  position_id uuid not null references recruitment_positions(id) on delete restrict,
 
   -- Thông tin ứng viên (không cần tài khoản)
   full_name text, -- có thể null nếu câu hỏi tương ứng được cấu hình không bắt buộc
@@ -297,7 +297,7 @@ create table applications (
 create table application_answers (
   id uuid primary key default gen_random_uuid(),
   application_id uuid not null references applications(id) on delete cascade,
-  question_id uuid not null references form_questions(id) on delete cascade,
+  question_id uuid not null references form_questions(id) on delete restrict, -- Đợt 7
   answer_text text,                      -- dùng cho text, long_text, number, date
   answer_json jsonb,                     -- dùng cho multi_choice, file
   unique (application_id, question_id)
@@ -366,6 +366,7 @@ create index on interview_assignments (session_id);
 create index on club_terms (club_id);
 create index on club_term_roles (member_id);
 create index on applications (admitted_member_id) where admitted_member_id is not null;
+-- Đợt 7: application_answers (question_id), interview_session_members (member_id), club_members (user_id)
 ```
 
 ## 5. Bảo mật với Supabase (RLS)
@@ -890,6 +891,21 @@ Hai hàm khác cũng đã đổi để khớp tập ban:
 - `club_contribution`: người gọi không phải owner chỉ đếm việc có `tasks.team_id` = ban chính của mình hoặc `team_id is null` (admin ban A không thấy số việc do ban B giao). Owner đếm mọi việc.
 
 **Cách đổi tập ban.** Đổi tập ban phải đi qua `set_member_teams`, hoặc ghi `club_members.team_id` khác null (trigger đồng bộ chỉ THÊM ban đó vào tập, không gỡ ban cũ). Đặt `club_members.team_id = null` trực tiếp KHÔNG dọn tập: tập vẫn giữ các ban cũ và ban chính là null cho tới khi gọi `set_member_teams`. Gỡ ban chỉ làm tay qua API (`set_member_teams`) từ form sửa thành viên.
+
+### 6.9. Sửa vấn đề từ đợt rà soát (migration `20261119000000_audit_fixes.sql`)
+
+Migration tương thích ngược với code cũ (không đổi chữ ký hàm nào).
+
+- **Link phỏng vấn không lộ cho anon.** `anon` chỉ có quyền đọc cột `id, campaign_id, position_id, round, start_time, end_time` của `interview_sessions` (không có `meeting_link`, `location`, `note`, `capacity`). Dùng `select *` bằng anon sẽ báo thiếu quyền; trang nộp đơn đọc ca bằng service-role.
+- **Không xóa dây chuyền mất đơn.** Ba FK đổi sang `ON DELETE RESTRICT`: `applications_campaign_id_fkey`, `applications_position_id_fkey`, `application_answers_question_id_fkey`. Xóa đợt, vị trí, biểu mẫu hoặc câu hỏi khi còn đơn/câu trả lời báo lỗi `23503`; chưa có đơn thì cascade như cũ (đợt -> vị trí -> biểu mẫu -> câu hỏi, và đợt/vị trí -> ca phỏng vấn). `interview_assignments` -> `applications` vẫn cascade. Hệ quả: không xóa được cả CLB (hay đợt) khi còn đơn; phải xử lý đơn trước.
+- **`import_members`**: người gọi không phải Chủ nhiệm (`is_club_head`) không cập nhật gì ở dòng có role `owner`/`admin` (tên, email, SĐT, MSSV, lớp, Facebook, chức danh, ban): dòng bị bỏ qua hoàn toàn và đếm vào `staff_team_skipped` (tên khóa giữ nguyên; nay là số dòng Ban chủ nhiệm/Ban chủ chốt bị bỏ qua, không còn riêng chuyện ban). Chủ nhiệm giữ hành vi cũ.
+- **`admit_applications`**: nếu thành viên được ghép có role `owner`/`admin` và người gọi không phải Chủ nhiệm thì chỉ gắn `admitted_member_id`, không thêm ban, không đặt ban chính.
+- **Sức chứa ca phỏng vấn**: `enforce_interview_assignment_integrity` khóa dòng ca (`for update`) trước khi đếm và chỉ đếm `status in ('scheduled', 'attended')` (người vắng mặt/dời lịch không chiếm chỗ).
+- **`submit_application`**: trùng `(position_id, email)` báo "Email này đã nộp đơn cho vị trí này." thay vì lộ tên khóa. Giới hạn 100 KB / 200 câu giữ nguyên.
+- **Câu hỏi "Thời gian có thể tham gia phỏng vấn"** do DB tạo: trigger `interview_sessions_ensure_availability_question` (hàm `ensure_interview_availability_question`, security definer, `after insert on interview_sessions`) chèn câu `long_text`, bắt buộc, `field_key null`, `order_index = max + 1` vào biểu mẫu của vị trí nếu chưa có (so `lower(btrim(question_text))`; unique index `form_questions_interview_availability_unique` chặn trùng). Vị trí chưa có biểu mẫu thì bỏ qua. Migration backfill một lần cho biểu mẫu của vị trí đang có ca còn hiệu lực (`end_time >= now()`) mà thiếu câu. Trang công khai không còn tự tạo câu này.
+- **Nhắc hạn**: trigger `tasks_reset_reminders_on_due_change` (hàm `reset_task_reminders_on_due_change`, security definer, `after update of due_at on tasks` khi `due_at` đổi) đặt `reminded_before_at`, `reminded_overdue_at` về null cho mọi `task_assignees` của việc đó để cron nhắc lại theo hạn mới.
+- **Thu quyền thừa** (phòng thủ chiều sâu; RLS vẫn là lớp chính). `authenticated` mất: `INSERT/UPDATE/DELETE` trên `application_answers`, `club_members`, `events`; `INSERT/DELETE` trên `applications` (giữ `UPDATE (status)`) và `profiles` (giữ `UPDATE`). `anon` mất `SELECT` trên `application_answers`, `applications`, `club_members`, `form_template_questions`, `form_templates`, `interview_assignments`, `interview_session_members`, `profiles`. Mọi luồng ghi các bảng này đi qua service-role hoặc hàm security definer. Quy tắc cho bảng mới: không có policy cho thao tác nào thì không grant thao tác đó; test `audit_fixes.test.sql` kiểm tra quy tắc này trên toàn bộ bảng `public`.
+- **Index mới**: `application_answers_question_idx (question_id)`, `interview_session_members_member_idx (member_id)`, `club_members_user_idx (user_id)`.
 
 ## Phụ lục: policy đọc CLB cho quản trị
 

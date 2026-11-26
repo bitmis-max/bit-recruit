@@ -6,32 +6,58 @@ export type RecipientRow = Record<string, string> & {
   __status: "pending" | "sent" | "failed";
 };
 
+// Chỉ lưu tiêu đề, nội dung và mẫu. KHÔNG lưu danh sách người nhận (dữ liệu cá nhân) vào trình duyệt.
 export type TemplateRecord = {
   id: string;
   name: string;
   subject: string;
   html: string;
-  rows?: RecipientRow[];
-  selectedId?: string | null;
 };
 
 export type DraftState = {
   subject: string;
   html: string;
-  rows: RecipientRow[];
-  selectedId: string | null;
-  theme: "light" | "dark";
 };
 
-const STORAGE_KEY = "mailmerge.templates";
-const SELECTED_TEMPLATE_KEY = "mailmerge.selectedTemplate";
-const DRAFT_KEY = "mailmerge.draft";
+const THEME_KEY = "mailmerge.theme";
+// Khóa cũ (dùng chung mọi CLB, có lưu cả danh sách người nhận). Chỉ còn dùng để chuyển mẫu sang khóa mới rồi xóa.
+const LEGACY_TEMPLATES_KEY = "mailmerge.templates";
+const LEGACY_SELECTED_KEY = "mailmerge.selectedTemplate";
+const LEGACY_DRAFT_KEY = "mailmerge.draft";
+
+const keysFor = (clubId: string) => ({
+  templates: `mailmerge.templates.${clubId}`,
+  selected: `mailmerge.selectedTemplate.${clubId}`,
+  draft: `mailmerge.draft.${clubId}`,
+});
 
 const DEFAULT_SUBJECT = "Xin chào {{Name}}";
 const DEFAULT_HTML = `<p>Chào {{Name}},</p>
 <p>Đây là email gửi tự động qua hệ thống mail merge.</p>`;
 
-export function useTemplates() {
+// localStorage có thể ném lỗi (chế độ riêng tư, bị chặn, đầy bộ nhớ): luôn bọc try/catch.
+function readStorage(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function writeStorage(key: string, value: string) {
+  try { localStorage.setItem(key, value); } catch { /* không lưu được thì bỏ qua */ }
+}
+function removeStorage(key: string) {
+  try { localStorage.removeItem(key); } catch { /* bỏ qua */ }
+}
+function readJson<T>(key: string): T | null {
+  const text = readStorage(key);
+  if (!text) return null;
+  try { return JSON.parse(text) as T; } catch { return null; }
+}
+
+/** Bỏ `rows`/`selectedId` khỏi mẫu cũ, chỉ giữ các trường còn dùng. */
+function toTemplate(value: Partial<TemplateRecord>): TemplateRecord | null {
+  if (typeof value?.id !== "string" || typeof value.name !== "string") return null;
+  return { id: value.id, name: value.name, subject: String(value.subject ?? DEFAULT_SUBJECT), html: String(value.html ?? DEFAULT_HTML) };
+}
+
+export function useTemplates(clubId: string) {
   const [subject, setSubject] = useState(DEFAULT_SUBJECT);
   const [html, setHtml] = useState(DEFAULT_HTML);
   const [rows, setRows] = useState<RecipientRow[]>([]);
@@ -39,122 +65,99 @@ export function useTemplates() {
   const [templates, setTemplates] = useState<TemplateRecord[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [loadedClub, setLoadedClub] = useState<string | null>(null);
 
-  // Load from localStorage on mount
+  // Nạp từ localStorage khi mở hoặc khi đổi CLB
   useEffect(() => {
-    let storedTemplates: TemplateRecord[] = [];
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        storedTemplates = JSON.parse(stored) as TemplateRecord[];
-        setTemplates(storedTemplates);
-      } catch {
-        setTemplates([]);
-      }
-    }
+    if (!clubId) return;
+    const keys = keysFor(clubId);
 
-    const storedSelected = localStorage.getItem(SELECTED_TEMPLATE_KEY);
+    // Chuyển mẫu khóa cũ (nếu có) sang CLB này, bỏ danh sách người nhận, rồi xóa khóa cũ.
+    const legacy = readJson<Partial<TemplateRecord>[]>(LEGACY_TEMPLATES_KEY);
+    let storedTemplates = (readJson<Partial<TemplateRecord>[]>(keys.templates) ?? [])
+      .map(toTemplate).filter((template): template is TemplateRecord => template !== null);
+    if (legacy && !storedTemplates.length) {
+      storedTemplates = legacy.map(toTemplate).filter((template): template is TemplateRecord => template !== null);
+      writeStorage(keys.templates, JSON.stringify(storedTemplates));
+    }
+    removeStorage(LEGACY_TEMPLATES_KEY);
+    removeStorage(LEGACY_SELECTED_KEY);
+    removeStorage(LEGACY_DRAFT_KEY);
+    setTemplates(storedTemplates);
+
+    const storedSelected = readStorage(keys.selected);
     const matchedTemplate = storedSelected
       ? storedTemplates.find((template) => template.id === storedSelected)
       : null;
 
     if (matchedTemplate) {
       setSelectedTemplate(matchedTemplate.id);
-      setSubject(matchedTemplate.subject ?? DEFAULT_SUBJECT);
-      setHtml(matchedTemplate.html ?? DEFAULT_HTML);
-      setRows(matchedTemplate.rows ?? []);
-      setSelectedId(matchedTemplate.selectedId ?? null);
+      setSubject(matchedTemplate.subject);
+      setHtml(matchedTemplate.html);
     } else {
-      const draft = localStorage.getItem(DRAFT_KEY);
-      if (draft) {
-        try {
-          const parsed = JSON.parse(draft) as DraftState;
-          setSubject(parsed.subject ?? DEFAULT_SUBJECT);
-          setHtml(parsed.html ?? DEFAULT_HTML);
-          setRows(parsed.rows ?? []);
-          setSelectedId(parsed.selectedId ?? null);
-          setTheme(parsed.theme ?? "light");
-        } catch {
-          // ignore corrupted drafts
-        }
-      }
+      setSelectedTemplate(null);
+      const draft = readJson<Partial<DraftState>>(keys.draft);
+      setSubject(draft?.subject ?? DEFAULT_SUBJECT);
+      setHtml(draft?.html ?? DEFAULT_HTML);
     }
+    // Danh sách người nhận không lưu, nên đổi CLB thì bỏ danh sách đang có.
+    setRows([]);
+    setSelectedId(null);
+    setLoadedClub(clubId);
 
-    const storedTheme = localStorage.getItem("mailmerge.theme");
-    if (storedTheme === "dark") {
+    if (readStorage(THEME_KEY) === "dark") {
       setTheme("dark");
       document.documentElement.classList.add("dark");
     }
-  }, []);
+  }, [clubId]);
 
-  // Save theme to localStorage
+  const ready = Boolean(clubId) && loadedClub === clubId;
+
+  // Save theme
   useEffect(() => {
-    localStorage.setItem("mailmerge.theme", theme);
+    writeStorage(THEME_KEY, theme);
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
-  // Save draft state
+  // Save draft (chỉ tiêu đề + nội dung)
   useEffect(() => {
-    const draft: DraftState = {
-      subject,
-      html,
-      rows,
-      selectedId,
-      theme,
-    };
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-  }, [html, rows, selectedId, subject, theme]);
+    if (!ready) return;
+    const draft: DraftState = { subject, html };
+    writeStorage(keysFor(clubId).draft, JSON.stringify(draft));
+  }, [ready, clubId, html, subject]);
 
   // Save selected template ID
   useEffect(() => {
-    if (!selectedTemplate) {
-      localStorage.removeItem(SELECTED_TEMPLATE_KEY);
-      return;
-    }
-    localStorage.setItem(SELECTED_TEMPLATE_KEY, selectedTemplate);
-  }, [selectedTemplate]);
+    if (!ready) return;
+    const key = keysFor(clubId).selected;
+    if (!selectedTemplate) removeStorage(key);
+    else writeStorage(key, selectedTemplate);
+  }, [ready, clubId, selectedTemplate]);
 
   // Sync templates changes
   useEffect(() => {
-    if (!selectedTemplate) return;
+    if (!ready || !selectedTemplate) return;
 
     setTemplates((prev) => {
       const index = prev.findIndex(
         (template) => template.id === selectedTemplate
       );
       if (index === -1) return prev;
-      const updated = {
-        ...prev[index],
-        subject,
-        html,
-        rows,
-        selectedId,
-      };
       const next = [...prev];
-      next[index] = updated;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      next[index] = { ...prev[index], subject, html };
+      writeStorage(keysFor(clubId).templates, JSON.stringify(next));
       return next;
     });
-  }, [html, rows, selectedId, selectedTemplate, subject]);
+  }, [ready, clubId, html, selectedTemplate, subject]);
 
   const handleCreateTemplate = useCallback(() => {
     const name = window.prompt("Tên template?");
     if (!name) return;
-    const next = [
-      {
-        id: crypto.randomUUID(),
-        name,
-        subject,
-        html,
-        rows,
-        selectedId,
-      },
-      ...templates,
-    ];
+    const next = [{ id: crypto.randomUUID(), name, subject, html }, ...templates];
     setTemplates(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    writeStorage(keysFor(clubId).templates, JSON.stringify(next));
     setSelectedTemplate(next[0]?.id ?? null);
-  }, [html, rows, selectedId, subject, templates]);
+  }, [clubId, html, subject, templates]);
 
   const handleDeleteTemplate = useCallback(() => {
     if (!selectedTemplate) return;
@@ -162,19 +165,17 @@ export function useTemplates() {
     if (!confirmed) return;
     const next = templates.filter((template) => template.id !== selectedTemplate);
     setTemplates(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    writeStorage(keysFor(clubId).templates, JSON.stringify(next));
     setSelectedTemplate(null);
-  }, [selectedTemplate, templates]);
+  }, [clubId, selectedTemplate, templates]);
 
   const handleTemplateSelect = useCallback(
     (value: string) => {
-      setSelectedTemplate(value);
+      setSelectedTemplate(value || null);
       const selected = templates.find((template) => template.id === value);
       if (selected) {
         setSubject(selected.subject);
         setHtml(selected.html);
-        setRows(selected.rows ?? []);
-        setSelectedId(selected.selectedId ?? null);
       }
     },
     [templates]

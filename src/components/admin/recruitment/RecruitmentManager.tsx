@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
 import { FormBuilder, type Question } from "./FormBuilder";
 
@@ -46,7 +47,7 @@ export function RecruitmentManager() {
         supabase.from("recruitment_campaigns").select("id,club_id,name,description,status,start_date,end_date").eq("club_id", clubId).order("created_at", { ascending: false }),
       ]);
       if (cancelled) return;
-      if (campaignError) setError(campaignError.message);
+      if (campaignError) setError(friendlyError(campaignError, "Không tải được danh sách đợt tuyển."));
       setTeams((clubTeams ?? []) as Team[]);
       const rows = (campaignRows ?? []) as Campaign[];
       setCampaigns(rows);
@@ -80,7 +81,7 @@ export function RecruitmentManager() {
       if (!supabase || !campaignId) { setPositions([]); setPositionId(""); return; }
       const { data, error: queryError } = await supabase.from("recruitment_positions").select("id,campaign_id,team_id,name,description").eq("campaign_id", campaignId).order("created_at");
       if (cancelled) return;
-      if (queryError) { reportError(queryError.message); setPositions([]); return; }
+      if (queryError) { reportError(friendlyError(queryError, "Không tải được danh sách vị trí tuyển.")); setPositions([]); return; }
       const rows = (data ?? []) as Position[];
       setPositions(rows);
       const firstPosition = rows[0] ?? null;
@@ -98,12 +99,12 @@ export function RecruitmentManager() {
       if (!supabase || !positionId) return;
       const { data: formRow, error: formError } = await supabase.from("application_forms").select("id,name,description,source_template_id").eq("position_id", positionId).maybeSingle();
       if (cancelled) return;
-      if (formError) { reportError(formError.message); return; }
+      if (formError) { reportError(friendlyError(formError, "Không tải được biểu mẫu của vị trí này.")); return; }
       if (!formRow) return;
       setForm(formRow as ApplicationForm);
       const { data, error: questionError } = await supabase.from("form_questions").select("id,question_text,question_type,field_key,options,is_required,order_index").eq("form_id", formRow.id).order("order_index");
       if (cancelled) return;
-      if (questionError) reportError(questionError.message); else setQuestions((data ?? []) as Question[]);
+      if (questionError) reportError(friendlyError(questionError, "Không tải được câu hỏi của biểu mẫu.")); else setQuestions((data ?? []) as Question[]);
     }
     void loadForm();
     return () => { cancelled = true; };
@@ -115,25 +116,29 @@ export function RecruitmentManager() {
     const values = new FormData(formElement); setBusy(true);
     const { data, error: insertError } = await supabase.from("recruitment_campaigns").insert({ club_id: clubId, name: String(values.get("name")).trim(), description: String(values.get("description") ?? "").trim() || null, status: "draft" }).select("id,club_id,name,description,status,start_date,end_date").single();
     setBusy(false);
-    if (insertError) reportError(insertError.message); else { setCampaigns((rows) => [data as Campaign, ...rows]); setPositionId(""); setPositionDraft(null); setForm(null); setQuestions([]); setCampaignId(data.id); setCampaignDraft(data as Campaign); formElement.reset(); reportSuccess("Đã tạo đợt tuyển."); }
+    if (insertError) reportError(friendlyError(insertError, "Không tạo được đợt tuyển.")); else { setCampaigns((rows) => [data as Campaign, ...rows]); setPositionId(""); setPositionDraft(null); setForm(null); setQuestions([]); setCampaignId(data.id); setCampaignDraft(data as Campaign); formElement.reset(); reportSuccess("Đã tạo đợt tuyển."); }
   }
 
   async function saveCampaign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase || !campaignDraft || !canWrite) return;
-    const values = new FormData(event.currentTarget); setBusy(true);
-    const payload = { name: String(values.get("name")).trim(), description: String(values.get("description") ?? "").trim() || null, status: String(values.get("status")), start_date: toIsoDateTime(values.get("start_date")), end_date: toIsoDateTime(values.get("end_date")) };
+    const values = new FormData(event.currentTarget);
+    const startDate = toIsoDateTime(values.get("start_date"));
+    const endDate = toIsoDateTime(values.get("end_date"));
+    if (startDate && endDate && new Date(endDate) < new Date(startDate)) { reportError("Ngày kết thúc phải sau hoặc bằng ngày bắt đầu."); return; }
+    setBusy(true);
+    const payload = { name: String(values.get("name")).trim(), description: String(values.get("description") ?? "").trim() || null, status: String(values.get("status")), start_date: startDate, end_date: endDate };
     const { error: updateError } = await supabase.from("recruitment_campaigns").update(payload).eq("id", campaignDraft.id);
     setBusy(false);
-    if (updateError) reportError(updateError.message); else { const updated = { ...campaignDraft, ...payload } as Campaign; setCampaignDraft(updated); setCampaigns((rows) => rows.map((row) => row.id === updated.id ? updated : row)); reportSuccess("Đã lưu đợt tuyển."); }
+    if (updateError) reportError(friendlyError(updateError, "Không lưu được đợt tuyển.")); else { const updated = { ...campaignDraft, ...payload } as Campaign; setCampaignDraft(updated); setCampaigns((rows) => rows.map((row) => row.id === updated.id ? updated : row)); reportSuccess("Đã lưu đợt tuyển."); }
   }
 
   async function deleteCampaign() {
     if (!supabase || !campaignDraft || !confirm("Xóa đợt tuyển này cùng các ban, biểu mẫu và câu hỏi liên quan?")) return;
     const { count, error: countError } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("campaign_id", campaignDraft.id);
-    if (countError) { reportError(countError.message); return; }
+    if (countError) { reportError(friendlyError(countError, "Không kiểm tra được số đơn ứng tuyển.")); return; }
     if (count) { reportError("Đợt tuyển đã có đơn ứng tuyển nên không thể xóa để bảo toàn hồ sơ. Hãy chuyển trạng thái sang Hoàn tất hoặc Đã đóng."); return; }
     const { error: deleteError } = await supabase.from("recruitment_campaigns").delete().eq("id", campaignDraft.id);
-    if (deleteError) reportError(deleteError.message); else { const rows = campaigns.filter((row) => row.id !== campaignDraft.id); setCampaigns(rows); setCampaignId(rows[0]?.id ?? ""); setCampaignDraft(rows[0] ?? null); reportSuccess("Đã xóa đợt tuyển."); }
+    if (deleteError) reportError(friendlyError(deleteError, "Không xóa được đợt tuyển.")); else { const rows = campaigns.filter((row) => row.id !== campaignDraft.id); setCampaigns(rows); setCampaignId(rows[0]?.id ?? ""); setCampaignDraft(rows[0] ?? null); reportSuccess("Đã xóa đợt tuyển."); }
   }
 
   async function savePosition(event: FormEvent<HTMLFormElement>) {
@@ -145,7 +150,7 @@ export function RecruitmentManager() {
       ? await supabase.from("recruitment_positions").update(payload).eq("id", positionDraft.id).select("id,campaign_id,team_id,name,description").single()
       : await supabase.from("recruitment_positions").insert(payload).select("id,campaign_id,team_id,name,description").single();
     setBusy(false);
-    if (result.error) reportError(["42501", "42P17"].includes(result.error.code) ? "Policy RLS của vị trí tuyển đang chặn thao tác. Hãy chạy lại docs/migrate_admin_write_recruitment_positions.sql trong SQL Editor rồi thử lại." : result.error.message); else { const row = result.data as Position; setPositions((items) => positionDraft?.id ? items.map((item) => item.id === row.id ? row : item) : [...items, row]); setPositionId(row.id); setPositionDraft(row); reportSuccess(positionDraft?.id ? "Đã lưu vị trí tuyển." : "Đã tạo vị trí tuyển."); }
+    if (result.error) reportError(friendlyError(result.error, "Không lưu được vị trí tuyển.")); else { const row = result.data as Position; setPositions((items) => positionDraft?.id ? items.map((item) => item.id === row.id ? row : item) : [...items, row]); setPositionId(row.id); setPositionDraft(row); reportSuccess(positionDraft?.id ? "Đã lưu vị trí tuyển." : "Đã tạo vị trí tuyển."); }
   }
 
   function newPosition() { setPositionId(""); setPositionDraft({ id: "", campaign_id: campaignId, team_id: null, name: "", description: null }); setForm(null); setQuestions([]); }
@@ -153,10 +158,10 @@ export function RecruitmentManager() {
   async function deletePosition() {
     if (!supabase || !positionDraft?.id || !confirm("Xóa vị trí cùng biểu mẫu và câu hỏi của ban?")) return;
     const { count, error: countError } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("position_id", positionDraft.id);
-    if (countError) { reportError(countError.message); return; }
+    if (countError) { reportError(friendlyError(countError, "Không kiểm tra được số đơn ứng tuyển.")); return; }
     if (count) { reportError("Ban tuyển đã có đơn ứng tuyển nên không thể xóa để bảo toàn hồ sơ."); return; }
     const { error: deleteError } = await supabase.from("recruitment_positions").delete().eq("id", positionDraft.id);
-    if (deleteError) reportError(deleteError.message); else { const rows = positions.filter((row) => row.id !== positionDraft.id); setPositions(rows); setPositionId(rows[0]?.id ?? ""); setPositionDraft(rows[0] ?? null); setForm(null); setQuestions([]); reportSuccess("Đã xóa vị trí."); }
+    if (deleteError) reportError(friendlyError(deleteError, "Không xóa được vị trí tuyển.")); else { const rows = positions.filter((row) => row.id !== positionDraft.id); setPositions(rows); setPositionId(rows[0]?.id ?? ""); setPositionDraft(rows[0] ?? null); setForm(null); setQuestions([]); reportSuccess("Đã xóa vị trí."); }
   }
 
   if (loading) return <div className="p-8 text-sm text-zinc-600">Đang tải dữ liệu tuyển gen…</div>;

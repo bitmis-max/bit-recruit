@@ -91,18 +91,27 @@ select is(public.tap_set(public.u('aa01')), array[public.u('d1')], 'insert membe
 select is(public.tap_set(public.u('e1')), '{}'::uuid[], 'member không ban: tập rỗng');
 
 -- Backfill (cùng câu SQL của migration): xóa tập rồi chạy lại phải khôi phục đúng.
+-- Chỉ động tới thành viên do test tạo (CLB c1, c2) để không vỡ khi DB local có dữ liệu sẵn.
+create temp table tap_test_members as
+  select id from public.club_members where club_id in (public.u('c1'), public.u('c2'));
 create temp table tap_set_before as
-  select member_id, team_id from public.club_member_teams;
+  select member_id, team_id from public.club_member_teams
+  where member_id in (select id from tap_test_members);
 set local session_replication_role = replica;  -- xóa không kích trigger đổi ban chính
-delete from public.club_member_teams;
+delete from public.club_member_teams where member_id in (select id from tap_test_members);
 set local session_replication_role = origin;
 insert into public.club_member_teams (member_id, team_id)
-select id, team_id from public.club_members where team_id is not null;
+select id, team_id from public.club_members
+where team_id is not null and id in (select id from tap_test_members);
 select is(
   (select count(*) from (
-     (select member_id, team_id from public.club_member_teams except select * from tap_set_before)
+     (select member_id, team_id from public.club_member_teams
+        where member_id in (select id from tap_test_members)
+      except select * from tap_set_before)
      union all
-     (select * from tap_set_before except select member_id, team_id from public.club_member_teams)
+     (select * from tap_set_before
+      except select member_id, team_id from public.club_member_teams
+        where member_id in (select id from tap_test_members))
    ) d)::int,
   0, 'backfill: mỗi ban chính thành một dòng trong tập');
 
@@ -413,8 +422,8 @@ select is(
 select public.tap_as(public.u('a3'));
 select is(
   public.import_members(public.u('c1'), '[{"full_name":"Admin d1","student_code":"E4","team":"Ban B"}]'::jsonb),
-  '{"inserted":0,"updated":0,"unchanged":1,"staff_team_skipped":1}'::jsonb,
-  'import: admin (không phải Chủ nhiệm) không thêm được ban cho admin khác -> staff_team_skipped');
+  '{"inserted":0,"updated":0,"unchanged":0,"staff_team_skipped":1}'::jsonb,
+  'import: admin (không phải Chủ nhiệm) không thêm được ban cho admin khác -> staff_team_skipped (Đợt 7: dòng bỏ qua hoàn toàn)');
 reset role;
 select is(public.tap_set(public.u('e4')), array[public.u('d1')], 'import: tập của admin không đổi khi bị bỏ qua');
 select public.tap_as(public.u('a1'));

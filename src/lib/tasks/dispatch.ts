@@ -2,7 +2,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getGmailAccessToken, GmailError, sendGmail } from "../email/gmail";
 import { hasPermission } from "../admin/permissions";
-import { buildReminderEmail, type ReminderRow } from "./reminders";
+import { quoteDisplayName } from "../email/validators";
+import { buildReminderEmail, isPastDeadline, type ReminderRow } from "./reminders";
 
 export type TaskInfo = { id: string; title: string; due_at: string };
 
@@ -70,11 +71,6 @@ export async function findValidSender(
 
 export type ClubSender = { accessToken: string; from: string };
 
-function quoteDisplayName(name: string): string {
-  const clean = name.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim().replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `"${clean}"`;
-}
-
 /**
  * Lấy access token và địa chỉ From (`"Tên CLB" <email>`) của người gửi.
  * Trả về null nếu người gửi không hợp lệ (xem findValidSender); ném Error tiếng Việt khi lỗi token/email.
@@ -137,14 +133,15 @@ async function releaseRows(admin: SupabaseClient, rows: ReminderRow[], column: C
 /**
  * Với mỗi người: giữ chỗ các dòng, gửi một mail gộp các dòng giữ được, gửi lỗi thì hoàn lại mốc.
  * Một người lỗi không làm hỏng cả lượt; lỗi giữ chỗ hay gửi đều tính vào `failed`.
+ * `deadlineMs` (epoch ms): quá hạn thì dừng TRƯỚC khi giữ chỗ người kế tiếp; số người còn lại tính vào `deferred` (lượt sau làm tiếp).
  * shortcut: gửi tuần tự, đủ cho CLB cỡ vài chục người; nâng cấp bằng gửi song song có giới hạn nếu timeout.
  */
 export async function sendReminderMails(
   admin: SupabaseClient,
-  ctx: { sender: ClubSender; clubName: string; baseUrl: string; force?: boolean },
+  ctx: { sender: ClubSender; clubName: string; baseUrl: string; force?: boolean; deadlineMs?: number },
   before: ReminderRow[],
   overdue: ReminderRow[],
-): Promise<{ sent: number; failed: number }> {
+): Promise<{ sent: number; failed: number; deferred: number }> {
   const people = new Map<string, { email: string; fullName: string; before: ReminderRow[]; overdue: ReminderRow[] }>();
   const slot = (row: ReminderRow) => {
     let entry = people.get(row.memberId);
@@ -160,7 +157,9 @@ export async function sendReminderMails(
   const force = ctx.force === true;
   let sent = 0;
   let failed = 0;
+  let deferred = 0;
   for (const [memberId, person] of people) {
+    if (isPastDeadline(ctx.deadlineMs)) { deferred += 1; continue; }
     const stamp = new Date().toISOString();
     const claimedBefore: ReminderRow[] = [];
     const claimedOverdue: ReminderRow[] = [];
@@ -190,5 +189,5 @@ export async function sendReminderMails(
       await release();
     }
   }
-  return { sent, failed };
+  return { sent, failed, deferred };
 }

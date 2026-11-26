@@ -23,7 +23,7 @@ export function RecipientsTable({ rows, selectedId, onSelect }: RecipientsTableP
   const columns: ColumnDef<RecipientRow>[] = [
     {
       accessorKey: "__status",
-      header: "Status",
+      header: "Trạng thái",
       cell: ({ row }: CellContext<RecipientRow, unknown>) => {
         const status = row.original.__status ?? "pending";
         const tone =
@@ -32,7 +32,8 @@ export function RecipientsTable({ rows, selectedId, onSelect }: RecipientsTableP
             : status === "failed"
               ? "text-rose-600"
               : "text-zinc-500";
-        return <span className={`text-xs font-medium ${tone}`}>{status}</span>;
+        const label = status === "sent" ? "Đã gửi" : status === "failed" ? "Lỗi" : "Chưa gửi";
+        return <span className={`text-xs font-medium ${tone}`}>{label}</span>;
       },
     },
     ...Object.keys(rows[0] ?? {})

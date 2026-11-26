@@ -10,6 +10,11 @@ export type PreviewPanelProps = {
   importedImage?: EmailImageAsset | null;
 };
 
+function buildPreviewDocument(html: string) {
+  const body = html.trim() ? html : "<p>Chưa có nội dung.</p>";
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src * data:; style-src 'unsafe-inline'"><style>body{margin:0;padding:16px;font:14px/1.6 system-ui,sans-serif;color:#27272a;background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style></head><body>${body}</body></html>`;
+}
+
 export function PreviewPanel({
   html,
   subject,
@@ -23,7 +28,7 @@ export function PreviewPanel({
           Preview theo người nhận
         </h3>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          {recipient?.email ? `Recipient: ${recipient.email}` : "Chọn dòng dữ liệu để preview."}
+          {recipient?.email ? `Người nhận: ${recipient.email}` : "Chọn dòng dữ liệu để preview."}
         </p>
       </div>
       {importedImage ? (
@@ -35,9 +40,12 @@ export function PreviewPanel({
       <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
         <p className="font-semibold text-zinc-800 dark:text-zinc-100">{subject || "(Chưa có tiêu đề)"}</p>
       </div>
-      <div
-        className="preview-content rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-800 shadow-inner dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
-        dangerouslySetInnerHTML={{ __html: html || "<p>Chưa có nội dung.</p>" }}
+      {/* sandbox="" = không chạy script, không gửi form; CSP chặn mọi thứ ngoài ảnh và style. */}
+      <iframe
+        title="Xem trước nội dung thư"
+        sandbox=""
+        srcDoc={buildPreviewDocument(html)}
+        className="h-96 w-full rounded-xl border border-zinc-200 bg-white shadow-inner dark:border-zinc-800"
       />
     </section>
   );

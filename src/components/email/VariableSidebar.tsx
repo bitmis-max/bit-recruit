@@ -23,7 +23,7 @@ export function VariableSidebar({ variables, dataValues, values, onValuesChange,
   const [newVarName, setNewVarName] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("mailmerge.sidebarVariables", JSON.stringify(customVariables));
+    try { localStorage.setItem("mailmerge.sidebarVariables", JSON.stringify(customVariables)); } catch { /* không lưu được thì bỏ qua */ }
   }, [customVariables]);
 
   const variablesList = useMemo(() => Array.from(new Set([...customVariables, ...variables])), [customVariables, variables]);

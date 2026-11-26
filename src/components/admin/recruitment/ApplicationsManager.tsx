@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { getNearestCampaignId } from "../../../lib/recruitment/campaign-selection";
 import { normalizeSearchText } from "../../../lib/recruitment/search";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
 import { ApplicantAnswersModal } from "./ApplicantAnswersModal";
 import { ApplicantImportDialog } from "./ApplicantImportDialog";
+import { fetchAllPages, loadApplicationAnswers } from "./loadAnswers";
 
 type Campaign = { id: string; name: string; status: string; start_date: string | null; end_date: string | null; created_at: string };
 type Team = { id: string; name: string };
@@ -41,7 +43,7 @@ export function ApplicationsManager() {
       supabase.from("teams").select("id,name").eq("club_id", clubId).order("name"),
     ]);
     if (campaignResult.error || teamResult.error) {
-      setError(campaignResult.error?.message ?? teamResult.error?.message ?? "Không tải được dữ liệu CLB."); setLoading(false); return;
+      setError(friendlyError(campaignResult.error ?? teamResult.error, "Không tải được dữ liệu CLB.")); setLoading(false); return;
     }
     const campaignRows = (campaignResult.data ?? []) as Campaign[];
     setCampaigns(campaignRows); setTeams((teamResult.data ?? []) as Team[]);
@@ -50,31 +52,18 @@ export function ApplicationsManager() {
     const campaignIds = campaignRows.map((campaign) => campaign.id);
     const [positionResult, applicationResult] = await Promise.all([
       supabase.from("recruitment_positions").select("id,name,team_id").in("campaign_id", campaignIds),
-      supabase.from("applications").select("id,campaign_id,position_id,full_name,email,phone,student_code,class_name,facebook_url,admitted_member_id,status,submitted_at").in("campaign_id", campaignIds).order("submitted_at", { ascending: false }),
+      fetchAllPages<Application>((from, to) => supabase.from("applications").select("id,campaign_id,position_id,full_name,email,phone,student_code,class_name,facebook_url,admitted_member_id,status,submitted_at").in("campaign_id", campaignIds).order("submitted_at", { ascending: false }).order("id").range(from, to)),
     ]);
     if (positionResult.error || applicationResult.error) {
-      setError(positionResult.error?.message ?? applicationResult.error?.message ?? "Không tải được đơn ứng tuyển."); setLoading(false); return;
+      setError(friendlyError(positionResult.error ?? applicationResult.error, "Không tải được đơn ứng tuyển.")); setLoading(false); return;
     }
     const positionRows = (positionResult.data ?? []) as Position[];
-    const applicationRows = (applicationResult.data ?? []) as Application[];
+    const applicationRows = applicationResult.data;
     setPositions(positionRows); setApplications(applicationRows);
     if (applicationRows.length) {
-      const { data: answerRows, error: answerError } = await supabase.from("application_answers")
-        .select("application_id,question_id,answer_text,answer_json")
-        .in("application_id", applicationRows.map((application) => application.id));
-      if (answerError) setError(`Đã tải đơn nhưng không tải được câu trả lời: ${answerError.message}`);
-      else {
-        const rows = (answerRows ?? []) as Omit<Answer, "question_text">[];
-        const questionIds = [...new Set(rows.map((answer) => answer.question_id))];
-        const { data: questionRows, error: questionError } = questionIds.length
-          ? await supabase.from("form_questions").select("id,question_text").in("id", questionIds)
-          : { data: [], error: null };
-        if (questionError) setError(`Đã tải đơn nhưng không tải được nội dung câu hỏi: ${questionError.message}`);
-        else {
-          const questionById = new Map((questionRows ?? []).map((question) => [question.id, question.question_text]));
-          setAnswers(rows.map((answer) => ({ ...answer, question_text: questionById.get(answer.question_id) ?? "Câu hỏi" })));
-        }
-      }
+      const { answers: answerRows, error: answerError } = await loadApplicationAnswers(supabase, applicationRows.map((application) => application.id));
+      if (answerError) setError(`Đã tải đơn nhưng chưa tải được câu trả lời. ${friendlyError(answerError, "Hãy bấm Làm mới để thử lại.")}`);
+      else setAnswers(answerRows);
     } else setAnswers([]);
     setLoading(false);
   }, [supabase, clubId]);
@@ -97,7 +86,7 @@ export function ApplicationsManager() {
     setBusy(true); setError(""); setNotice("");
     const { data: updated, error: updateError } = await supabase.from("applications").update({ status }).eq("id", application.id).select("id");
     setBusy(false);
-    if (updateError) { setError(updateError.message); return; }
+    if (updateError) { setError(friendlyError(updateError, "Không đổi được trạng thái đơn.")); return; }
     if (!updated?.length) { setError("Không đổi được trạng thái đơn này. Đơn có thể đã bị xóa hoặc bạn không có quyền."); return; }
     setApplications((current) => current.map((row) => row.id === application.id ? { ...row, status } : row));
     if (status !== "passed") setSelected((current) => current.filter((id) => id !== application.id));
@@ -110,7 +99,7 @@ export function ApplicationsManager() {
     setBusy(true); setError(""); setNotice("");
     const { data, error: admitError } = await supabase.rpc("admit_applications", { p_application_ids: selectedAdmittable.map((application) => application.id) });
     setBusy(false);
-    if (admitError) { setError(admitError.message); return; }
+    if (admitError) { setError(friendlyError(admitError, "Không kết nạp được. Hãy thử lại.")); return; }
     const result = (data ?? {}) as { admitted?: number; skipped?: number };
     setNotice(`Đã kết nạp ${result.admitted ?? 0}, bỏ qua ${result.skipped ?? 0}.`);
     setSelected([]);
@@ -137,7 +126,7 @@ export function ApplicationsManager() {
       const availabilityValue = availabilityAnswer?.answer_text ?? (availabilityAnswer?.answer_json == null ? null : typeof availabilityAnswer.answer_json === "string" ? availabilityAnswer.answer_json : JSON.stringify(availabilityAnswer.answer_json));
       const canAdmit = application.status === "passed" && !application.admitted_member_id;
       const facebookHref = application.facebook_url && /^https:\/\//i.test(application.facebook_url) ? application.facebook_url : null;
-      return <tr key={application.id} className="align-top">{canWrite && <td className="px-3 py-2"><input type="checkbox" aria-label={`Chọn ${application.full_name || "ứng viên"} để kết nạp`} disabled={!canAdmit} checked={selected.includes(application.id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, application.id] : current.filter((id) => id !== application.id))} /></td>}<td className="px-3 py-2"><p className="font-semibold">{application.full_name || "Chưa cung cấp họ tên"}</p><p className="mt-1 text-xs text-zinc-600">{application.email || "Chưa cung cấp email"}</p><p className="mt-1 text-xs text-zinc-600">{application.phone || "Chưa có số điện thoại"}</p><p className="mt-1 text-xs text-zinc-500">MSSV: {application.student_code || "—"} · Lớp: {application.class_name || "—"}</p>{facebookHref && <p className="mt-1 text-xs"><a href={facebookHref} target="_blank" rel="noopener noreferrer" className="font-medium text-emerald-800 underline">Facebook</a></p>}</td><td className="px-3 py-2"><p className="font-medium">{campaignById.get(application.campaign_id) ?? "Đợt tuyển"}</p><p className="mt-1 text-sm text-zinc-600">{teamId ? teamById.get(teamId) : "Chưa gán ban"}</p><p className="mt-1 text-sm text-zinc-700">{position?.name ?? "Vị trí đã xóa"}</p></td><td className="px-3 py-2">{canWrite ? <label className="block text-xs font-semibold text-zinc-500">Trạng thái<select disabled={busy} value={application.status} onChange={(event) => void changeStatus(application, event.target.value)} className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-normal text-zinc-900 disabled:opacity-60">{Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{status}</span>}{application.admitted_member_id && <p className="mt-2"><span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">Đã kết nạp</span></p>}<p className="mt-2 text-xs text-zinc-500">Nộp lúc {new Date(application.submitted_at).toLocaleString("vi-VN")}</p></td><td className="max-w-xs px-3 py-2"><p title={availabilityValue ?? "Chưa có thông tin thời gian"} className="line-clamp-2 min-w-[180px] whitespace-pre-wrap break-words text-xs leading-4 text-zinc-700">{availabilityValue || <span className="text-zinc-500">Chưa có thông tin thời gian</span>}</p></td><td className="px-3 py-2"><ApplicantAnswersModal applicantName={application.full_name || "Ứng viên"} answers={applicationAnswers} /></td></tr>;
+      return <tr key={application.id} className="align-top">{canWrite && <td className="px-3 py-2"><input type="checkbox" aria-label={`Chọn ${application.full_name || "ứng viên"} để kết nạp`} disabled={!canAdmit} checked={selected.includes(application.id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, application.id] : current.filter((id) => id !== application.id))} /></td>}<td className="px-3 py-2"><p className="font-semibold">{application.full_name || "Chưa cung cấp họ tên"}</p><p className="mt-1 text-xs text-zinc-600">{application.email || "Chưa cung cấp email"}</p><p className="mt-1 text-xs text-zinc-600">{application.phone || "Chưa có số điện thoại"}</p><p className="mt-1 text-xs text-zinc-500">MSSV: {application.student_code || "—"} · Lớp: {application.class_name || "—"}</p>{facebookHref && <p className="mt-1 text-xs"><a href={facebookHref} target="_blank" rel="noopener noreferrer" className="font-medium text-emerald-800 underline">Facebook</a></p>}</td><td className="px-3 py-2"><p className="font-medium">{campaignById.get(application.campaign_id) ?? "Đợt tuyển"}</p><p className="mt-1 text-sm text-zinc-600">{teamId ? teamById.get(teamId) : "Chưa gán ban"}</p><p className="mt-1 text-sm text-zinc-700">{position?.name ?? "Vị trí đã xóa"}</p></td><td className="px-3 py-2">{canWrite ? <label className="block text-xs font-semibold text-zinc-500">Trạng thái<select disabled={busy || !!application.admitted_member_id} title={application.admitted_member_id ? "Đơn đã kết nạp thành thành viên nên không đổi trạng thái được." : undefined} value={application.status} onChange={(event) => void changeStatus(application, event.target.value)} className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-normal text-zinc-900 disabled:opacity-60">{Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{status}</span>}{application.admitted_member_id && <p className="mt-2"><span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">Đã kết nạp</span><span className="mt-1 block text-xs text-zinc-500">Không đổi trạng thái được nữa.</span></p>}<p className="mt-2 text-xs text-zinc-500">Nộp lúc {new Date(application.submitted_at).toLocaleString("vi-VN")}</p></td><td className="max-w-xs px-3 py-2"><p title={availabilityValue ?? "Chưa có thông tin thời gian"} className="line-clamp-2 min-w-[180px] whitespace-pre-wrap break-words text-xs leading-4 text-zinc-700">{availabilityValue || <span className="text-zinc-500">Chưa có thông tin thời gian</span>}</p></td><td className="px-3 py-2"><ApplicantAnswersModal applicantName={application.full_name || "Ứng viên"} answers={applicationAnswers} /></td></tr>;
     })}</tbody></table></div> : <div className="rounded-xl border border-dashed bg-white p-8 text-center text-sm text-zinc-500">Chưa có đơn ứng tuyển phù hợp.</div>}
   </section>;
 }

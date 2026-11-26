@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useCurrentAdminClub } from "./AdminClubContext";
+import { friendlyError } from "../../lib/ui/friendly-error";
+import { requestJson } from "./adminClient";
 
 type ClubEvent = {
   id: string;
@@ -17,13 +19,12 @@ type EventDraft = { title: string; description: string; image_url: string };
 const emptyDraft: EventDraft = { title: "", description: "", image_url: "" };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15";
 async function deleteEventImage(clubId: string, imageUrl: string) {
-  const response = await fetch("/api/admin/events/image", {
+  const result = await requestJson<object>("/api/admin/events/image", {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ clubId, imageUrl }),
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Không xóa được ảnh cũ.");
+  }, "Không xóa được ảnh cũ.");
+  if (!result.ok) throw new Error(result.error);
 }
 
 export function EventsManager() {
@@ -47,15 +48,14 @@ export function EventsManager() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/admin/events?clubId=${encodeURIComponent(clubId)}`);
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không tải được danh sách sự kiện.");
-      const rows = result.events as ClubEvent[];
+      const result = await requestJson<{ events: ClubEvent[] }>(`/api/admin/events?clubId=${encodeURIComponent(clubId)}`, undefined, "Không tải được danh sách sự kiện.");
+      if (!result.ok) throw new Error(result.error);
+      const rows = result.data.events ?? [];
       setEvents(rows);
       setSavedOrderIds(rows.map((event) => event.id));
       setSelectedId((current) => rows.some((event) => event.id === current) ? current : rows[0]?.id ?? "");
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Không tải được danh sách sự kiện.");
+      setError(friendlyError(loadError, "Không tải được danh sách sự kiện."));
     } finally {
       setLoading(false);
     }
@@ -105,25 +105,37 @@ export function EventsManager() {
     setNotice(null);
   }
 
+  // Đổi chỗ với mục liền kề: dùng được bằng bàn phím và điện thoại (kéo thả không có ở đó).
+  function moveEvent(id: string, delta: -1 | 1) {
+    if (!canWrite || busy) return;
+    const from = events.findIndex((event) => event.id === id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= events.length) return;
+    const reordered = [...events];
+    [reordered[from], reordered[to]] = [reordered[to], reordered[from]];
+    setEvents(reordered);
+    setError(null);
+    setNotice(null);
+  }
+
   async function saveOrder() {
     if (!canWrite || busy || !orderHasChanges) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch("/api/admin/events", {
+      const result = await requestJson<{ events: ClubEvent[] }>("/api/admin/events", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clubId, orderedEventIds: events.map((item) => item.id) }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không sắp xếp được sự kiện.");
-      const savedEvents = result.events as ClubEvent[];
+      }, "Không sắp xếp được sự kiện.");
+      if (!result.ok) throw new Error(result.error);
+      const savedEvents = result.data.events ?? [];
       setEvents(savedEvents);
       setSavedOrderIds(savedEvents.map((item) => item.id));
       setNotice("Đã lưu thứ tự hiển thị.");
     } catch (orderError) {
-      setError(orderError instanceof Error ? orderError.message : "Không lưu được thứ tự sự kiện.");
+      setError(friendlyError(orderError, "Không lưu được thứ tự sự kiện."));
     } finally {
       setBusy(false);
     }
@@ -147,13 +159,12 @@ export function EventsManager() {
         form.append("clubId", clubId);
         form.append("eventId", eventId);
         form.append("file", imageFile);
-        const uploadResponse = await fetch("/api/admin/events/image", { method: "POST", body: form });
-        const uploadResult = await uploadResponse.json();
-        if (!uploadResponse.ok) throw new Error(uploadResult.error || "Không tải được ảnh lên.");
-        imageUrl = uploadResult.imageUrl as string;
+        const uploadResult = await requestJson<{ imageUrl: string }>("/api/admin/events/image", { method: "POST", body: form }, "Không tải được ảnh lên.");
+        if (!uploadResult.ok || !uploadResult.data.imageUrl) throw new Error(uploadResult.error || "Không tải được ảnh lên.");
+        imageUrl = uploadResult.data.imageUrl;
         uploadedImageUrl = imageUrl;
       }
-      const response = await fetch("/api/admin/events", {
+      const result = await requestJson<{ event: ClubEvent }>("/api/admin/events", {
         method: creating ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -162,10 +173,9 @@ export function EventsManager() {
           ...draft,
           image_url: imageUrl,
         }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không lưu được sự kiện.");
-      const saved = result.event as ClubEvent;
+      }, "Không lưu được sự kiện.");
+      if (!result.ok || !result.data.event) throw new Error(result.error || "Không lưu được sự kiện.");
+      const saved = result.data.event;
       const oldImageUrl = selected?.image_url;
       if (oldImageUrl && oldImageUrl !== imageUrl) {
         await deleteEventImage(clubId, oldImageUrl).catch(() => undefined);
@@ -181,7 +191,7 @@ export function EventsManager() {
       setNotice(creating ? "Đã tạo sự kiện." : "Đã lưu thay đổi.");
     } catch (saveError) {
       if (uploadedImageUrl) await deleteEventImage(clubId, uploadedImageUrl).catch(() => undefined);
-      setError(saveError instanceof Error ? saveError.message : "Không lưu được sự kiện.");
+      setError(friendlyError(saveError, "Không lưu được sự kiện."));
     } finally {
       setBusy(false);
     }
@@ -193,9 +203,8 @@ export function EventsManager() {
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/admin/events?clubId=${encodeURIComponent(clubId)}&id=${encodeURIComponent(selected.id)}`, { method: "DELETE" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không xóa được sự kiện.");
+      const result = await requestJson<object>(`/api/admin/events?clubId=${encodeURIComponent(clubId)}&id=${encodeURIComponent(selected.id)}`, { method: "DELETE" }, "Không xóa được sự kiện.");
+      if (!result.ok) throw new Error(result.error);
       if (selected.image_url) await deleteEventImage(clubId, selected.image_url).catch(() => undefined);
       const remaining = events.filter((item) => item.id !== selected.id);
       setEvents(remaining);
@@ -204,7 +213,7 @@ export function EventsManager() {
       setImageFile(null);
       setNotice("Đã xóa sự kiện.");
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Không xóa được sự kiện.");
+      setError(friendlyError(deleteError, "Không xóa được sự kiện."));
     } finally {
       setBusy(false);
     }
@@ -232,15 +241,19 @@ export function EventsManager() {
               {canWrite && <button type="button" onClick={() => void saveOrder()} disabled={busy || !orderHasChanges} className="shrink-0 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40">{busy ? "Đang lưu…" : "Lưu thứ tự"}</button>}
             </div>
             {orderHasChanges && <p className="px-2 text-xs text-amber-700">Thứ tự có thay đổi chưa lưu.</p>}
-            {events.length ? <ul className="mt-1 space-y-1">{events.map((item) => (
+            {events.length ? <ul className="mt-1 space-y-1">{events.map((item, index) => (
               <li key={item.id}
                 onDragOver={(event) => { if (canWrite && !busy) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
                 onDrop={(event) => { event.preventDefault(); reorderEvents(event.dataTransfer.getData("text/plain") || draggedEventId || "", item.id); setDraggedEventId(null); }}
                 className={`flex items-center gap-1 rounded-lg ${draggedEventId === item.id ? "opacity-40" : ""}`}>
-                {canWrite && <span draggable={!busy} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); setDraggedEventId(item.id); }} onDragEnd={() => setDraggedEventId(null)} title="Kéo để sắp xếp" aria-label={`Kéo ${item.title} để sắp xếp`} className={`cursor-grab select-none px-2 text-lg text-zinc-400 active:cursor-grabbing ${busy ? "pointer-events-none" : ""}`}>⠿</span>}
+                {canWrite && <span draggable={!busy} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); setDraggedEventId(item.id); }} onDragEnd={() => setDraggedEventId(null)} title="Kéo để sắp xếp" aria-hidden="true" className={`cursor-grab select-none px-2 text-lg text-zinc-400 active:cursor-grabbing ${busy ? "pointer-events-none" : ""}`}>⠿</span>}
                 <button type="button" onClick={() => { setSelectedId(item.id); setCreating(false); setError(null); setNotice(null); }} className={`min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left ${selectedId === item.id && !creating ? "bg-emerald-50 text-emerald-900" : "text-zinc-700 hover:bg-zinc-50"}`}>
                   <span className="block truncate text-sm font-medium">{item.title}</span>
                 </button>
+                {canWrite && <span className="flex shrink-0">
+                  <button type="button" onClick={() => moveEvent(item.id, -1)} disabled={busy || index === 0} aria-label={`Đưa ${item.title} lên trên`} title="Đưa lên" className="flex size-9 items-center justify-center rounded-lg text-zinc-600 hover:bg-zinc-100 disabled:opacity-30">↑</button>
+                  <button type="button" onClick={() => moveEvent(item.id, 1)} disabled={busy || index === events.length - 1} aria-label={`Đưa ${item.title} xuống dưới`} title="Đưa xuống" className="flex size-9 items-center justify-center rounded-lg text-zinc-600 hover:bg-zinc-100 disabled:opacity-30">↓</button>
+                </span>}
               </li>
             ))}</ul> : <p className="px-2 py-3 text-sm text-zinc-500">Chưa có sự kiện nào.</p>}
           </aside>

@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { getNearestCampaignId } from "../../../lib/recruitment/campaign-selection";
 import { normalizeSearchText } from "../../../lib/recruitment/search";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
 import { roleLabel } from "../roles";
 import { ApplicantAnswersModal } from "./ApplicantAnswersModal";
 import { ApplicantImportDialog } from "./ApplicantImportDialog";
+import { fetchAllPages, loadApplicationAnswers } from "./loadAnswers";
 
 type Campaign = { id: string; name: string; status: string; start_date: string | null; end_date: string | null; created_at: string };
 type Position = { id: string; campaign_id: string; name: string; team_id: string | null };
@@ -22,6 +24,26 @@ const inTeam = (member: Member, teamId: string | null) => teamId ? (member.team_
 type FormAnswer = { application_id: string; question_id: string; question_text: string; answer_text: string | null; answer_json: unknown };
 const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
 const availabilityQuestionLabel = "Thời gian có thể tham gia phỏng vấn";
+const MEETING_LINK_PATTERN = /^https?:\/\//i;
+const meetingLinkError = "Đường dẫn họp phải bắt đầu bằng http:// hoặc https://.";
+
+// Giữ bản nháp đang gõ của những dòng còn tồn tại; chỉ khởi tạo cho dòng mới.
+function mergeDrafts(current: Record<string, string>, rows: Assignment[], pick: (row: Assignment) => string) {
+  const next: Record<string, string> = {};
+  for (const row of rows) next[row.id] = row.id in current ? current[row.id] : pick(row);
+  return next;
+}
+
+async function fetchMembers(clubId: string): Promise<{ members: Member[]; error: string | null }> {
+  try {
+    const response = await fetch(`/api/admin/club-members?clubId=${encodeURIComponent(clubId)}`);
+    const json = await response.json().catch(() => null) as { members?: Member[]; error?: string } | null;
+    if (!response.ok) return { members: [], error: friendlyError({ message: json?.error }, "Không tải được danh sách thành viên.") };
+    return { members: json?.members ?? [], error: null };
+  } catch (error) {
+    return { members: [], error: friendlyError(error, "Không tải được danh sách thành viên.") };
+  }
+}
 
 function toDateTimeLocalValue(value: string) {
   const date = new Date(value);
@@ -79,19 +101,18 @@ export function InterviewsManager() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ keepDrafts = false }: { keepDrafts?: boolean } = {}) => {
     if (!supabase || !clubId) { setLoading(false); return; }
     setLoading(true); setError("");
-    const [campaignResult, memberResponse] = await Promise.all([
+    const [campaignResult, memberResult] = await Promise.all([
       supabase.from("recruitment_campaigns").select("id,name,status,start_date,end_date,created_at").eq("club_id", clubId),
-      fetch(`/api/admin/club-members?clubId=${encodeURIComponent(clubId)}`),
+      fetchMembers(clubId),
     ]);
-    const memberJson = await memberResponse.json();
-    if (campaignResult.error || !memberResponse.ok) {
-      setError(campaignResult.error?.message ?? memberJson.error ?? "Không tải được dữ liệu CLB."); setLoading(false); return;
+    if (campaignResult.error || memberResult.error) {
+      setError(campaignResult.error ? friendlyError(campaignResult.error, "Không tải được dữ liệu CLB.") : memberResult.error ?? "Không tải được dữ liệu CLB."); setLoading(false); return;
     }
     const campaignRows = (campaignResult.data ?? []) as Campaign[];
-    setCampaigns(campaignRows); setMembers((memberJson.members ?? []) as Member[]);
+    setCampaigns(campaignRows); setMembers(memberResult.members);
     setCampaignFilter((current) => campaignRows.some((campaign) => campaign.id === current) ? current : getNearestCampaignId(campaignRows));
     if (!campaignRows.length) {
       setPositions([]); setApplications([]); setSessions([]); setAssignments([]); setSupport([]); setSupportSelection({}); setLoading(false); return;
@@ -99,14 +120,14 @@ export function InterviewsManager() {
     const campaignIds = campaignRows.map((campaign) => campaign.id);
     const [positionResult, applicationResult, sessionResult] = await Promise.all([
       supabase.from("recruitment_positions").select("id,campaign_id,name,team_id").in("campaign_id", campaignIds),
-      supabase.from("applications").select("id,campaign_id,position_id,full_name,email,phone,student_code,class_name").in("campaign_id", campaignIds).order("full_name"),
+      fetchAllPages<Application>((from, to) => supabase.from("applications").select("id,campaign_id,position_id,full_name,email,phone,student_code,class_name").in("campaign_id", campaignIds).order("full_name").order("id").range(from, to)),
       supabase.from("interview_sessions").select("id,campaign_id,position_id,round,start_time,end_time,location,meeting_link,capacity,note").in("campaign_id", campaignIds).order("start_time"),
     ]);
     const failure = positionResult.error ?? applicationResult.error ?? sessionResult.error;
-    if (failure) { setError(failure.message); setLoading(false); return; }
+    if (failure) { setError(friendlyError(failure, "Không tải được lịch phỏng vấn.")); setLoading(false); return; }
     const sessionRows = (sessionResult.data ?? []) as Session[];
     setPositions((positionResult.data ?? []) as Position[]);
-    setApplications((applicationResult.data ?? []) as Application[]);
+    setApplications(applicationResult.data);
     setSessions(sessionRows);
     if (sessionRows.length) {
       const sessionIds = sessionRows.map((session) => session.id);
@@ -114,13 +135,13 @@ export function InterviewsManager() {
         supabase.from("interview_assignments").select("id,session_id,application_id,comment,result,score").in("session_id", sessionIds),
         supabase.from("interview_session_members").select("session_id,member_id,duty").in("session_id", sessionIds),
       ]);
-      if (assignmentResult.error || supportResult.error) setError(assignmentResult.error?.message ?? supportResult.error?.message ?? "Không tải được dữ liệu ca phỏng vấn.");
+      if (assignmentResult.error || supportResult.error) setError(friendlyError(assignmentResult.error ?? supportResult.error, "Không tải được dữ liệu ca phỏng vấn."));
       const assignmentRows = (assignmentResult.data ?? []) as Assignment[];
       const supportRows = (supportResult.data ?? []) as SupportAssignment[];
       setAssignments(assignmentRows); setSupport(supportRows);
-      setDraftNotes(Object.fromEntries(assignmentRows.map((row) => [row.id, row.comment ?? ""])));
-      setDraftResults(Object.fromEntries(assignmentRows.map((row) => [row.id, row.result])));
-      setDraftScores(Object.fromEntries(assignmentRows.map((row) => [row.id, row.score == null ? "" : String(row.score)])));
+      setDraftNotes((current) => mergeDrafts(keepDrafts ? current : {}, assignmentRows, (row) => row.comment ?? ""));
+      setDraftResults((current) => mergeDrafts(keepDrafts ? current : {}, assignmentRows, (row) => row.result));
+      setDraftScores((current) => mergeDrafts(keepDrafts ? current : {}, assignmentRows, (row) => row.score == null ? "" : String(row.score)));
       const selected: Record<string, string[]> = {};
       for (const row of supportRows) selected[row.session_id] = [...(selected[row.session_id] ?? []), row.member_id];
       setSupportSelection(selected);
@@ -149,22 +170,13 @@ export function InterviewsManager() {
     const missing = applicationIds.filter((id) => !answersLoaded.includes(id));
     if (!supabase || !missing.length) return;
     setAnswersLoading(true); setError("");
-    const { data: answerRows, error: answerError } = await supabase.from("application_answers").select("application_id,question_id,answer_text,answer_json").in("application_id", missing);
-    if (answerError) setError(`Không tải được câu trả lời ứng viên: ${answerError.message}`);
+    const { answers: loaded, error: answerError } = await loadApplicationAnswers(supabase, missing);
+    if (answerError) setError(friendlyError(answerError, "Không tải được câu trả lời ứng viên."));
     else {
-      const rows = (answerRows ?? []) as Omit<FormAnswer, "question_text">[];
-      const questionIds = [...new Set(rows.map((answer) => answer.question_id))];
-      const { data: questionRows, error: questionError } = questionIds.length
-        ? await supabase.from("form_questions").select("id,question_text").in("id", questionIds)
-        : { data: [], error: null };
-      if (questionError) setError(`Không tải được nội dung câu hỏi: ${questionError.message}`);
-      else {
-        const questionById = new Map((questionRows ?? []).map((question) => [question.id, question.question_text]));
-        const grouped: Record<string, FormAnswer[]> = {};
-        for (const answer of rows) grouped[answer.application_id] = [...(grouped[answer.application_id] ?? []), { ...answer, question_text: questionById.get(answer.question_id) ?? "Câu trả lời" }];
-        setAnswers((current) => ({ ...current, ...grouped }));
-        setAnswersLoaded((current) => [...new Set([...current, ...missing])]);
-      }
+      const grouped: Record<string, FormAnswer[]> = {};
+      for (const answer of loaded) grouped[answer.application_id] = [...(grouped[answer.application_id] ?? []), answer];
+      setAnswers((current) => ({ ...current, ...grouped }));
+      setAnswersLoaded((current) => [...new Set([...current, ...missing])]);
     }
     setAnswersLoading(false);
   }
@@ -182,6 +194,8 @@ export function InterviewsManager() {
       ? positions.filter((position) => position.campaign_id === campaignId)
       : positions.filter((position) => position.id === selectedPositionId && position.campaign_id === campaignId);
     if (!targetPositions.length) { setError("Vui lòng chọn vị trí thuộc đợt tuyển đã chọn."); return; }
+    const newLink = String(values.get("meeting_link") ?? "").trim();
+    if (newLink && !MEETING_LINK_PATTERN.test(newLink)) { setError(meetingLinkError); return; }
     setBusy(true); setError(""); setNotice("");
     const sessionRows = targetPositions.map((position) => ({
       campaign_id: position.campaign_id, position_id: position.id,
@@ -191,7 +205,7 @@ export function InterviewsManager() {
     }));
     const { error: insertError } = await supabase.from("interview_sessions").insert(sessionRows);
     setBusy(false);
-    if (insertError) { setError(insertError.message); return; }
+    if (insertError) { setError(friendlyError(insertError, "Không tạo được ca phỏng vấn.")); return; }
     form.reset(); setCreateCampaignId(""); setNotice(`Đã tạo ca phỏng vấn cho ${targetPositions.length} vị trí.`); await load();
   }
 
@@ -213,13 +227,13 @@ export function InterviewsManager() {
     setBusy(true); setError(""); setNotice("");
     if (add.length) {
       const { error: addError } = await supabase.from("interview_session_members").upsert(add.map((member_id) => ({ session_id: session.id, member_id })), { onConflict: "session_id,member_id" });
-      if (addError) { setError(addError.message); setBusy(false); return; }
+      if (addError) { setError(friendlyError(addError, "Không lưu được người hỗ trợ.")); setBusy(false); return; }
     }
     for (const memberId of remove) {
       const { error: deleteError } = await supabase.from("interview_session_members").delete().eq("session_id", session.id).eq("member_id", memberId);
-      if (deleteError) { setError(deleteError.message); setBusy(false); return; }
+      if (deleteError) { setError(friendlyError(deleteError, "Không lưu được người hỗ trợ.")); setBusy(false); return; }
     }
-    setBusy(false); setNotice("Đã cập nhật thành viên hỗ trợ."); await load();
+    setBusy(false); setNotice("Đã cập nhật thành viên hỗ trợ."); await load({ keepDrafts: true });
   }
 
   async function saveNote(assignment: Assignment) {
@@ -232,7 +246,7 @@ export function InterviewsManager() {
     setBusy(true); setError(""); setNotice("");
     const { data: updated, error: updateError } = await supabase.from("interview_assignments").update({ comment: comment.trim() || null, result, score }).eq("id", assignment.id).select("id");
     setBusy(false);
-    if (updateError) { setError(updateError.message); return; }
+    if (updateError) { setError(friendlyError(updateError, "Không lưu được đánh giá.")); return; }
     if (!updated?.length) { setError("Không lưu được đánh giá. Ứng viên có thể đã bị gỡ khỏi ca hoặc bạn không có quyền."); return; }
     setAssignments((current) => current.map((row) => row.id === assignment.id ? { ...row, comment: comment.trim() || null, result, score } : row));
     setNotice("Đã lưu đánh giá ứng viên.");
@@ -245,7 +259,7 @@ export function InterviewsManager() {
     setBusy(true); setError(""); setNotice("");
     const { error: insertError } = await supabase.from("interview_assignments").insert({ session_id: sessionId, application_id: applicationId });
     setBusy(false);
-    if (insertError) setError(insertError.message); else { setNotice("Đã thêm ứng viên vào ca phỏng vấn."); setCandidateSelection((current) => ({ ...current, [sessionId]: "" })); await load(); }
+    if (insertError) setError(friendlyError(insertError, "Không thêm được ứng viên vào ca.")); else { setNotice("Đã thêm ứng viên vào ca phỏng vấn."); setCandidateSelection((current) => ({ ...current, [sessionId]: "" })); await load({ keepDrafts: true }); }
   }
 
   async function deleteSession(session: Session) {
@@ -261,7 +275,7 @@ export function InterviewsManager() {
     setBusy(true); setError(""); setNotice("");
     const { data: deletedSession, error: deleteError } = await supabase.from("interview_sessions").delete().eq("id", session.id).select("id").maybeSingle();
     setBusy(false);
-    if (deleteError) { setError(deleteError.message); return; }
+    if (deleteError) { setError(friendlyError(deleteError, "Không xóa được ca phỏng vấn.")); return; }
     if (!deletedSession) { setError("Không thể xóa ca này. Ca có thể đã được gán ứng viên/người hỗ trợ hoặc bạn không có quyền."); return; }
     setSessions((current) => current.filter((row) => row.id !== session.id));
     setAssignments((current) => current.filter((row) => row.session_id !== session.id));
@@ -281,6 +295,8 @@ export function InterviewsManager() {
       setError("Thời gian kết thúc phải sau thời gian bắt đầu.");
       return;
     }
+    const newLink = String(values.get("meeting_link") ?? "").trim();
+    if (newLink && !MEETING_LINK_PATTERN.test(newLink)) { setError(meetingLinkError); return; }
 
     setBusy(true); setError(""); setNotice("");
     const { data: updatedSession, error: updateError } = await supabase.from("interview_sessions").update({
@@ -293,7 +309,7 @@ export function InterviewsManager() {
       note: String(values.get("note") ?? "").trim() || null,
     }).eq("id", session.id).select("id").maybeSingle();
     setBusy(false);
-    if (updateError) { setError(updateError.message); return; }
+    if (updateError) { setError(friendlyError(updateError, "Không cập nhật được ca phỏng vấn.")); return; }
     if (!updatedSession) { setError("Không thể cập nhật ca này. Vui lòng kiểm tra quyền quản trị."); return; }
     setSessions((current) => current.map((row) => row.id === session.id ? {
       ...row,
@@ -381,7 +397,7 @@ export function InterviewsManager() {
         </form>}
         <div className="flex flex-col gap-6 border-t p-5">
           <section className="order-2"><h3 className="font-semibold">Ứng viên trong ca</h3>{canWrite && candidates.length > 0 && <form onSubmit={(event) => void addCandidate(event, session.id)} className="mt-3 grid gap-2 rounded-lg border bg-zinc-50 p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"><label className="text-sm">Tìm ứng viên<input type="search" value={candidateSearch} onChange={(event) => setCandidateSearch(event.target.value)} placeholder="Họ tên, mã sinh viên hoặc lớp" className={inputClass} /></label><label className="text-sm">Ứng viên<select required value={candidateSelection[session.id] ?? ""} onChange={(event) => setCandidateSelection((current) => ({ ...current, [session.id]: event.target.value }))} className={inputClass}><option value="" disabled>Chọn ứng viên</option>{filteredCandidates.map((application) => <option key={application.id} value={application.id}>{application.full_name} · {application.student_code || "Chưa có MSSV"} · {application.class_name || "Chưa có lớp"}</option>)}</select></label><button disabled={busy || !filteredCandidates.length} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Thêm vào ca</button>{candidateSearch && !filteredCandidates.length && <p className="text-sm text-zinc-500 sm:col-span-3">Không tìm thấy ứng viên phù hợp.</p>}</form>}
-            {session.meeting_link && <a href={session.meeting_link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-emerald-800 underline">Mở đường dẫn họp</a>}{session.note && <p className="mt-2 text-sm text-zinc-600">Ghi chú ca: {session.note}</p>}
+            {session.meeting_link && MEETING_LINK_PATTERN.test(session.meeting_link) && <a href={session.meeting_link} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm font-medium text-emerald-800 underline">Mở đường dẫn họp</a>}{session.note && <p className="mt-2 text-sm text-zinc-600">Ghi chú ca: {session.note}</p>}
             {sessionAssignments.length ? <><label className="mt-3 block max-w-md text-sm font-medium">Tìm ứng viên trong ca<input type="search" value={sessionApplicantSearch} onChange={(event) => setSessionApplicantSearch(event.target.value)} placeholder="Họ tên, mã sinh viên hoặc lớp" className={inputClass} /></label><div className="mt-3 overflow-x-auto rounded-lg border"><table className="w-full min-w-[1100px] text-left text-sm"><thead className="bg-zinc-50 text-xs uppercase text-zinc-500"><tr><th className="px-4 py-3">Ứng viên</th><th className="w-28 px-2 py-3">Vị trí</th><th className="px-4 py-3">Câu trả lời trong form</th><th className="px-4 py-3">Kết quả / điểm</th><th className="px-4 py-3">Ghi chú</th></tr></thead><tbody className="divide-y">{filteredSessionAssignments.map((assignment) => {
               const applicant = applicationById.get(assignment.application_id);
               if (!applicant) return null;

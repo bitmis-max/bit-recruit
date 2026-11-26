@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { friendlyError } from "../../lib/ui/friendly-error";
+import { notifyMembersChanged } from "./adminClient";
+import { useDialog } from "./useDialog";
 import { readApplicantFile, type ImportData } from "./recruitment/applicantImport";
 import { buildMemberPayload, guessMemberMapping, mapMemberRows, memberImportMessage, memberMappingOptions, type MemberImportResult, type MemberPayloadRow } from "./memberImport";
 
@@ -18,7 +21,6 @@ export function MemberImportDialog({ clubId, disabled = false, onError, onImport
   const supabase = getSupabaseClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const openButton = useRef<HTMLButtonElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
   const [reading, setReading] = useState(false);
   const [running, setRunning] = useState(false);
   const [data, setData] = useState<ImportData | null>(null);
@@ -40,15 +42,7 @@ export function MemberImportDialog({ clubId, disabled = false, onError, onImport
     openButton.current?.focus();
   }, [running]);
 
-  useEffect(() => {
-    if (!data) return;
-    dialogRef.current?.focus();
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") close();
-    }
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [data, close]);
+  const dialogRef = useDialog<HTMLElement>(close, !!data);
 
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const input = event.target;
@@ -61,7 +55,7 @@ export function MemberImportDialog({ clubId, disabled = false, onError, onImport
       setImportError("");
       setData(parsed);
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Không đọc được file.");
+      onError(friendlyError(e, "Không đọc được file."));
     } finally {
       setReading(false);
       input.value = "";
@@ -73,9 +67,10 @@ export function MemberImportDialog({ clubId, disabled = false, onError, onImport
     setRunning(true); setImportError("");
     const { data: result, error } = await supabase.rpc("import_members", { p_club_id: clubId, p_rows: payload.value });
     setRunning(false);
-    if (error) { setImportError(error.message); return; }
+    if (error) { setImportError(friendlyError(error, "Không import được. Vui lòng kiểm tra file rồi thử lại.")); return; }
     setData(null);
     openButton.current?.focus();
+    notifyMembersChanged();
     await onImported(memberImportMessage((result ?? {}) as MemberImportResult));
   }
 
@@ -94,7 +89,7 @@ export function MemberImportDialog({ clubId, disabled = false, onError, onImport
         <div className="flex-1 space-y-5 overflow-y-auto p-5">
           {data.sheetCount > 1 && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ đọc sheet &ldquo;{data.sheetName}&rdquo;. {data.sheetCount - 1} sheet còn lại bị bỏ qua.</p>}
           <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-600">
-            <li>Vai trò và quyền không lấy từ file; cấp ở mục Nhiệm kỳ.</li>
+            <li>Vai trò và quyền không lấy từ file; cấp ở mục Nhiệm kỳ. Người thuộc Ban chủ nhiệm/Ban chủ chốt chỉ được cập nhật khi Chủ nhiệm import.</li>
             <li>Trùng Mã sinh viên (hoặc email nếu không có Mã sinh viên) với người đã có trong CLB thì cập nhật người đó. Ô trống trong file không xóa dữ liệu cũ.</li>
             <li>Tên ban phải đúng như trên web, ban chưa có thì tạo trước ở mục Quản lí ban.</li>
             <li>Số dòng được tính không kể dòng tiêu đề, tối đa 1000 dòng. Lỗi ở một dòng thì cả file không được ghi.</li>

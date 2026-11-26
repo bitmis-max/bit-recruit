@@ -4,6 +4,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { z } from "zod";
 import { getSupabaseClient } from "../lib/supabase/client";
 import type { FormQuestion } from "../lib/recruitment/types";
+import { friendlyError } from "../lib/ui/friendly-error";
 import { formatInterviewRange } from "../lib/recruitment/interview-time";
 import { OTHER_OPTION } from "./admin/recruitment/QuestionFields";
 
@@ -148,9 +149,9 @@ export default function ApplyForm({ position, questions, interviewSessions }: Pr
     });
 
     if (error) {
-      setSubmitError(error.message.includes("duplicate key")
+      setSubmitError(error.code === "23505" || /duplicate key/i.test(error.message)
         ? "Địa chỉ email này đã nộp đơn cho vị trí này."
-        : `Chưa gửi được đơn: ${error.message}`);
+        : `Chưa gửi được đơn: ${friendlyError(error, "Có lỗi xảy ra. Vui lòng thử lại sau ít phút.")}`);
     } else if (typeof data !== "string" || !data) {
       setSubmitError("Máy chủ chưa trả về mã theo dõi. Vui lòng thử lại hoặc liên hệ ban quản trị.");
     } else {

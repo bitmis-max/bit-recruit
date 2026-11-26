@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { friendlyError } from "../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "./AdminClubContext";
 import { QuestionFields, type EditableQuestion } from "./recruitment/QuestionFields";
 
@@ -28,7 +29,7 @@ export function FormTemplatesManager() {
     if (!supabase) { setLoading(false); return; }
     setLoading(true);
     const { data, error: queryError } = await supabase.from("form_templates").select("id,name,description,is_default").order("is_default", { ascending: false }).order("name");
-    if (queryError) { message(queryError.message, true); setLoading(false); return; }
+    if (queryError) { message(friendlyError(queryError, "Không tải được mẫu biểu mẫu."), true); setLoading(false); return; }
     const rows = (data ?? []) as Template[];
     setTemplates(rows);
     setSelectedId((current) => rows.some((item) => item.id === current) ? current : rows.find((item) => item.is_default)?.id ?? rows[0]?.id ?? "");
@@ -45,7 +46,7 @@ export function FormTemplatesManager() {
       if (!supabase || !selectedId) { setQuestions([]); return; }
       const { data, error: queryError } = await supabase.from("form_template_questions").select("id,template_id,question_text,question_type,field_key,options,is_required,order_index").eq("template_id", selectedId).order("order_index");
       if (cancelled) return;
-      if (queryError) message(queryError.message, true); else setQuestions((data ?? []) as TemplateQuestion[]);
+      if (queryError) message(friendlyError(queryError, "Không tải được câu hỏi của mẫu."), true); else setQuestions((data ?? []) as TemplateQuestion[]);
     }
     void loadQuestions();
     return () => { cancelled = true; };
@@ -59,7 +60,7 @@ export function FormTemplatesManager() {
     setBusy(true);
     const { data, error: insertError } = await supabase.from("form_templates").insert({ name, is_default: templates.length === 0 }).select("id,name,description,is_default").single();
     setBusy(false);
-    if (insertError) message(insertError.message, true); else { setTemplates((rows) => [...rows, data as Template]); setSelectedId(data.id); formElement.reset(); message("Đã tạo mẫu biểu mẫu."); }
+    if (insertError) message(friendlyError(insertError, "Không tạo được mẫu biểu mẫu."), true); else { setTemplates((rows) => [...rows, data as Template]); setSelectedId(data.id); formElement.reset(); message("Đã tạo mẫu biểu mẫu."); }
   }
 
   async function saveTemplate(event: FormEvent<HTMLFormElement>) {
@@ -67,7 +68,7 @@ export function FormTemplatesManager() {
     const values = new FormData(event.currentTarget); const payload = { name: String(values.get("name") ?? "").trim(), description: String(values.get("description") ?? "").trim() || null };
     if (!payload.name) return;
     setBusy(true); const { error: updateError } = await supabase.from("form_templates").update(payload).eq("id", selected.id); setBusy(false);
-    if (updateError) message(updateError.message, true); else { setTemplates((rows) => rows.map((item) => item.id === selected.id ? { ...item, ...payload } : item)); message("Đã lưu thông tin mẫu."); }
+    if (updateError) message(friendlyError(updateError, "Không lưu được thông tin mẫu."), true); else { setTemplates((rows) => rows.map((item) => item.id === selected.id ? { ...item, ...payload } : item)); message("Đã lưu thông tin mẫu."); }
   }
 
   async function setDefault() {
@@ -76,14 +77,14 @@ export function FormTemplatesManager() {
     const clear = await supabase.from("form_templates").update({ is_default: false }).eq("is_default", true);
     const set = clear.error ? null : await supabase.from("form_templates").update({ is_default: true }).eq("id", selected.id);
     setBusy(false);
-    if (clear.error || set?.error) message((clear.error ?? set?.error)?.message ?? "Không đổi được mẫu mặc định.", true);
+    if (clear.error || set?.error) message(friendlyError(clear.error ?? set?.error, "Không đổi được mẫu mặc định."), true);
     else { setTemplates((rows) => rows.map((item) => ({ ...item, is_default: item.id === selected.id }))); message("Đã đặt làm mẫu mặc định."); }
   }
 
   async function addQuestion() {
     if (!supabase || !selected || !canWrite) return;
     const { data, error: insertError } = await supabase.from("form_template_questions").insert({ template_id: selected.id, question_text: "Câu hỏi mới", question_type: "text", field_key: null, is_required: false, order_index: questions.length }).select("id,template_id,question_text,question_type,field_key,options,is_required,order_index").single();
-    if (insertError) message(insertError.message, true); else setQuestions((rows) => [...rows, data as TemplateQuestion]);
+    if (insertError) message(friendlyError(insertError, "Không thêm được câu hỏi."), true); else setQuestions((rows) => [...rows, data as TemplateQuestion]);
   }
 
   async function saveQuestions() {
@@ -109,7 +110,7 @@ export function FormTemplatesManager() {
     }).eq("id", question.id)));
     const failed = results.find((result) => result.error)?.error;
     setBusy(false);
-    if (failed) message(failed.message, true);
+    if (failed) message(friendlyError(failed, "Không lưu được các câu hỏi."), true);
     else {
       setQuestions(payload.map(({ question, index, options }) => ({ ...question, question_text: question.question_text.trim(), options, order_index: index })));
       message("Đã lưu các câu hỏi và thứ tự.");
@@ -119,7 +120,7 @@ export function FormTemplatesManager() {
   async function deleteQuestion(question: TemplateQuestion) {
     if (!supabase || !canWrite || !confirm("Xóa câu hỏi khỏi mẫu? Các biểu mẫu đã tạo từ mẫu không bị ảnh hưởng.")) return;
     const { error: deleteError } = await supabase.from("form_template_questions").delete().eq("id", question.id);
-    if (deleteError) message(deleteError.message, true); else { setQuestions((rows) => rows.filter((item) => item.id !== question.id).map((item, index) => ({ ...item, order_index: index }))); message("Đã xóa câu hỏi khỏi mẫu."); }
+    if (deleteError) message(friendlyError(deleteError, "Không xóa được câu hỏi."), true); else { setQuestions((rows) => rows.filter((item) => item.id !== question.id).map((item, index) => ({ ...item, order_index: index }))); message("Đã xóa câu hỏi khỏi mẫu."); }
   }
 
   function patchQuestion(id: string, patch: Partial<TemplateQuestion>) { setQuestions((rows) => rows.map((item) => item.id === id ? { ...item, ...patch } : item)); }

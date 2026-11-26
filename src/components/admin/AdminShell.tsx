@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseClient } from "../../lib/supabase/client";
 import { AdminClubProvider, type AdminClub } from "./AdminClubContext";
+import { setAdminClubCookie } from "./adminClient";
 import { EventsManager } from "./EventsManager";
 import { ClubAccountsManager } from "./ClubAccountsManager";
 import { ClubMembersManager } from "./ClubMembersManager";
@@ -40,10 +41,10 @@ export function AdminShell({ clubs, selectedClubId, email, children }: { clubs: 
   const isStaff = current?.role === "owner" || current?.role === "admin";
   const can = (permission?: ClubPermission) => !permission || hasPermission(current?.role, current?.permissions, permission);
   useEffect(() => {
-    if (selectedClubId) document.cookie = `admin_club=${encodeURIComponent(selectedClubId)}; Path=/manage-clubs; SameSite=Lax; Max-Age=2592000`;
+    if (selectedClubId) setAdminClubCookie(selectedClubId);
   }, [selectedClubId]);
   async function selectClub(id: string) {
-    document.cookie = `admin_club=${encodeURIComponent(id)}; Path=/manage-clubs; SameSite=Lax; Max-Age=2592000`;
+    setAdminClubCookie(id);
     router.refresh();
   }
   async function signOut() {

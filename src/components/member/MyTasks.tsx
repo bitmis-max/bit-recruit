@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { friendlyError } from "../../lib/ui/friendly-error";
 
 type TaskInfo = { id: string; title: string; description: string | null; due_at: string; status: "open" | "closed"; kind: "general" | "engagement" | "avatar"; post_url: string | null; frame_id: string | null };
 type Assignment = { task_id: string; status: "pending" | "done" | "missed"; completed_at: string | null; note: string | null; tasks: TaskInfo | TaskInfo[] | null };
@@ -61,7 +62,7 @@ export function MyTasks({ memberId }: { memberId: string }) {
     setBusyId(item.task_id); setError(""); setNotice("");
     const { error: rpcError } = await supabase.rpc("set_my_task_done", { p_task_id: item.task_id, p_done: done });
     setBusyId("");
-    if (rpcError) { setError(rpcError.message); return; }
+    if (rpcError) { setError(friendlyError(rpcError, "Không cập nhật được việc. Vui lòng thử lại.")); return; }
     setNotice(done ? "Đã đánh dấu xong." : "Đã bỏ đánh dấu.");
     setReloadKey((value) => value + 1);
   }

@@ -230,16 +230,16 @@ select is(
 select public.tap_as(public.u('a3'));
 select is(
   public.import_members(public.u('c1'), '[{"full_name":"Admin recruit","student_code":"E4","team":"Ban Truyền thông"}]'::jsonb),
-  '{"inserted":0,"updated":0,"unchanged":1,"staff_team_skipped":1}'::jsonb,
-  'admin không đổi được ban của admin khác: bỏ qua ban, đếm staff_team_skipped, không có gì khác đổi');
+  '{"inserted":0,"updated":0,"unchanged":0,"staff_team_skipped":1}'::jsonb,
+  'admin không đổi được ban của admin khác: dòng bị bỏ qua hoàn toàn, đếm staff_team_skipped (Đợt 7)');
 select is(
   public.import_members(public.u('c1'), '[{"full_name":"Phó chủ nhiệm","student_code":"E2","team":"Ban Chuyên môn","phone":"555"}]'::jsonb),
-  '{"inserted":0,"updated":1,"unchanged":0,"staff_team_skipped":1}'::jsonb,
-  'admin không đổi được ban của owner nhưng các trường khác vẫn cập nhật');
+  '{"inserted":0,"updated":0,"unchanged":0,"staff_team_skipped":1}'::jsonb,
+  'admin không sửa được gì ở dòng owner (kể cả phone): bỏ qua hoàn toàn (Đợt 7)');
 select is(
   public.import_members(public.u('c1'), '[{"full_name":"Phó chủ nhiệm","student_code":"E2","team":"ban truyền thông"}]'::jsonb),
-  '{"inserted":0,"updated":0,"unchanged":1,"staff_team_skipped":0}'::jsonb,
-  'ban trong file trùng ban hiện tại của owner: không tính là bỏ qua');
+  '{"inserted":0,"updated":0,"unchanged":0,"staff_team_skipped":1}'::jsonb,
+  'dòng owner bị bỏ qua hoàn toàn dù ban trong file trùng ban hiện tại (Đợt 7)');
 select is(
   public.import_members(public.u('c1'), '[{"full_name":"Cũ Bốn đổi","student_code":"S400","team":"Ban Chuyên môn"}]'::jsonb),
   '{"inserted":0,"updated":1,"unchanged":0,"staff_team_skipped":0}'::jsonb,
@@ -247,14 +247,14 @@ select is(
 reset role;
 select is((select team_id from public.club_members where id = public.u('e4')), public.u('d2'), 'ban của e4 giữ nguyên (d2)');
 select is((select team_id from public.club_members where id = public.u('e2')), public.u('d1'), 'ban của e2 giữ nguyên (d1)');
-select is((select phone from public.club_members where id = public.u('e2')), '555', 'phone của e2 đã cập nhật');
+select is((select phone from public.club_members where id = public.u('e2')), null, 'phone của e2 KHÔNG đổi (dòng owner bị bỏ qua hoàn toàn, Đợt 7)');
 select is((select team_id from public.club_members where id = public.u('aa04')), public.u('d2'), 'ban của thành viên thường đã đổi (d2)');
 
 select public.tap_as(public.u('a2'));
 select is(
   public.import_members(public.u('c1'), '[{"full_name":"Admin recruit","student_code":"E4","team":"Ban Truyền thông"}]'::jsonb),
-  '{"inserted":0,"updated":0,"unchanged":1,"staff_team_skipped":1}'::jsonb,
-  'owner không is_head cũng không đổi được ban của admin');
+  '{"inserted":0,"updated":0,"unchanged":0,"staff_team_skipped":1}'::jsonb,
+  'owner không is_head cũng không cập nhật được dòng admin (Đợt 7)');
 reset role;
 select public.tap_as(public.u('a1'));
 select is(

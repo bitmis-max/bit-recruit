@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { QuestionFields, type EditableQuestion } from "./QuestionFields";
 
 export type { QuestionType } from "./QuestionFields";
@@ -23,7 +24,7 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
       if (!supabase) return;
       const { data, error } = await supabase.from("form_templates").select("id,name,is_default").order("name");
       if (cancelled) return;
-      if (error) onError(error.message);
+      if (error) onError(friendlyError(error, "Không tải được danh sách template biểu mẫu."));
       else {
         const rows = (data ?? []) as TemplateOption[];
         setTemplates(rows);
@@ -62,8 +63,7 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
       }
       onFormChange(savedForm);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Không lưu được biểu mẫu.";
-      onError(message.includes("create_application_form_from_template") ? `${message} Hãy chạy migration baseline supabase/migrations/20261023000000_init.sql trên Supabase.` : message);
+      onError(friendlyError(error, "Không lưu được biểu mẫu."));
     }
     finally { setSaving(false); }
   }
@@ -71,21 +71,21 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
   async function deleteForm() {
     if (!form || !supabase || !confirm("Xóa biểu mẫu và toàn bộ câu hỏi trong biểu mẫu này?")) return;
     const { data: savedQuestions, error: questionLoadError } = await supabase.from("form_questions").select("id").eq("form_id", form.id);
-    if (questionLoadError) { onError(questionLoadError.message); return; }
+    if (questionLoadError) { onError(friendlyError(questionLoadError, "Không kiểm tra được câu hỏi của biểu mẫu.")); return; }
     const questionIds = (savedQuestions ?? []).map((question) => question.id);
     if (questionIds.length) {
       const { count, error } = await supabase.from("application_answers").select("id", { count: "exact", head: true }).in("question_id", questionIds);
-      if (error) { onError(error.message); return; }
+      if (error) { onError(friendlyError(error, "Không kiểm tra được câu trả lời của biểu mẫu.")); return; }
       if (count) { onError("Biểu mẫu đã có câu trả lời. Không thể xóa để bảo toàn dữ liệu ứng viên."); return; }
     }
     const { error } = await supabase.from("application_forms").delete().eq("id", form.id);
-    if (error) onError(error.message); else { onFormChange(null); onQuestionsChange([]); }
+    if (error) onError(friendlyError(error, "Không xóa được biểu mẫu.")); else { onFormChange(null); onQuestionsChange([]); }
   }
 
   async function addQuestion() {
     if (!form || !supabase) return;
     const { data, error } = await supabase.from("form_questions").insert({ form_id: form.id, question_text: "Câu hỏi mới", question_type: "text", field_key: null, is_required: false, order_index: questions.length }).select("id,question_text,question_type,field_key,options,is_required,order_index").single();
-    if (error) onError(error.message); else onQuestionsChange([...questions, data as Question]);
+    if (error) onError(friendlyError(error, "Không thêm được câu hỏi.")); else onQuestionsChange([...questions, data as Question]);
   }
 
   async function saveQuestions() {
@@ -118,13 +118,13 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
           order_index: index,
         })),
       });
-      if (failed) onError(failed.message.includes("save_application_form_questions") ? `${failed.message} Hãy chạy migration baseline supabase/migrations/20261023000000_init.sql trên Supabase.` : failed.message);
+      if (failed) onError(friendlyError(failed, "Không lưu được câu hỏi."));
       else {
     onQuestionsChange(payload.map(({ question, index, options }) => ({ ...question, question_text: question.question_text.trim(), options, order_index: index })));
         onError("");
       }
     } catch (error) {
-      onError(error instanceof Error ? error.message : "Không lưu được câu hỏi.");
+      onError(friendlyError(error, "Không lưu được câu hỏi."));
     } finally {
       setSaving(false);
     }
@@ -133,10 +133,10 @@ export function FormBuilder({ positionId, form, questions, canWrite, onFormChang
   async function deleteQuestion(id: string) {
     if (!supabase || !confirm("Xóa câu hỏi này?")) return;
     const { count, error: answerError } = await supabase.from("application_answers").select("id", { count: "exact", head: true }).eq("question_id", id);
-    if (answerError) { onError(answerError.message); return; }
+    if (answerError) { onError(friendlyError(answerError, "Không kiểm tra được câu trả lời của câu hỏi.")); return; }
     if (count) { onError("Câu hỏi đã có câu trả lời. Không thể xóa để bảo toàn dữ liệu ứng viên."); return; }
     const { error } = await supabase.from("form_questions").delete().eq("id", id);
-    if (error) { onError(error.message); return; }
+    if (error) { onError(friendlyError(error, "Không xóa được câu hỏi.")); return; }
     const next = questions.filter((question) => question.id !== id).map((question, index) => ({ ...question, order_index: index }));
     onQuestionsChange(next);
   }

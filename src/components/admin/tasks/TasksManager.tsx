@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
 import { facebookUrlPattern } from "../roles";
+import { useReloadOnAdminChange } from "../adminClient";
+import { useDialog } from "../useDialog";
 
 type AssigneeStatus = "pending" | "done" | "missed";
 type Assignee = { member_id: string; status: AssigneeStatus; note: string | null; completed_at: string | null };
@@ -56,7 +59,7 @@ export function TasksManager() {
   const [confirmTask, setConfirmTask] = useState<Task | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useDialog<HTMLDivElement>(() => { if (busy !== "delete") setConfirmTask(null); }, !!confirmTask);
 
   useEffect(() => {
     if (!supabase || !clubId || !canWrite) return;
@@ -75,7 +78,7 @@ export function TasksManager() {
       // Tập ban luôn gồm ban chính, kể cả khi bảng tập chưa trả dòng nào.
       const memberTeams = new Map(memberRows.map((row) => [row.id, new Set([...(row.team_id ? [row.team_id] : []), ...(row.club_member_teams ?? []).map((item) => item.team_id)])]));
       setData({
-        clubId, loadedAt: Date.now(), error: failure?.message ?? "",
+        clubId, loadedAt: Date.now(), error: failure ? friendlyError(failure, "Không tải được danh sách việc. Vui lòng thử lại.") : "",
         tasks: (taskResult.data ?? []) as unknown as Task[], members: memberRows, memberTeams, teams: (teamResult.data ?? []) as Team[], frames: (frameResult.data ?? []) as Frame[],
       });
     })();
@@ -93,7 +96,8 @@ export function TasksManager() {
     return () => { active = false; };
   }, [clubId, canWrite, canMail, senderKey]);
 
-  useEffect(() => { if (confirmTask) cancelRef.current?.focus(); }, [confirmTask]);
+  // Ban hoặc thành viên đổi ở tab khác: tải lại để danh sách người nhận/ban không bị cũ.
+  useReloadOnAdminChange(() => setReloadKey((key) => key + 1));
 
   const loaded = data && data.clubId === clubId ? data : null;
   const senderState = sender && sender.clubId === clubId ? sender : null;
@@ -135,7 +139,7 @@ export function TasksManager() {
       p_kind: form.kind, p_post_url: form.kind === "engagement" ? postUrl : null, p_frame_id: form.kind === "avatar" ? form.frameId || null : null, p_all_members: allMembers,
     });
     setBusy("");
-    if (rpcError) { setError(rpcError.message); return; }
+    if (rpcError) { setError(friendlyError(rpcError, "Không giao được việc. Vui lòng thử lại.")); return; }
     setForm(emptyForm); setMemberIds([]); setMemberQuery(""); setFilter("open");
     if (typeof newId === "string") setSelectedId(newId);
     setNotice("Đã giao việc. Người nhận sẽ thấy việc này ở trang cá nhân của họ.");
@@ -152,7 +156,7 @@ export function TasksManager() {
     setBusy(`assignee:${row.member_id}`); resetMessages();
     const { data: updated, error: updateError } = await supabase.from("task_assignees").update({ status: draft.status, note: draft.note.trim() || null }).eq("task_id", task.id).eq("member_id", row.member_id).select("member_id");
     setBusy("");
-    if (updateError) { setError(updateError.message); return; }
+    if (updateError) { setError(friendlyError(updateError, "Không cập nhật được trạng thái người nhận.")); return; }
     if (!updated?.length) { setError("Không cập nhật được: bạn không có quyền hoặc người nhận không còn trong việc này."); return; }
     setDrafts((current) => { const next = { ...current }; delete next[`${task.id}:${row.member_id}`]; return next; });
     setNotice("Đã cập nhật trạng thái người nhận.");
@@ -164,7 +168,7 @@ export function TasksManager() {
     setBusy("status"); resetMessages();
     const { data: updated, error: updateError } = await supabase.from("tasks").update({ status }).eq("id", task.id).select("id");
     setBusy("");
-    if (updateError) { setError(updateError.message); return; }
+    if (updateError) { setError(friendlyError(updateError, "Không cập nhật được việc.")); return; }
     if (!updated?.length) { setError("Không cập nhật được: bạn không có quyền hoặc việc không còn tồn tại."); return; }
     setNotice(status === "closed" ? "Đã đóng việc." : "Đã mở lại việc.");
     reload();
@@ -175,7 +179,7 @@ export function TasksManager() {
     setBusy("delete"); resetMessages();
     const { data: deleted, error: deleteError } = await supabase.from("tasks").delete().eq("id", confirmTask.id).select("id");
     setBusy(""); setConfirmTask(null);
-    if (deleteError) { setError(deleteError.message); return; }
+    if (deleteError) { setError(friendlyError(deleteError, "Không xóa được việc.")); return; }
     if (!deleted?.length) { setError("Không xóa được: bạn không có quyền hoặc việc không còn tồn tại."); return; }
     setSelectedId(""); setNotice("Đã xóa việc.");
     reload();
@@ -293,11 +297,11 @@ export function TasksManager() {
       </div>
     </div>
 
-    {confirmTask && <div role="presentation" onKeyDown={(event) => { if (event.key === "Escape" && busy !== "delete") setConfirmTask(null); }} className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="delete-task-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+    {confirmTask && <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="delete-task-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl outline-none">
         <h2 id="delete-task-title" className="break-words text-lg font-bold">Xóa việc “{confirmTask.title}”?</h2>
         <p className="mt-3 text-sm text-zinc-700">Việc và trạng thái của {confirmTask.task_assignees.length} người nhận sẽ bị xóa, bảng đóng góp cũng không còn tính việc này. Nếu chỉ muốn ngừng nhắc, hãy chọn “Đóng việc” thay vì xóa.</p>
-        <div className="mt-5 flex justify-end gap-2"><button ref={cancelRef} type="button" disabled={busy === "delete"} onClick={() => setConfirmTask(null)} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50">Hủy</button><button type="button" disabled={busy === "delete"} onClick={() => void deleteTask()} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "delete" ? "Đang xóa…" : "Xóa việc"}</button></div>
+        <div className="mt-5 flex justify-end gap-2"><button data-autofocus type="button" disabled={busy === "delete"} onClick={() => setConfirmTask(null)} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50">Hủy</button><button type="button" disabled={busy === "delete"} onClick={() => void deleteTask()} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "delete" ? "Đang xóa…" : "Xóa việc"}</button></div>
       </div>
     </div>}
   </section>;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickReminders, buildReminderEmail } from "../../src/lib/tasks/reminders.ts";
+import { pickReminders, buildReminderEmail, isPastDeadline } from "../../src/lib/tasks/reminders.ts";
 import type { ReminderRow } from "../../src/lib/tasks/reminders.ts";
 
 const NOW = new Date("2026-11-11T01:00:00.000Z");
@@ -150,4 +150,11 @@ test("buildReminderEmail: chỉ có một nhóm vẫn dựng được mail", () 
   const onlyOverdue = buildReminderEmail("An", "CLB BIT", [], [row(-1 * H, { title: "Chỉ quá hạn" })], BASE);
   assert.ok(onlyOverdue.html.includes("Chỉ quá hạn"));
   assert.ok(onlyOverdue.subject.trim().length > 0);
+});
+
+test("isPastDeadline: không đặt hạn thì không bao giờ quá hạn; quá hạn khi now > deadline", () => {
+  assert.equal(isPastDeadline(undefined, 9e15), false);
+  assert.equal(isPastDeadline(1000, 999), false);
+  assert.equal(isPastDeadline(1000, 1000), false);
+  assert.equal(isPastDeadline(1000, 1001), true);
 });

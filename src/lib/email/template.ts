@@ -1,3 +1,5 @@
+import { MAX_HTML_LENGTH, MAX_SUBJECT_LENGTH } from "./validators.ts";
+
 export type RecipientRecord = Record<string, string>;
 
 export type EmailImageAsset = {
@@ -69,6 +71,20 @@ export function buildEmailHtml(
   return `${imageMarkup}${mergedHtml}`;
 }
 
+const IMAGE_TYPE_BY_EXTENSION: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+  webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp",
+};
+
+/** Luôn trả về kiểu `image/*` (máy chủ từ chối kiểu khác): theo mimeType, rồi tiền tố data URL, rồi đuôi tên file, mặc định image/png. */
+export function resolveImageMimeType(image: EmailImageAsset): string {
+  if (image.mimeType.startsWith("image/")) return image.mimeType;
+  const fromDataUrl = /^data:(image\/[\w.+-]+)[;,]/i.exec(image.source)?.[1];
+  if (fromDataUrl) return fromDataUrl.toLowerCase();
+  const ext = image.name.split(".").pop()?.toLowerCase() ?? "";
+  return IMAGE_TYPE_BY_EXTENSION[ext] ?? "image/png";
+}
+
 export function buildImageAttachment(
   image: EmailImageAsset,
   record?: RecipientRecord
@@ -81,7 +97,7 @@ export function buildImageAttachment(
     return {
       filename: image.name,
       content: svgText,
-      contentType: image.mimeType || "image/svg+xml",
+      contentType: resolveImageMimeType(image),
       encoding: "utf8",
     };
   }
@@ -93,7 +109,7 @@ export function buildImageAttachment(
   return {
     filename: image.name,
     content: base64,
-    contentType: image.mimeType || "application/octet-stream",
+    contentType: resolveImageMimeType(image),
     encoding: "base64",
   };
 }
@@ -106,4 +122,19 @@ export function extractVariables(html: string) {
     found.add(match[1]);
   }
   return Array.from(found.values());
+}
+
+/** Nội dung có chữ hoặc ảnh/bảng (bỏ thẻ HTML rỗng và `&nbsp;`). */
+export function htmlHasContent(html: string) {
+  if (/<(img|table|video|iframe|hr)\b/i.test(html)) return true;
+  return html.replace(/<[^>]*>/g, " ").replace(/&nbsp;|&#160;/gi, " ").trim().length > 0;
+}
+
+/** Kiểm trước khi gửi. Trả về thông báo tiếng Việt, hoặc null nếu hợp lệ. Giới hạn khớp /api/send-email. */
+export function checkComposeBeforeSend(subject: string, html: string): string | null {
+  if (!subject.trim()) return "Tiêu đề thư đang trống.";
+  if (!htmlHasContent(html)) return "Nội dung thư đang trống.";
+  if (subject.length > MAX_SUBJECT_LENGTH) return `Tiêu đề dài quá ${MAX_SUBJECT_LENGTH} ký tự.`;
+  if (html.length > MAX_HTML_LENGTH) return "Nội dung thư quá lớn (tối đa 500 KB).";
+  return null;
 }

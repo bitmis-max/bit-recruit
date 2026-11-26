@@ -4,12 +4,14 @@ import { useCallback, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { parseFile, type ParsedData } from "../../lib/files/parse";
 import type { EmailImageAsset } from "../../lib/email/template";
+import { friendlyError } from "../../lib/ui/friendly-error";
+import { ApplicationImport } from "./ApplicationImport";
 
 export type ImportPanelProps = {
   onDataParsed: (data: ParsedData, file?: File) => void;
   onImageParsed: (image: EmailImageAsset) => void;
-  onImportApplications: () => void;
-  importingApplications?: boolean;
+  /** CLB đang chọn (để import đơn ứng tuyển). */
+  clubId: string;
   externalError?: string | null;
 };
 
@@ -46,14 +48,15 @@ async function readImageFile(file: File): Promise<EmailImageAsset> {
 export function ImportPanel({
   onDataParsed,
   onImageParsed,
-  onImportApplications,
-  importingApplications = false,
+  clubId,
   externalError,
 }: ImportPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [imageName, setImageName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [showApplications, setShowApplications] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const dataInputRef = useRef<HTMLInputElement>(null);
@@ -63,12 +66,14 @@ export function ImportPanel({
       if (!files || files.length === 0) return;
       const file = files[0];
       setError(null);
+      setWarning(null);
       setFileName(file.name);
       try {
         const parsed = await parseFile(file);
+        setWarning(parsed.warnings?.join(" ") ?? null);
         onDataParsed(parsed, file);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Parse error");
+        setError(friendlyError(err, "Không đọc được file. Hãy kiểm tra định dạng CSV hoặc Excel."));
       }
     },
     [onDataParsed]
@@ -84,7 +89,7 @@ export function ImportPanel({
         const image = await readImageFile(file);
         onImageParsed(image);
       } catch (err) {
-        setImageError(err instanceof Error ? err.message : "Image parse error");
+        setImageError(friendlyError(err, "Không đọc được file ảnh."));
       }
     },
     [onImageParsed]
@@ -163,11 +168,11 @@ export function ImportPanel({
         </div>
         <button
           type="button"
-          onClick={onImportApplications}
-          disabled={importingApplications}
+          onClick={() => setShowApplications((open) => !open)}
+          aria-expanded={showApplications}
           className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60"
         >
-          {importingApplications ? "Đang tải đơn…" : "Import đơn ứng tuyển"}
+          Import đơn ứng tuyển
         </button>
         <button
           type="button"
@@ -190,6 +195,13 @@ export function ImportPanel({
           Mẫu Excel
         </button>
       </div>
+      {showApplications ? (
+        <ApplicationImport
+          clubId={clubId}
+          onImport={(data) => { setError(null); setWarning(null); setFileName(null); onDataParsed(data); }}
+          onClose={() => setShowApplications(false)}
+        />
+      ) : null}
       <label
         className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center text-sm transition ${
           isDragging
@@ -220,7 +232,9 @@ export function ImportPanel({
         <span className="text-xs">Hoặc click để chọn file</span>
       </label>
       {error || externalError ? (
-        <p className="text-xs text-rose-500">{externalError ?? error}</p>
+        <p role="alert" className="text-xs text-rose-500">{externalError ?? error}</p>
+      ) : warning ? (
+        <p role="status" className="text-xs text-amber-700 dark:text-amber-300">{warning}</p>
       ) : (
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           Tự động đọc tiêu đề cột.
