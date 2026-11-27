@@ -4,6 +4,14 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { useCurrentAdminClub } from "./AdminClubContext";
 import { friendlyError } from "../../lib/ui/friendly-error";
 import { requestJson } from "./adminClient";
+import { Button } from "./ui/Button";
+import { CreatePanel } from "./ui/CreatePanel";
+import { EmptyState } from "./ui/EmptyState";
+import { Field, inputClass } from "./ui/Field";
+import { Icon } from "./ui/Icon";
+import { Notice } from "./ui/Notice";
+import { PageHeader } from "./ui/PageHeader";
+import { Panel } from "./ui/Panel";
 
 type ClubEvent = {
   id: string;
@@ -17,7 +25,6 @@ type ClubEvent = {
 
 type EventDraft = { title: string; description: string; image_url: string };
 const emptyDraft: EventDraft = { title: "", description: "", image_url: "" };
-const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15";
 async function deleteEventImage(clubId: string, imageUrl: string) {
   const result = await requestJson<object>("/api/admin/events/image", {
     method: "DELETE",
@@ -219,60 +226,59 @@ export function EventsManager() {
     }
   }
 
+  function cancelCreate() {
+    setCreating(false);
+    setSelectedId(events[0]?.id ?? "");
+  }
+
+  const eventForm = <form onSubmit={saveEvent} className="space-y-4">
+    <Field label="Tên sự kiện"><input required maxLength={200} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} disabled={!canWrite || busy} className={inputClass} data-autofocus /></Field>
+    <Field label="Mô tả"><textarea rows={6} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} disabled={!canWrite || busy} className={inputClass} /></Field>
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-zinc-800">Ảnh sự kiện</p>
+      {imagePreviewUrl || draft.image_url ? <img src={imagePreviewUrl ?? draft.image_url} alt={`Ảnh sự kiện ${draft.title}`} className="max-h-64 w-full rounded-lg border border-zinc-200 object-cover sm:max-w-lg" /> : <div className="flex min-h-40 w-full items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 text-sm text-zinc-500 sm:max-w-lg">Sự kiện chưa có ảnh</div>}
+      <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" disabled={!canWrite || busy} onChange={(event) => { setImageFile(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} className="sr-only" tabIndex={-1} aria-hidden="true" />
+      {canWrite && <Button variant="secondary" size="sm" icon="upload" onClick={() => imageInputRef.current?.click()} disabled={busy}>{imageFile || draft.image_url ? "Thay ảnh" : "Tải ảnh lên"}</Button>}
+      <p className="text-xs text-zinc-500">JPG, PNG hoặc WebP, tối đa 5 MB.{imageFile ? ` Ảnh mới: ${imageFile.name}` : ""}</p>
+    </div>
+    {canWrite && <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
+      <Button type="submit" variant="primary" loading={busy}>{busy ? "Đang lưu…" : creating ? "Tạo sự kiện" : "Lưu thay đổi"}</Button>
+      {creating && <Button variant="secondary" onClick={cancelCreate} disabled={busy}>Hủy</Button>}
+      {selected && !creating && <Button variant="danger" icon="trash" className="sm:ml-auto" onClick={() => void deleteEvent()} disabled={busy}>Xóa sự kiện</Button>}
+    </div>}
+  </form>;
+
   return (
     <section className="mx-auto max-w-6xl p-5 sm:p-8">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-emerald-700">Quản trị CLB</p>
-          <h1 className="mt-1 text-3xl font-bold">Quản lý sự kiện</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">Tạo và cập nhật nội dung các sự kiện đang hiển thị trên trang Sự kiện.</p>
-        </div>
-        {canWrite && <button type="button" onClick={startCreate} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">+ Thêm sự kiện</button>}
-      </header>
+      <PageHeader title="Sự kiện" description="Tạo và cập nhật nội dung các sự kiện đang hiển thị trên trang Sự kiện." actions={canWrite && <Button variant="primary" icon="plus" onClick={() => { if (!creating) startCreate(); }} aria-expanded={creating}>Thêm sự kiện</Button>} />
+      {error && <Notice tone="error">{error}</Notice>}
+      {notice && <Notice tone="success">{notice}</Notice>}
+      <CreatePanel open={creating} title="Tạo sự kiện mới" onClose={cancelCreate}>{eventForm}</CreatePanel>
 
-      {error && <div role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
-      {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-
-      {loading ? <p className="rounded-xl border bg-white p-6 text-sm text-zinc-600">Đang tải danh sách sự kiện…</p> : (
-        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="rounded-xl border bg-white p-3">
-            <div className="flex items-center justify-between gap-2 px-2 py-2">
-              <h2 className="text-sm font-semibold">Sự kiện của CLB</h2>
-              {canWrite && <button type="button" onClick={() => void saveOrder()} disabled={busy || !orderHasChanges} className="shrink-0 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40">{busy ? "Đang lưu…" : "Lưu thứ tự"}</button>}
-            </div>
-            {orderHasChanges && <p className="px-2 text-xs text-amber-700">Thứ tự có thay đổi chưa lưu.</p>}
-            {events.length ? <ul className="mt-1 space-y-1">{events.map((item, index) => (
+      {loading ? <div role="status" aria-label="Đang tải danh sách sự kiện" className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]"><div className="h-48 animate-pulse rounded-xl bg-zinc-100" /><div className="h-72 animate-pulse rounded-xl bg-zinc-100" /></div> : (
+        <div className="grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <Panel title="Sự kiện của CLB" padded={false} actions={canWrite && orderHasChanges && <Button variant="secondary" size="sm" onClick={() => void saveOrder()} loading={busy}>{busy ? "Đang lưu…" : "Lưu thứ tự"}</Button>}>
+            {orderHasChanges && <p role="status" className="border-b border-zinc-100 px-4 py-2 text-xs text-amber-800 sm:px-5">Thứ tự có thay đổi chưa lưu.</p>}
+            {events.length ? <ul className="space-y-0.5 p-2">{events.map((item, index) => (
               <li key={item.id}
                 onDragOver={(event) => { if (canWrite && !busy) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
                 onDrop={(event) => { event.preventDefault(); reorderEvents(event.dataTransfer.getData("text/plain") || draggedEventId || "", item.id); setDraggedEventId(null); }}
-                className={`flex items-center gap-1 rounded-lg ${draggedEventId === item.id ? "opacity-40" : ""}`}>
-                {canWrite && <span draggable={!busy} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); setDraggedEventId(item.id); }} onDragEnd={() => setDraggedEventId(null)} title="Kéo để sắp xếp" aria-hidden="true" className={`cursor-grab select-none px-2 text-lg text-zinc-400 active:cursor-grabbing ${busy ? "pointer-events-none" : ""}`}>⠿</span>}
-                <button type="button" onClick={() => { setSelectedId(item.id); setCreating(false); setError(null); setNotice(null); }} className={`min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left ${selectedId === item.id && !creating ? "bg-emerald-50 text-emerald-900" : "text-zinc-700 hover:bg-zinc-50"}`}>
-                  <span className="block truncate text-sm font-medium">{item.title}</span>
+                className={`flex items-center gap-0.5 rounded-lg ${draggedEventId === item.id ? "opacity-40" : ""}`}>
+                {canWrite && <span draggable={!busy} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); setDraggedEventId(item.id); }} onDragEnd={() => setDraggedEventId(null)} title="Kéo để sắp xếp" aria-hidden="true" className={`cursor-grab select-none px-1 text-zinc-400 active:cursor-grabbing ${busy ? "pointer-events-none" : ""}`}><Icon name="grip" /></span>}
+                <button type="button" aria-current={selectedId === item.id && !creating ? "true" : undefined} onClick={() => { setSelectedId(item.id); setCreating(false); setError(null); setNotice(null); }} className={`min-w-0 flex-1 rounded-lg px-3 py-2 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600 ${selectedId === item.id && !creating ? "bg-emerald-50 text-emerald-900" : "text-zinc-700 hover:bg-zinc-100"}`}>
+                  <span className="block truncate">{item.title}</span>
                 </button>
                 {canWrite && <span className="flex shrink-0">
-                  <button type="button" onClick={() => moveEvent(item.id, -1)} disabled={busy || index === 0} aria-label={`Đưa ${item.title} lên trên`} title="Đưa lên" className="flex size-9 items-center justify-center rounded-lg text-zinc-600 hover:bg-zinc-100 disabled:opacity-30">↑</button>
-                  <button type="button" onClick={() => moveEvent(item.id, 1)} disabled={busy || index === events.length - 1} aria-label={`Đưa ${item.title} xuống dưới`} title="Đưa xuống" className="flex size-9 items-center justify-center rounded-lg text-zinc-600 hover:bg-zinc-100 disabled:opacity-30">↓</button>
+                  <Button variant="ghost" size="sm" icon="arrow-up" onClick={() => moveEvent(item.id, -1)} disabled={busy || index === 0} aria-label={`Đưa ${item.title} lên trên`} title="Đưa lên" />
+                  <Button variant="ghost" size="sm" icon="arrow-down" onClick={() => moveEvent(item.id, 1)} disabled={busy || index === events.length - 1} aria-label={`Đưa ${item.title} xuống dưới`} title="Đưa xuống" />
                 </span>}
               </li>
-            ))}</ul> : <p className="px-2 py-3 text-sm text-zinc-500">Chưa có sự kiện nào.</p>}
-          </aside>
+            ))}</ul> : <EmptyState title="Chưa có sự kiện nào" description="Thêm sự kiện đầu tiên để hiện trên trang Sự kiện." action={canWrite && !creating && <Button variant="primary" icon="plus" onClick={startCreate}>Thêm sự kiện</Button>} />}
+          </Panel>
 
-          <div className="rounded-xl border bg-white p-4 sm:p-6">
-            {creating || selected ? <form onSubmit={saveEvent} className="space-y-4">
-              <div><h2 className="text-lg font-semibold">{creating ? "Tạo sự kiện mới" : "Thông tin sự kiện"}</h2><p className="mt-1 text-sm text-zinc-500">Nội dung này sẽ xuất hiện trong danh sách trên trang Sự kiện.</p></div>
-              <label className="block text-sm font-medium">Tên sự kiện<input required maxLength={200} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} disabled={!canWrite || busy} className={inputClass} /></label>
-              <label className="block text-sm font-medium">Mô tả<textarea rows={6} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} disabled={!canWrite || busy} className={inputClass} /></label>
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Ảnh sự kiện</p>
-                {imagePreviewUrl || draft.image_url ? <img src={imagePreviewUrl ?? draft.image_url} alt={`Ảnh sự kiện ${draft.title}`} className="max-h-64 w-full rounded-xl border object-cover sm:max-w-lg" /> : <div className="flex min-h-48 w-full items-center justify-center rounded-xl border border-dashed bg-zinc-50 text-sm text-zinc-500 sm:max-w-lg">Sự kiện chưa có ảnh</div>}
-                <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" disabled={!canWrite || busy} onChange={(event) => { setImageFile(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} className="sr-only" />
-                {canWrite && <button type="button" onClick={() => imageInputRef.current?.click()} disabled={busy} className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60">{imageFile || draft.image_url ? "Thay ảnh" : "Tải ảnh lên"}</button>}
-                <p className="text-xs text-zinc-500">JPG, PNG hoặc WebP, tối đa 5 MB.{imageFile ? ` Ảnh mới: ${imageFile.name}` : ""}</p>
-              </div>
-              {canWrite && <div className="flex flex-wrap gap-3"><button type="submit" disabled={busy} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60">{busy ? "Đang lưu…" : creating ? "Tạo sự kiện" : "Lưu thay đổi"}</button>{selected && !creating && <button type="button" onClick={() => void deleteEvent()} disabled={busy} className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60">Xóa sự kiện</button>}</div>}
-            </form> : <p className="rounded-lg border border-dashed p-8 text-center text-sm text-zinc-500">Chọn một sự kiện để xem hoặc chỉnh sửa thông tin.</p>}
-          </div>
+          {!creating && (selected
+            ? <Panel title="Thông tin sự kiện">{eventForm}</Panel>
+            : events.length > 0 && <Panel padded={false}><EmptyState title="Chọn một sự kiện để xem hoặc chỉnh sửa" /></Panel>)}
         </div>
       )}
     </section>

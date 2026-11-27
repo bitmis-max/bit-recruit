@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { PhotoCarousel } from "../components/home/PhotoCarousel";
 import { FlipClockCountdown } from "../components/home/FlipClockCountdown";
+import { pickOpenCampaign } from "../components/home/openCampaign";
 import { createSupabaseServerClient } from "../lib/supabase/server";
 
 const heroPhotos = [
@@ -25,7 +26,7 @@ const recruitmentPhotos = [
 
 const aboutValues = ["Học hỏi không ngừng", "Kết nối chân thành", "Phát triển cùng nhau"];
 
-async function getRecruitmentDeadline(now: Date) {
+async function getOpenCampaign(now: Date) {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
 
@@ -37,23 +38,20 @@ async function getRecruitmentDeadline(now: Date) {
   if (!club) return null;
 
   const nowIso = now.toISOString();
-  const { data: campaign } = await supabase.from("recruitment_campaigns")
+  const { data: campaigns } = await supabase.from("recruitment_campaigns")
     .select("end_date")
     .eq("club_id", club.id)
     .eq("status", "open")
     .or(`start_date.is.null,start_date.lte.${nowIso}`)
-    .gte("end_date", nowIso)
-    .not("end_date", "is", null)
     .order("start_date", { ascending: false, nullsFirst: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
 
-  return campaign?.end_date ?? null;
+  return pickOpenCampaign(campaigns, now);
 }
 
 async function HomeCountdown() {
-  const deadline = await getRecruitmentDeadline(new Date());
-  return <FlipClockCountdown deadline={deadline} />;
+  const campaign = await getOpenCampaign(new Date());
+  return <FlipClockCountdown campaign={campaign ?? { open: false, deadline: null }} />;
 }
 
 export default function HomePage() {

@@ -144,6 +144,8 @@ create table teams (
   name text not null,
   description text,
   image_url text,
+  duties text[] not null default '{}', -- việc chính, tối đa 6 (trang Giới thiệu)
+  fit_for text,                        -- "Hợp với bạn nếu…", tối đa 300 ký tự
   created_at timestamptz not null default now()
 );
 

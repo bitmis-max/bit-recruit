@@ -19,20 +19,20 @@ export type RecipientsTableProps = {
   onSelect: (id: string) => void;
 };
 
+const statusStyle = {
+  sent: { label: "Đã gửi", tone: "text-emerald-700" },
+  failed: { label: "Lỗi", tone: "text-rose-700" },
+  pending: { label: "Chưa gửi", tone: "text-zinc-500" },
+} as const;
+
+/** Bảng người nhận: nằm trong Panel của bước 1, tự cuộn ngang/dọc trong khung riêng. */
 export function RecipientsTable({ rows, selectedId, onSelect }: RecipientsTableProps) {
   const columns: ColumnDef<RecipientRow>[] = [
     {
       accessorKey: "__status",
       header: "Trạng thái",
       cell: ({ row }: CellContext<RecipientRow, unknown>) => {
-        const status = row.original.__status ?? "pending";
-        const tone =
-          status === "sent"
-            ? "text-emerald-600"
-            : status === "failed"
-              ? "text-rose-600"
-              : "text-zinc-500";
-        const label = status === "sent" ? "Đã gửi" : status === "failed" ? "Lỗi" : "Chưa gửi";
+        const { label, tone } = statusStyle[row.original.__status ?? "pending"];
         return <span className={`text-xs font-medium ${tone}`}>{label}</span>;
       },
     },
@@ -42,7 +42,7 @@ export function RecipientsTable({ rows, selectedId, onSelect }: RecipientsTableP
         accessorKey: key,
         header: key,
         cell: ({ row }: CellContext<RecipientRow, unknown>) => (
-          <span title={row.original[key]} className="block max-w-full truncate text-sm text-zinc-700 dark:text-zinc-200">
+          <span title={row.original[key]} className="block max-w-full truncate text-sm text-zinc-700">
             {row.original[key]}
           </span>
         ),
@@ -56,52 +56,42 @@ export function RecipientsTable({ rows, selectedId, onSelect }: RecipientsTableP
   });
 
   return (
-    <div className="min-w-0 w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="min-w-0 max-h-[420px] overflow-auto">
-        <table className="w-full min-w-[640px] table-fixed border-collapse text-left text-xs">
-          <thead className="sticky top-0 bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th key={header.id} className="max-w-0 truncate px-3 py-2 font-semibold" title={String(header.column.columnDef.header ?? "")}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
-                  </th>
+    <div className="max-h-[420px] min-w-0 overflow-auto border-t border-zinc-100">
+      <table className="w-full min-w-[640px] table-fixed border-collapse text-left text-xs">
+        <thead className="sticky top-0 bg-zinc-50 text-zinc-600">
+          {table.getHeaderGroups().map((headerGroup) => (
+            <tr key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <th key={header.id} className="max-w-0 truncate px-4 py-2 font-semibold" title={String(header.column.columnDef.header ?? "")}>
+                  {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                </th>
+              ))}
+            </tr>
+          ))}
+        </thead>
+        <tbody>
+          {table.getRowModel().rows.map((row) => {
+            const isSelected = row.original.__id === selectedId;
+            const select = () => onSelect(row.original.__id);
+            return (
+              <tr
+                key={row.id}
+                tabIndex={0}
+                aria-current={isSelected ? "true" : undefined}
+                onClick={select}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); } }}
+                className={`cursor-pointer border-t border-zinc-100 transition-colors hover:bg-zinc-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-600 ${isSelected ? "bg-emerald-50" : ""}`}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className="max-w-0 px-4 py-2">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
                 ))}
               </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => {
-              const isSelected = row.original.__id === selectedId;
-              return (
-                <tr
-                  key={row.id}
-                  onClick={() => onSelect(row.original.__id)}
-                  className={`cursor-pointer border-t border-zinc-100 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/60 ${
-                    isSelected ? "bg-indigo-50 dark:bg-indigo-500/10" : ""
-                  }`}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="max-w-0 px-3 py-2">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {!rows.length && (
-        <div className="px-4 py-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
-          Chưa có dữ liệu. Hãy import file để xem bảng.
-        </div>
-      )}
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

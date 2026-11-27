@@ -4,10 +4,19 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
+import { Button } from "../ui/Button";
+import { CreatePanel } from "../ui/CreatePanel";
+import { EmptyState } from "../ui/EmptyState";
+import { Field, inputClass } from "../ui/Field";
+import { Notice } from "../ui/Notice";
+import { PageHeader } from "../ui/PageHeader";
+import { Panel } from "../ui/Panel";
 
-type Team = { id: string; club_id: string; name: string; description: string | null; image_url: string | null; created_at: string };
-const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15";
+type Team = { id: string; club_id: string; name: string; description: string | null; image_url: string | null; created_at: string; duties: string[] | null; fit_for: string | null };
 const teamImageBucket = "team-images";
+const teamColumns = "id,club_id,name,description,image_url,created_at,duties,fit_for";
+const maxDuties = 6;
+const maxDutyLength = 200;
 
 function teamImageStoragePath(imageUrl: string | null, clubId: string, teamId: string) {
   const marker = `/storage/v1/object/public/${teamImageBucket}/`;
@@ -29,6 +38,8 @@ export function TeamsManager() {
   const [selectedId, setSelectedId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [duties, setDuties] = useState("");
+  const [fitFor, setFitFor] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -43,7 +54,7 @@ export function TeamsManager() {
     if (!clubId) { setError("Tài khoản chưa được gán vào CLB nào."); setLoading(false); return; }
     setLoading(true);
     const { data, error: queryError } = await supabase.from("teams")
-      .select("id,club_id,name,description,image_url,created_at").eq("club_id", clubId).order("name");
+      .select(teamColumns).eq("club_id", clubId).order("name");
     if (queryError) {
       setError(friendlyError(queryError, "Không tải được danh sách ban. Vui lòng thử lại."));
     } else {
@@ -68,17 +79,27 @@ export function TeamsManager() {
   useEffect(() => {
     setName(selected?.name ?? "");
     setDescription(selected?.description ?? "");
+    setDuties((selected?.duties ?? []).join("\n"));
+    setFitFor(selected?.fit_for ?? "");
     setImageFile(null);
-  }, [selectedId, selected?.name, selected?.description]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- so nội dung duties (chuỗi), không so tham chiếu mảng
+  }, [selectedId, selected?.name, selected?.description, selected?.duties?.join("\n"), selected?.fit_for]);
 
   function startCreate() {
     setSelectedId("");
     setIsCreating(true);
     setName("");
     setDescription("");
+    setDuties("");
+    setFitFor("");
     setImageFile(null);
     setError(null);
     setNotice(null);
+  }
+
+  function cancelCreate() {
+    setIsCreating(false);
+    setSelectedId(teams[0]?.id ?? "");
   }
 
   async function saveTeam(event: FormEvent<HTMLFormElement>) {
@@ -86,6 +107,10 @@ export function TeamsManager() {
     if (!supabase || !clubId || !canWrite) return;
     const cleanName = name.trim();
     if (!cleanName) return;
+    const cleanDuties = duties.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (cleanDuties.length > maxDuties) { setError(`Mục "Việc chính" tối đa ${maxDuties} dòng. Hãy gộp bớt các việc.`); return; }
+    if (cleanDuties.some((line) => line.length > maxDutyLength)) { setError(`Mỗi việc chính tối đa ${maxDutyLength} ký tự. Hãy rút gọn dòng quá dài.`); return; }
+    const profile = { duties: cleanDuties, fit_for: fitFor.trim() || null };
     if (imageFile && (!imageFile.type.match(/^image\/(jpeg|png|webp)$/) || imageFile.size > 5 * 1024 * 1024)) {
       setError("Ảnh phải có định dạng JPG, PNG hoặc WebP và dung lượng tối đa 5 MB.");
       return;
@@ -104,8 +129,8 @@ export function TeamsManager() {
       imageUrl = supabase.storage.from(teamImageBucket).getPublicUrl(uploadedPath).data.publicUrl;
     }
     const result = selected && !isCreating
-      ? await supabase.from("teams").update({ name: cleanName, description: description.trim() || null, image_url: imageUrl }).eq("id", teamId).eq("club_id", clubId).select("id,club_id,name,description,image_url,created_at").single()
-      : await supabase.from("teams").insert({ id: teamId, club_id: clubId, name: cleanName, description: description.trim() || null, image_url: imageUrl }).select("id,club_id,name,description,image_url,created_at").single();
+      ? await supabase.from("teams").update({ name: cleanName, description: description.trim() || null, ...profile, image_url: imageUrl }).eq("id", teamId).eq("club_id", clubId).select(teamColumns).single()
+      : await supabase.from("teams").insert({ id: teamId, club_id: clubId, name: cleanName, description: description.trim() || null, ...profile, image_url: imageUrl }).select(teamColumns).single();
     setBusy(false);
     if (result.error) {
       if (uploadedPath) await supabase.storage.from(teamImageBucket).remove([uploadedPath]);
@@ -160,34 +185,39 @@ export function TeamsManager() {
     window.dispatchEvent(new Event("bit:teams-changed"));
   }
 
+  const teamForm = <form onSubmit={saveTeam} className="space-y-4">
+    <Field label="Tên ban"><input required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} disabled={!canWrite || busy} className={inputClass} data-autofocus /></Field>
+    <Field label="Mô tả"><textarea rows={6} value={description} onChange={(event) => setDescription(event.target.value)} disabled={!canWrite || busy} className={inputClass} placeholder="Giới thiệu nhiệm vụ và hoạt động của ban…" /></Field>
+    <Field label="Việc chính" hint={`Hiện thành danh sách ngắn trên thẻ ban. Mỗi dòng tối đa ${maxDutyLength} ký tự.`}><textarea rows={4} value={duties} onChange={(event) => setDuties(event.target.value)} disabled={!canWrite || busy} className={inputClass} placeholder="Mỗi dòng một việc, tối đa 6" /></Field>
+    <Field label="Hợp với bạn nếu…" hint={`Một câu ngắn, tối đa 300 ký tự (${fitFor.length}/300).`}><textarea rows={2} maxLength={300} value={fitFor} onChange={(event) => setFitFor(event.target.value)} disabled={!canWrite || busy} className={inputClass} placeholder="Ví dụ: Bạn thích kể chuyện bằng chữ, hình ảnh hoặc video." /></Field>
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-zinc-800">Ảnh ban</p>
+      {imagePreviewUrl || selected?.image_url ? <img src={imagePreviewUrl ?? selected?.image_url ?? ""} alt={`Ảnh ban ${name || selected?.name || ""}`} className="max-h-64 w-full rounded-lg border border-zinc-200 object-cover sm:max-w-lg" /> : <div className="flex min-h-40 w-full items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 text-sm text-zinc-500 sm:max-w-lg">Ban chưa có ảnh</div>}
+      <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" disabled={!canWrite || busy} onChange={(event) => { setImageFile(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} className="sr-only" tabIndex={-1} aria-hidden="true" />
+      {canWrite && <Button variant="secondary" size="sm" icon="upload" onClick={() => imageInputRef.current?.click()} disabled={busy}>{imageFile || selected?.image_url ? "Thay ảnh" : "Tải ảnh lên"}</Button>}
+      <p className="text-xs text-zinc-500">JPG, PNG hoặc WebP, tối đa 5 MB.{imageFile ? ` Ảnh mới: ${imageFile.name}` : ""}</p>
+    </div>
+    {canWrite && <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
+      <Button type="submit" variant="primary" loading={busy}>{busy ? "Đang lưu…" : isCreating ? "Tạo ban" : "Lưu thay đổi"}</Button>
+      {isCreating && <Button variant="secondary" onClick={cancelCreate} disabled={busy}>Hủy</Button>}
+      {selected && !isCreating && <Button variant="danger" icon="trash" className="sm:ml-auto" onClick={() => void deleteTeam()} disabled={busy}>Xóa ban</Button>}
+    </div>}
+  </form>;
+
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div><p className="text-sm font-semibold text-emerald-700">Quản trị CLB</p><h1 className="mt-1 text-3xl font-bold">Quản lí ban</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">Tạo và cập nhật thông tin các ban. Nội dung mô tả sẽ được hiển thị ở trang Khám phá CLB.</p></div>
-      {canWrite && <button type="button" onClick={startCreate} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">+ Thêm ban</button>}
-    </header>
-    {error && <div role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
-    {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    {loading ? <p className="rounded-xl border bg-white p-6 text-sm text-zinc-600">Đang tải danh sách ban…</p> : (
-      <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-xl border bg-white p-3">
-          <h2 className="px-2 py-2 text-sm font-semibold">Các ban trong CLB</h2>
-          {teams.length ? <ul className="mt-1 space-y-1">{teams.map((team) => <li key={team.id}><button type="button" onClick={() => { setSelectedId(team.id); setIsCreating(false); setError(null); setNotice(null); }} className={`w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium ${selectedId === team.id && !isCreating ? "bg-emerald-50 text-emerald-900" : "text-zinc-700 hover:bg-zinc-50"}`}>{team.name}</button></li>)}</ul> : <p className="px-2 py-3 text-sm text-zinc-500">Chưa có ban nào.</p>}
-        </aside>
-        <div className="rounded-xl border bg-white p-4 sm:p-6">
-          {isCreating || selected ? <form onSubmit={saveTeam} className="space-y-4">
-            <div><h2 className="text-lg font-semibold">{isCreating ? "Tạo ban mới" : "Thông tin ban"}</h2><p className="mt-1 text-sm text-zinc-500">Tên ban và phần mô tả giới thiệu.</p></div>
-            <label className="block text-sm font-medium">Tên ban<input required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} disabled={!canWrite || busy} className={inputClass} /></label>
-            <label className="block text-sm font-medium">Mô tả<textarea rows={7} value={description} onChange={(event) => setDescription(event.target.value)} disabled={!canWrite || busy} className={inputClass} placeholder="Giới thiệu nhiệm vụ và hoạt động của ban…" /></label>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Ảnh ban</p>
-              {imagePreviewUrl || selected?.image_url ? <img src={imagePreviewUrl ?? selected?.image_url ?? ""} alt={`Ảnh ban ${name || selected?.name || ""}`} className="max-h-64 w-full rounded-xl border object-cover sm:max-w-lg" /> : <div className="flex min-h-48 w-full items-center justify-center rounded-xl border border-dashed bg-zinc-50 text-sm text-zinc-500 sm:max-w-lg">Ban chưa có ảnh</div>}
-              <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" disabled={!canWrite || busy} onChange={(event) => { setImageFile(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} className="sr-only" />
-              {canWrite && <button type="button" onClick={() => imageInputRef.current?.click()} disabled={busy} className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60">{imageFile || selected?.image_url ? "Thay ảnh" : "Tải ảnh lên"}</button>}
-              <p className="text-xs text-zinc-500">JPG, PNG hoặc WebP, tối đa 5 MB.{imageFile ? ` Ảnh mới: ${imageFile.name}` : ""}</p>
-            </div>
-            {canWrite && <div className="flex flex-wrap gap-3"><button type="submit" disabled={busy} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60">{busy ? "Đang lưu…" : isCreating ? "Tạo ban" : "Lưu thay đổi"}</button>{selected && !isCreating && <button type="button" onClick={() => void deleteTeam()} disabled={busy} className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60">Xóa ban</button>}</div>}
-          </form> : <p className="rounded-lg border border-dashed p-8 text-center text-sm text-zinc-500">Chọn một ban để xem hoặc chỉnh sửa thông tin.</p>}
-        </div>
+    <PageHeader title="Ban" description="Tạo và cập nhật thông tin các ban. Nội dung hiển thị ở trang Giới thiệu." actions={canWrite && <Button variant="primary" icon="plus" onClick={() => { if (!isCreating) startCreate(); }} aria-expanded={isCreating}>Thêm ban</Button>} />
+    {error && <Notice tone="error">{error}</Notice>}
+    {notice && <Notice tone="success">{notice}</Notice>}
+    <CreatePanel open={isCreating} title="Tạo ban mới" onClose={cancelCreate}>{teamForm}</CreatePanel>
+    {loading ? <div role="status" aria-label="Đang tải danh sách ban" className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]"><div className="h-48 animate-pulse rounded-xl bg-zinc-100" /><div className="h-72 animate-pulse rounded-xl bg-zinc-100" /></div> : (
+      <div className="grid items-start gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <Panel title="Các ban trong CLB" padded={false}>
+          {teams.length ? <ul className="space-y-0.5 p-2">{teams.map((team) => <li key={team.id}><button type="button" aria-current={selectedId === team.id && !isCreating ? "true" : undefined} onClick={() => { setSelectedId(team.id); setIsCreating(false); setError(null); setNotice(null); }} className={`w-full rounded-lg px-3 py-2 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600 ${selectedId === team.id && !isCreating ? "bg-emerald-50 text-emerald-900" : "text-zinc-700 hover:bg-zinc-100"}`}>{team.name}</button></li>)}</ul>
+            : <EmptyState title="Chưa có ban nào" description="Tạo ban đầu tiên để giới thiệu trên trang CLB." action={canWrite && !isCreating && <Button variant="primary" icon="plus" onClick={startCreate}>Thêm ban</Button>} />}
+        </Panel>
+        {!isCreating && (selected
+          ? <Panel title="Thông tin ban">{teamForm}</Panel>
+          : teams.length > 0 && <Panel padded={false}><EmptyState title="Chọn một ban để xem hoặc chỉnh sửa" /></Panel>)}
       </div>
     )}
   </section>;

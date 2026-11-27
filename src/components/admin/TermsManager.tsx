@@ -9,6 +9,13 @@ import { useDialog } from "./useDialog";
 import { useCurrentAdminClub } from "./AdminClubContext";
 import { roleLabel } from "./roles";
 import { CLUB_PERMISSIONS, isClubPermission } from "../../lib/admin/permissions";
+import { Button } from "./ui/Button";
+import { CreatePanel } from "./ui/CreatePanel";
+import { EmptyState } from "./ui/EmptyState";
+import { Field, inputClass } from "./ui/Field";
+import { Notice } from "./ui/Notice";
+import { PageHeader } from "./ui/PageHeader";
+import { Panel } from "./ui/Panel";
 
 type Term = { id: string; name: string; start_date: string | null; end_date: string | null; status: "draft" | "active" | "ended"; activated_at: string | null; created_at: string };
 type TermRole = { member_id: string; role: "owner" | "admin"; title: string; team_id: string; permissions: string[]; is_head: boolean };
@@ -16,7 +23,6 @@ type Member = { id: string; full_name: string; role: string; user_id: string | n
 type Team = { id: string; name: string };
 const statusLabel: Record<Term["status"], string> = { draft: "Nháp", active: "Đang áp dụng", ended: "Đã kết thúc" };
 const statusClass: Record<Term["status"], string> = { draft: "bg-amber-50 text-amber-800", active: "bg-emerald-50 text-emerald-800", ended: "bg-zinc-100 text-zinc-600" };
-const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100";
 const emptyForm = { name: "", start_date: "", end_date: "" };
 
 function formatDate(value: string | null) {
@@ -39,6 +45,7 @@ export function TermsManager() {
   const [savedRoles, setSavedRoles] = useState("[]");
   const [form, setForm] = useState(emptyForm);
   const [pickMember, setPickMember] = useState("");
+  const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rolesLoading, setRolesLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -111,7 +118,7 @@ export function TermsManager() {
     const { data, error: insertError } = await supabase.from("club_terms").insert({ club_id: clubId, name: form.name.trim(), start_date: form.start_date || null, end_date: form.end_date || null }).select("id").single();
     setBusy(false);
     if (insertError) { setError(friendlyError(insertError, "Không tạo được nhiệm kỳ.")); return; }
-    setForm(emptyForm); setNotice("Đã tạo nhiệm kỳ nháp. Hãy chọn Ban chủ nhiệm (đúng một Chủ nhiệm) và Ban chủ chốt kèm quyền rồi lưu danh sách.");
+    setForm(emptyForm); setCreating(false); setNotice("Đã tạo nhiệm kỳ nháp. Hãy chọn Ban chủ nhiệm (đúng một Chủ nhiệm) và Ban chủ chốt kèm quyền rồi lưu danh sách.");
     setSelectedId(data.id);
     await load();
   }
@@ -184,66 +191,88 @@ export function TermsManager() {
     router.refresh();
   }
 
-  return <section className="mx-auto max-w-6xl p-5 sm:p-8">
-    <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Không gian CLB</p><h1 className="mt-1 text-3xl font-bold">Nhiệm kỳ</h1><p className="mt-2 text-sm text-zinc-600">Mỗi nhiệm kỳ có danh sách Ban chủ nhiệm và Ban chủ chốt riêng. Kích hoạt nhiệm kỳ mới để đổi vai trò cả CLB cùng lúc.</p></header>
-    {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-    {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    {!supabase && <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Thiếu cấu hình Supabase.</p>}
-    {!isHead && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ Chủ nhiệm được tạo, sửa và kích hoạt nhiệm kỳ.{role === "owner" ? " Phó chủ nhiệm chỉ có quyền xem." : " Ban chủ chốt chỉ có quyền xem."}</p>}
-    <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
-      <div className="space-y-6">
-        {isHead && <form onSubmit={(event) => void createTerm(event)} className="space-y-4 rounded-xl border bg-white p-5">
-          <div><h2 className="font-semibold">Tạo nhiệm kỳ nháp</h2><p className="mt-1 text-xs text-zinc-500">Nhiệm kỳ nháp chưa ảnh hưởng đến vai trò của ai.</p></div>
-          <label className="block text-sm">Tên nhiệm kỳ<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={inputClass} placeholder="Ví dụ: Nhiệm kỳ 2026–2027" /></label>
-          <label className="block text-sm">Ngày bắt đầu<input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} className={inputClass} /></label>
-          <label className="block text-sm">Ngày kết thúc<input type="date" value={form.end_date} min={form.start_date || undefined} onChange={(event) => setForm({ ...form, end_date: event.target.value })} className={inputClass} /></label>
-          <button disabled={busy || !supabase} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang tạo…" : "Tạo nhiệm kỳ nháp"}</button>
-        </form>}
-        <div className="overflow-hidden rounded-xl border bg-white">
-          <div className="flex items-center justify-between border-b p-4"><h2 className="font-semibold">Các nhiệm kỳ ({terms.length})</h2><button type="button" onClick={() => void load()} className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Làm mới</button></div>
-          {loading ? <p className="p-6 text-sm text-zinc-500">Đang tải nhiệm kỳ…</p> : terms.length ? <ul className="divide-y divide-zinc-100">{terms.map((term) => <li key={term.id}><button type="button" aria-current={term.id === selectedId} onClick={() => selectTerm(term.id)} className={`block w-full p-4 text-left hover:bg-zinc-50 ${term.id === selectedId ? "bg-emerald-50/60" : ""}`}><span className="flex items-start justify-between gap-2"><span className="min-w-0 break-words font-medium">{term.name}</span><span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClass[term.status]}`}>{statusLabel[term.status]}</span></span><span className="mt-1 block text-xs text-zinc-500">{formatDate(term.start_date)} – {formatDate(term.end_date)}</span></button></li>)}</ul> : <p className="p-6 text-sm text-zinc-500">CLB chưa có nhiệm kỳ nào.</p>}
-        </div>
-      </div>
+  const roleChips = (row: TermRole) => row.role === "owner"
+    ? <>{row.is_head && <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-xs font-semibold text-white">Chủ nhiệm</span>}</>
+    : row.permissions.filter(isClubPermission).length
+      ? CLUB_PERMISSIONS.filter((permission) => row.permissions.includes(permission.code)).map((permission) => <span key={permission.code} className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">{permission.label}</span>)
+      : <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">Chưa có quyền chức năng</span>;
 
-      <div className="rounded-xl border bg-white">
-        {!selected ? <p className="p-6 text-sm text-zinc-500">Chọn hoặc tạo một nhiệm kỳ để xem danh sách Ban chủ nhiệm và Ban chủ chốt.</p> : <>
-          <div className="border-b p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0"><h2 className="break-words text-xl font-semibold">{selected.name}</h2><p className="mt-1 text-sm text-zinc-600">{formatDate(selected.start_date)} – {formatDate(selected.end_date)}{selected.activated_at ? ` · Kích hoạt ${new Date(selected.activated_at).toLocaleDateString("vi-VN")}` : ""}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass[selected.status]}`}>{statusLabel[selected.status]}</span></div></div>
-          <div className="p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Ban chủ nhiệm và Ban chủ chốt ({roles.length})</h3>{canEdit && !roles.length && <button type="button" onClick={prefillFromCurrent} className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Lấy từ danh sách hiện tại</button>}</div>
-            {rolesLoading ? <p className="mt-4 text-sm text-zinc-500">Đang tải danh sách…</p> : roles.length ? <ul className="mt-4 space-y-3">{roles.map((row) => {
-              const member = memberById.get(row.member_id);
-              return <li key={row.member_id} className="rounded-lg border p-3">
-                <p className="break-words text-sm font-semibold">{member?.full_name ?? "Thành viên đã xóa"}{member && !member.user_id && <span className="ml-2 text-xs font-normal text-amber-800">Chưa có tài khoản</span>}</p>
-                <div className="mt-2 grid gap-3 sm:grid-cols-3">
-                  <label className="block text-xs font-medium text-zinc-600">Vai trò<select disabled={!canEdit} value={row.role} onChange={(event) => changeRole(row.member_id, event.target.value as "owner" | "admin")} className={inputClass}><option value="owner">{roleLabel("owner")}</option><option value="admin">{roleLabel("admin")}</option></select></label>
-                  <label className="block text-xs font-medium text-zinc-600">Chức danh<input disabled={!canEdit} value={row.title} onChange={(event) => updateRole(row.member_id, { title: event.target.value })} className={inputClass} placeholder="Ví dụ: Phó chủ nhiệm" /></label>
-                  <label className="block text-xs font-medium text-zinc-600">Ban<select disabled={!canEdit} value={row.team_id} onChange={(event) => updateRole(row.member_id, { team_id: event.target.value })} className={inputClass}><option value="">Không đổi ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-                </div>
-                {row.role === "owner" ? <label className="mt-3 flex w-fit cursor-pointer items-center gap-2 text-sm"><input type="radio" name="term-head" disabled={!canEdit} checked={row.is_head} onChange={() => setHead(row.member_id)} /> <span className="font-medium">Chủ nhiệm</span><span className="text-xs text-zinc-500">(đúng một người; Phó chủ nhiệm không chọn)</span></label>
-                  : <fieldset className="mt-3"><legend className="text-xs font-medium text-zinc-600">Quyền chức năng của {member?.full_name ?? "thành viên"}</legend><div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">{CLUB_PERMISSIONS.map((permission) => <label key={permission.code} className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" disabled={!canEdit} checked={row.permissions.includes(permission.code)} onChange={(event) => togglePermission(row.member_id, permission.code, event.target.checked)} /> {permission.label}</label>)}</div></fieldset>}
-                {canEdit && <button type="button" onClick={() => setRoles((current) => current.filter((item) => item.member_id !== row.member_id))} className="mt-2 text-sm font-medium text-rose-700 hover:underline">Gỡ khỏi danh sách</button>}
-              </li>;
-            })}</ul> : <p className="mt-4 text-sm text-zinc-500">Chưa có ai trong danh sách của nhiệm kỳ này.</p>}
-            {canEdit && <div className="mt-4 flex flex-wrap items-end gap-2 rounded-lg bg-zinc-50 p-3"><label className="min-w-52 flex-1 text-sm">Thêm thành viên<select value={pickMember} onChange={(event) => setPickMember(event.target.value)} className={inputClass}><option value="">Chọn thành viên</option>{pickable.map((member) => <option key={member.id} value={member.id}>{member.full_name}{member.role !== "member" ? ` · ${roleLabel(member.role)}` : ""}</option>)}</select></label><button type="button" disabled={!pickMember} onClick={addRole} className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 disabled:opacity-50">Thêm vào danh sách</button></div>}
-            {canEdit && <div className="mt-5 flex flex-wrap items-center gap-3 border-t pt-5">
-              <button type="button" disabled={busy || !dirty} onClick={() => void saveRoles()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang lưu…" : "Lưu danh sách"}</button>
-              <button type="button" disabled={busy || dirty || !headReady} onClick={() => setConfirming(true)} className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 disabled:opacity-50">Kích hoạt nhiệm kỳ</button>
-              <p className="text-xs text-zinc-500">{dirty ? "Hãy lưu danh sách trước khi kích hoạt." : !headReady ? "Cần chọn đúng một Chủ nhiệm thuộc Ban chủ nhiệm, đang hoạt động và đã có tài khoản." : "Kích hoạt sẽ áp dụng danh sách này cho cả CLB."}</p>
-            </div>}
-          </div>
-        </>}
-      </div>
+  return <section className="mx-auto max-w-6xl p-5 sm:p-8">
+    <PageHeader title="Nhiệm kỳ" description="Mỗi nhiệm kỳ có danh sách Ban chủ nhiệm và Ban chủ chốt riêng. Kích hoạt nhiệm kỳ mới để đổi vai trò cả CLB cùng lúc." actions={isHead && <Button variant="primary" icon="plus" onClick={() => setCreating(true)} aria-expanded={creating}>Tạo nhiệm kỳ nháp</Button>} />
+    {error && <Notice tone="error">{error}</Notice>}
+    {notice && <Notice tone="success">{notice}</Notice>}
+    {!supabase && <Notice tone="error">Thiếu cấu hình Supabase.</Notice>}
+    {!isHead && <Notice tone="warning">Chỉ Chủ nhiệm được tạo, sửa và kích hoạt nhiệm kỳ.{role === "owner" ? " Phó chủ nhiệm chỉ có quyền xem." : " Ban chủ chốt chỉ có quyền xem."}</Notice>}
+    <CreatePanel open={creating && isHead} title="Tạo nhiệm kỳ nháp" onClose={() => setCreating(false)}>
+      <form onSubmit={(event) => void createTerm(event)} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_1fr_1fr]">
+          <Field label="Tên nhiệm kỳ"><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={inputClass} placeholder="Ví dụ: Nhiệm kỳ 2026–2027" data-autofocus /></Field>
+          <Field label="Ngày bắt đầu"><input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} className={inputClass} /></Field>
+          <Field label="Ngày kết thúc"><input type="date" value={form.end_date} min={form.start_date || undefined} onChange={(event) => setForm({ ...form, end_date: event.target.value })} className={inputClass} /></Field>
+        </div>
+        <p className="text-xs text-zinc-500">Nhiệm kỳ nháp chưa ảnh hưởng đến vai trò của ai.</p>
+        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
+          <Button type="submit" variant="primary" disabled={!supabase} loading={busy}>{busy ? "Đang tạo…" : "Tạo nhiệm kỳ nháp"}</Button>
+          <Button onClick={() => setCreating(false)}>Hủy</Button>
+        </div>
+      </form>
+    </CreatePanel>
+    <div className="grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+      <Panel title={`Các nhiệm kỳ (${terms.length})`} padded={false} actions={<Button variant="ghost" size="sm" icon="refresh" aria-label="Làm mới" onClick={() => void load()} />}>
+        {loading ? <div role="status" aria-label="Đang tải nhiệm kỳ" className="space-y-2 p-3">{[0, 1, 2].map((index) => <div key={index} className="h-14 animate-pulse rounded-lg bg-zinc-100" />)}</div>
+          : terms.length ? <ul className="space-y-0.5 p-2">{terms.map((term) => <li key={term.id}><button type="button" aria-current={term.id === selectedId ? "true" : undefined} onClick={() => selectTerm(term.id)} className={`block w-full rounded-lg px-3 py-2.5 text-left hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600 ${term.id === selectedId ? "bg-emerald-50 hover:bg-emerald-50" : ""}`}><span className="flex items-start justify-between gap-2"><span className="min-w-0 break-words text-sm font-medium">{term.name}</span><span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass[term.status]}`}>{statusLabel[term.status]}</span></span><span className="mt-0.5 block text-xs text-zinc-500">{formatDate(term.start_date)} – {formatDate(term.end_date)}</span></button></li>)}</ul>
+          : <EmptyState title="CLB chưa có nhiệm kỳ nào." action={isHead && !creating ? <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>Tạo nhiệm kỳ nháp</Button> : undefined} />}
+      </Panel>
+
+      {!selected ? <Panel padded={false}><EmptyState title="Chọn hoặc tạo một nhiệm kỳ để xem danh sách Ban chủ nhiệm và Ban chủ chốt." /></Panel> : <Panel title={selected.name} actions={<span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClass[selected.status]}`}>{statusLabel[selected.status]}</span>}>
+        <p className="text-sm text-zinc-600">{formatDate(selected.start_date)} – {formatDate(selected.end_date)}{selected.activated_at ? ` · Kích hoạt ${new Date(selected.activated_at).toLocaleDateString("vi-VN")}` : ""}</p>
+        <div className="mt-5 border-t border-zinc-100 pt-5">
+          <h3 className="text-sm font-semibold text-zinc-900">Ban chủ nhiệm và Ban chủ chốt ({roles.length})</h3>
+          {rolesLoading ? <div role="status" aria-label="Đang tải danh sách" className="mt-4 space-y-3">{[0, 1].map((index) => <div key={index} className="h-16 animate-pulse rounded-lg bg-zinc-100" />)}</div> : roles.length ? <ul className="mt-2 divide-y divide-zinc-100">{roles.map((row) => {
+            const member = memberById.get(row.member_id);
+            const name = member?.full_name ?? "Thành viên đã xóa";
+            const noAccount = member && !member.user_id && <span className="ml-2 text-xs font-normal text-amber-800">Chưa có tài khoản</span>;
+            if (!canEdit) return <li key={row.member_id} className="py-3">
+              <p className="break-words text-sm font-semibold">{name}{noAccount}</p>
+              <p className="mt-0.5 text-xs text-zinc-500">{[roleLabel(row.role), row.title, teams.find((team) => team.id === row.team_id)?.name].filter(Boolean).join(" · ")}</p>
+              <p className="mt-1.5 flex flex-wrap gap-1">{roleChips(row)}</p>
+            </li>;
+            return <li key={row.member_id} className="py-4">
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 break-words text-sm font-semibold">{name}{noAccount}</p>
+                <Button variant="danger" size="sm" icon="trash" aria-label={`Gỡ ${name} khỏi danh sách`} title="Gỡ khỏi danh sách" onClick={() => setRoles((current) => current.filter((item) => item.member_id !== row.member_id))} />
+              </div>
+              <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                <Field label="Vai trò"><select value={row.role} onChange={(event) => changeRole(row.member_id, event.target.value as "owner" | "admin")} className={inputClass}><option value="owner">{roleLabel("owner")}</option><option value="admin">{roleLabel("admin")}</option></select></Field>
+                <Field label="Chức danh"><input value={row.title} onChange={(event) => updateRole(row.member_id, { title: event.target.value })} className={inputClass} placeholder="Ví dụ: Phó chủ nhiệm" /></Field>
+                <Field label="Ban"><select value={row.team_id} onChange={(event) => updateRole(row.member_id, { team_id: event.target.value })} className={inputClass}><option value="">Không đổi ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></Field>
+              </div>
+              {row.role === "owner" ? <label className="mt-3 flex w-fit cursor-pointer items-center gap-2 text-sm"><input type="radio" name="term-head" checked={row.is_head} onChange={() => setHead(row.member_id)} className="accent-emerald-700" /> <span className="font-medium">Chủ nhiệm</span><span className="text-xs text-zinc-500">(đúng một người; Phó chủ nhiệm không chọn)</span></label>
+                : <fieldset className="mt-3"><legend className="text-xs font-medium text-zinc-600">Quyền chức năng của {member?.full_name ?? "thành viên"}</legend><div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">{CLUB_PERMISSIONS.map((permission) => <label key={permission.code} className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={row.permissions.includes(permission.code)} onChange={(event) => togglePermission(row.member_id, permission.code, event.target.checked)} className="accent-emerald-700" /> {permission.label}</label>)}</div></fieldset>}
+            </li>;
+          })}</ul> : <EmptyState title="Chưa có ai trong danh sách của nhiệm kỳ này." action={canEdit ? <Button onClick={prefillFromCurrent}>Lấy từ danh sách hiện tại</Button> : undefined} />}
+          {canEdit && <div className="mt-4 flex flex-wrap items-end gap-2 border-t border-zinc-100 pt-4">
+            <Field label="Thêm thành viên" className="min-w-52 flex-1"><select value={pickMember} onChange={(event) => setPickMember(event.target.value)} className={inputClass}><option value="">Chọn thành viên</option>{pickable.map((member) => <option key={member.id} value={member.id}>{member.full_name}{member.role !== "member" ? ` · ${roleLabel(member.role)}` : ""}</option>)}</select></Field>
+            <Button disabled={!pickMember} onClick={addRole}>Thêm vào danh sách</Button>
+          </div>}
+          {canEdit && <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-5">
+            <Button variant="primary" disabled={!dirty} loading={busy} onClick={() => void saveRoles()}>{busy ? "Đang lưu…" : "Lưu danh sách"}</Button>
+            <Button variant="danger" className="border border-rose-300" disabled={busy || dirty || !headReady} onClick={() => setConfirming(true)}>Kích hoạt nhiệm kỳ</Button>
+            <p className="min-w-0 flex-1 text-xs text-zinc-500">{dirty ? "Hãy lưu danh sách trước khi kích hoạt." : !headReady ? "Cần chọn đúng một Chủ nhiệm thuộc Ban chủ nhiệm, đang hoạt động và đã có tài khoản." : "Kích hoạt sẽ áp dụng danh sách này cho cả CLB."}</p>
+          </div>}
+        </div>
+      </Panel>}
     </div>
     {confirming && selected && <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4">
-      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="activate-term-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl outline-none">
-        <h2 id="activate-term-title" className="text-lg font-bold">Kích hoạt “{selected.name}”?</h2>
-        <div className="mt-3 space-y-2 text-sm text-zinc-700">
-          <p className="rounded-lg bg-emerald-50 p-3 text-emerald-900"><strong>{headMember?.full_name ?? "Người được chọn"}</strong> sẽ trở thành Chủ nhiệm của CLB. Chỉ Chủ nhiệm mới được kích hoạt nhiệm kỳ và cấp quyền.</p>
-          <p>Danh sách này sẽ trở thành Ban chủ nhiệm và Ban chủ chốt của CLB ({roles.length} người) với đúng quyền chức năng đã tick. Nhiệm kỳ đang áp dụng (nếu có) sẽ chuyển sang “Đã kết thúc”.</p>
-          <p className="rounded-lg bg-amber-50 p-3 text-amber-900"><strong>Mọi người không có trong danh sách sẽ trở thành Thành viên</strong> và mất chức danh hiện tại ({droppedCount} người{demoted.length ? `, trong đó ${demoted.length} người đang giữ vai trò quản trị` : ""}).</p>
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="activate-term-title" className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl outline-none">
+        <h2 id="activate-term-title" className="text-lg font-semibold">Kích hoạt “{selected.name}”?</h2>
+        <div className="mt-3 text-sm text-zinc-700">
+          <Notice tone="success"><strong>{headMember?.full_name ?? "Người được chọn"}</strong> sẽ trở thành Chủ nhiệm của CLB. Chỉ Chủ nhiệm mới được kích hoạt nhiệm kỳ và cấp quyền.</Notice>
+          <p className="mb-4">Danh sách này sẽ trở thành Ban chủ nhiệm và Ban chủ chốt của CLB ({roles.length} người) với đúng quyền chức năng đã tick. Nhiệm kỳ đang áp dụng (nếu có) sẽ chuyển sang “Đã kết thúc”.</p>
+          <Notice tone="warning"><strong>Mọi người không có trong danh sách sẽ trở thành Thành viên</strong> và mất chức danh hiện tại ({droppedCount} người{demoted.length ? `, trong đó ${demoted.length} người đang giữ vai trò quản trị` : ""}).</Notice>
           <p className="text-xs text-zinc-500">Thao tác này không hoàn tác tự động; muốn đổi lại phải kích hoạt một nhiệm kỳ khác.</p>
         </div>
-        <div className="mt-5 flex justify-end gap-2"><button data-autofocus type="button" disabled={busy} onClick={() => setConfirming(false)} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50">Hủy</button><button type="button" disabled={busy} onClick={() => void activate()} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang kích hoạt…" : "Kích hoạt nhiệm kỳ"}</button></div>
+        <div className="mt-5 flex justify-end gap-2"><Button data-autofocus disabled={busy} onClick={() => setConfirming(false)}>Hủy</Button><Button variant="danger" className="border border-rose-300" loading={busy} onClick={() => void activate()}>{busy ? "Đang kích hoạt…" : "Kích hoạt nhiệm kỳ"}</Button></div>
       </div>
     </div>}
   </section>;

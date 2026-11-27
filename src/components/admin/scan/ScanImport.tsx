@@ -9,6 +9,12 @@ import { FRAME_MATCH_THRESHOLD, ringCoverage, ringSignature, signatureDistance }
 import { buildBookmarklet, parseScanPayload } from "../../../lib/facebook/bookmarklet";
 import { frameImageUrl } from "../../frames/frameUrl";
 import { useCurrentAdminClub } from "../AdminClubContext";
+import { Button } from "../ui/Button";
+import { Field, inputClass } from "../ui/Field";
+import { Icon } from "../ui/Icon";
+import { Notice } from "../ui/Notice";
+import { PageHeader } from "../ui/PageHeader";
+import { Panel } from "../ui/Panel";
 import { useReloadOnAdminChange } from "../adminClient";
 import { samePost } from "./postMatch";
 
@@ -23,7 +29,6 @@ type ClubData = { key: string; members: Member[]; aliases: Alias[]; tasks: ScanT
 type FrameSig = { frameId: string; status: "ok" | "thin" | "failed"; sig: number[]; coverage: number[] };
 type Verdict = "changed" | "not_changed" | "unreadable" | "na";
 
-const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100";
 const kindLabel = { engagement: "Tương tác bài viết", avatar: "Thay avatar" } as const;
 const assigneeLabel: Record<AssigneeStatus, string> = { pending: "Chờ", done: "Đã xong trước đó", missed: "Đã đánh dấu chưa hoàn thành" };
 const verdictLabel: Record<Verdict, string> = { changed: "Có vẻ đã thay khung", not_changed: "Chưa thấy khung", unreadable: "Không đọc được ảnh", na: "" };
@@ -64,7 +69,7 @@ async function readFrameSignature(imagePath: string): Promise<Omit<FrameSig, "fr
   }
 }
 
-function BookmarkletGuide() {
+function BookmarkletGuide({ primary = true }: { primary?: boolean }) {
   const linkRef = useRef<HTMLAnchorElement>(null);
   const codeRef = useRef<HTMLTextAreaElement>(null);
   const [copied, setCopied] = useState(false);
@@ -90,7 +95,7 @@ function BookmarkletGuide() {
 
   const steps = [
     "Chọn đúng CLB ở thanh bên trước khi quét. Kết quả sẽ được đối chiếu với thành viên của CLB đang chọn.",
-    "Hiện thanh dấu trang của trình duyệt (Ctrl + Shift + B trên Chrome hoặc Edge), rồi kéo nút xanh bên dưới lên thanh đó. Nếu không kéo được, bấm “Sao chép mã”, tạo dấu trang mới và dán mã vào ô địa chỉ (URL).",
+    "Hiện thanh dấu trang của trình duyệt (Ctrl + Shift + B trên Chrome hoặc Edge), rồi kéo nút “Quét Facebook BIT” bên dưới lên thanh đó. Nếu không kéo được, bấm “Sao chép mã”, tạo dấu trang mới và dán mã vào ô địa chỉ (URL).",
     "Trên chính trình duyệt đó, đăng nhập Facebook và mở bài viết của CLB.",
     "Bấm vào số lượt cảm xúc để mở hộp “Tất cả cảm xúc”, hoặc mở phần bình luận.",
     "Cuộn hết danh sách trong hộp cho đến khi không còn thêm người. Bookmarklet chỉ đọc những người đang hiện trong trang.",
@@ -98,14 +103,14 @@ function BookmarkletGuide() {
   ];
 
   return <div>
-    <ol className="space-y-3 text-sm text-zinc-700">{steps.map((step, index) => <li key={step} className="flex gap-3"><span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs font-bold text-emerald-800">{index + 1}</span><span className="min-w-0">{step}</span></li>)}</ol>
+    <ol className="space-y-3 text-sm text-zinc-700">{steps.map((step, index) => <li key={step} className="flex gap-3"><span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-semibold text-zinc-700">{index + 1}</span><span className="min-w-0">{step}</span></li>)}</ol>
     <div className="mt-5 flex flex-wrap items-center gap-3">
-      <a ref={linkRef} draggable onClick={(event) => event.preventDefault()} aria-label="Quét Facebook BIT: kéo nút này lên thanh dấu trang, không bấm tại đây" title="Kéo nút này lên thanh dấu trang" className="cursor-grab rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">Quét Facebook BIT</a>
-      <button type="button" onClick={() => void copy()} className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">{copied ? "Đã sao chép" : "Sao chép mã"}</button>
+      <a ref={linkRef} draggable onClick={(event) => event.preventDefault()} aria-label="Quét Facebook BIT: kéo nút này lên thanh dấu trang, không bấm tại đây" title="Kéo nút này lên thanh dấu trang" className={`inline-flex h-9 cursor-grab items-center gap-1.5 whitespace-nowrap rounded-lg px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${primary ? "bg-emerald-700 text-white hover:bg-emerald-800" : "border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50"}`}><Icon name="grip" />Quét Facebook BIT</a>
+      <Button variant="secondary" icon={copied ? "check" : undefined} onClick={() => void copy()}>{copied ? "Đã sao chép" : "Sao chép mã"}</Button>
     </div>
-    {copyError && <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{copyError}</p>}
-    <details className="mt-3 text-sm"><summary className="cursor-pointer font-medium text-zinc-700">Xem mã</summary><textarea ref={codeRef} readOnly rows={4} aria-label="Mã bookmarklet" onFocus={(event) => event.currentTarget.select()} className="mt-2 w-full break-all rounded-lg border border-zinc-300 bg-zinc-50 p-2 font-mono text-xs" /></details>
-    <p className="mt-4 rounded-lg bg-[#f7f8f6] p-3 text-xs text-zinc-600">Dữ liệu nằm trong phần sau dấu # của địa chỉ nên không gửi lên máy chủ nào; việc so khớp chạy ngay trên trình duyệt của bạn. Chỉ nút bấm này đọc trang Facebook, trên máy của bạn.</p>
+    {copyError && <Notice tone="error" className="mt-3 mb-0!">{copyError}</Notice>}
+    <details className="mt-3 text-sm"><summary className="cursor-pointer rounded font-medium text-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">Xem mã</summary><textarea ref={codeRef} readOnly rows={4} aria-label="Mã bookmarklet" onFocus={(event) => event.currentTarget.select()} className={`${inputClass} mt-2 break-all bg-zinc-50 font-mono text-xs`} /></details>
+    <p className="mt-4 text-xs text-zinc-500">Dữ liệu nằm trong phần sau dấu # của địa chỉ nên không gửi lên máy chủ nào; việc so khớp chạy ngay trên trình duyệt của bạn. Chỉ nút bấm này đọc trang Facebook, trên máy của bạn.</p>
   </div>;
 }
 
@@ -136,6 +141,7 @@ export function ScanImport() {
   const [attachMember, setAttachMember] = useState("");
   const [unmatchedQuery, setUnmatchedQuery] = useState("");
   const [unmatchedLimit, setUnmatchedLimit] = useState(PAGE);
+  const [showAliases, setShowAliases] = useState(false);
   const [busy, setBusy] = useState("");
   // Đã bấm xác nhận "quét nhầm bài" cho việc nào (tự hết hiệu lực khi đổi việc).
   const [ackMismatchTaskId, setAckMismatchTaskId] = useState("");
@@ -299,107 +305,106 @@ export function ScanImport() {
   }
 
   const dataLoading = canWrite && !!supabase && !loaded;
-  const aliasSection = loaded && <div className="overflow-hidden rounded-xl border bg-white">
-    <div className="border-b p-4"><h2 className="font-semibold">Tài khoản Facebook đã gắn ({aliases.length})</h2><p className="mt-1 text-xs text-zinc-500">Những tài khoản bạn đã gắn tay với thành viên. Gỡ nếu gắn nhầm hoặc muốn gắn lại cho người khác.</p></div>
-    {aliases.length ? <ul className="divide-y divide-zinc-100">{aliases.map((alias) => <li key={alias.fb_key} className="flex flex-wrap items-start justify-between gap-2 p-4">
-      <div className="min-w-0"><p className="break-words text-sm font-medium">{memberName(alias.member_id)}{allMembers.find((member) => member.id === alias.member_id)?.is_active === false && <span className="ml-2 text-xs font-normal text-zinc-500">Ngừng hoạt động</span>}</p><p className="break-all text-xs text-zinc-500">{alias.fb_key}</p></div>
-      <button type="button" disabled={busy === `detach:${alias.fb_key}`} onClick={() => void detach(alias)} className="shrink-0 rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-800 disabled:opacity-50">{busy === `detach:${alias.fb_key}` ? "Đang gỡ…" : "Gỡ"}</button>
-    </li>)}</ul> : <p className="p-6 text-sm text-zinc-500">Chưa gắn tài khoản Facebook nào. Khi kết quả quét có người chưa khớp, bạn có thể gắn họ với thành viên ở mục “Không khớp”.</p>}
-  </div>;
+  const rowPad = "px-4 py-3 sm:px-5";
+  const emptyNote = `${rowPad} text-sm text-zinc-500`;
+  const aliasSection = loaded && <Panel padded={false}>
+    <h2><button type="button" aria-expanded={showAliases} onClick={() => setShowAliases((open) => !open)} className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-base font-semibold text-zinc-900 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-600 sm:px-5">Tài khoản Facebook đã gắn ({aliases.length})<Icon name="chevron-down" className={`shrink-0 text-zinc-500 transition-transform ${showAliases ? "rotate-180" : ""}`} /></button></h2>
+    {showAliases && <div className="border-t border-zinc-100">
+      <p className={`${rowPad} text-xs text-zinc-500`}>Những tài khoản bạn đã gắn tay với thành viên. Gỡ nếu gắn nhầm hoặc muốn gắn lại cho người khác.</p>
+      {aliases.length ? <ul className="divide-y divide-zinc-100 border-t border-zinc-100">{aliases.map((alias) => <li key={alias.fb_key} className={`flex flex-wrap items-center justify-between gap-2 ${rowPad}`}>
+        <div className="min-w-0"><p className="break-words text-sm font-medium">{memberName(alias.member_id)}{allMembers.find((member) => member.id === alias.member_id)?.is_active === false && <span className="ml-2 text-xs font-normal text-zinc-500">Ngừng hoạt động</span>}</p><p className="break-all text-xs text-zinc-500">{alias.fb_key}</p></div>
+        <Button variant="danger" size="sm" loading={busy === `detach:${alias.fb_key}`} onClick={() => void detach(alias)}>{busy === `detach:${alias.fb_key}` ? "Đang gỡ…" : "Gỡ"}</Button>
+      </li>)}</ul> : <p className={`${emptyNote} border-t border-zinc-100`}>Chưa gắn tài khoản Facebook nào. Khi kết quả quét có người chưa khớp, bạn có thể gắn họ với thành viên ở mục “Không khớp”.</p>}
+    </div>}
+  </Panel>;
+  const skeleton = (label: string) => <div role="status" aria-label={label} className="h-32 animate-pulse rounded-xl bg-zinc-100" />;
 
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
-    <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Không gian CLB</p><h1 className="mt-1 text-3xl font-bold">Đối chiếu Facebook</h1><p className="mt-2 max-w-3xl text-sm text-zinc-600">Kiểm tra thành viên nào đã react, bình luận hoặc đổi avatar có khung. Bạn tự quét bài viết trên trình duyệt của mình bằng bookmarklet; trang này chỉ so khớp và đánh dấu xong. Kết quả nhận diện avatar là thử nghiệm, hãy xem lại trước khi xác nhận.</p></header>
-    {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-    {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    {!supabase && <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Thiếu cấu hình Supabase.</p>}
-    {!canWrite && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ Ban chủ nhiệm và Ban chủ chốt được đối chiếu và đánh dấu việc.</p>}
-    {loaded?.error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{loaded.error}</p>}
+    <PageHeader title="Đối chiếu Facebook" description="Kiểm tra thành viên nào đã react, bình luận hoặc đổi avatar có khung. Bạn tự quét bài viết trên trình duyệt của mình bằng bookmarklet; trang này chỉ so khớp và đánh dấu xong." />
+    {error && <Notice tone="error">{error}</Notice>}
+    {notice && <Notice tone="success">{notice}</Notice>}
+    {!supabase && <Notice tone="warning">Thiếu cấu hình Supabase.</Notice>}
+    {!canWrite && <Notice tone="warning">Chỉ Ban chủ nhiệm và Ban chủ chốt được đối chiếu và đánh dấu việc.</Notice>}
+    {loaded?.error && <Notice tone="error">{loaded.error}</Notice>}
 
-    {phase.kind === "reading" && <p role="status" className="text-sm text-zinc-500">Đang đọc dữ liệu quét…</p>}
+    {phase.kind === "reading" && skeleton("Đang đọc dữ liệu quét")}
 
-    {(phase.kind === "empty" || phase.kind === "invalid") && <div className="space-y-6">
-      <div className="rounded-xl border bg-white p-5">
-        {phase.kind === "invalid" && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">Dữ liệu quét không hợp lệ hoặc đã bị cắt bớt. Hãy quét lại bài viết bằng bookmarklet.</p>}
-        <h2 className="font-semibold">Cách quét một bài viết</h2>
-        <p className="mb-4 mt-1 text-xs text-zinc-500">Cài bookmarklet một lần, dùng lại cho mọi bài viết.</p>
+    {(phase.kind === "empty" || phase.kind === "invalid") && <div className="space-y-5">
+      {phase.kind === "invalid" && <Notice tone="error">Dữ liệu quét không hợp lệ hoặc đã bị cắt bớt. Hãy quét lại bài viết bằng bookmarklet.</Notice>}
+      <Panel title="Cách quét một bài viết">
+        <p className="mb-4 text-sm text-zinc-600">Cài bookmarklet một lần, dùng lại cho mọi bài viết.</p>
         <BookmarkletGuide />
-      </div>
+      </Panel>
       {aliasSection}
     </div>}
 
-    {scan && <div className="space-y-6">
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 text-sm text-amber-950">
-            <h2 className="font-semibold">Kết quả quét ({scan.items.length} người)</h2>
-            <p className="mt-1">Dữ liệu này đến từ địa chỉ của trang, nên chỉ dùng nếu chính bạn vừa quét. Nếu bạn không nhớ đã quét, hãy xóa kết quả.</p>
-            <p className="mt-2 text-xs">Quét lúc {Number.isNaN(Date.parse(scan.scannedAt)) ? "không rõ" : new Date(scan.scannedAt).toLocaleString("vi-VN")}, {scan.items.length} người.</p>
-            <p className="mt-1 break-all text-xs">Nguồn: {scan.source}</p>
-            <p className="mt-2 text-xs">Lưu ý: khi quét phần bình luận, người được nhắc tên (@) trong bình luận cũng bị tính là đã tham gia. Hãy xem lại danh sách trước khi đánh dấu.</p>
-          </div>
-          <button type="button" onClick={clearScan} className="shrink-0 rounded-lg border border-amber-700 bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 hover:bg-amber-100">Xóa kết quả quét</button>
-        </div>
-        <details className="mt-3 text-sm"><summary className="cursor-pointer font-medium text-emerald-800">Quét thêm bài viết hoặc phần bình luận</summary><div className="mt-3 rounded-lg bg-white p-4"><BookmarkletGuide /></div></details>
-      </div>
+    {scan && <div className="space-y-5">
+      <Panel title={`Kết quả quét (${scan.items.length} người)`} actions={<Button variant="secondary" size="sm" onClick={clearScan}>Xóa kết quả quét</Button>}>
+        <Notice tone="warning">Dữ liệu này đến từ địa chỉ của trang, nên chỉ dùng nếu chính bạn vừa quét. Nếu bạn không nhớ đã quét, hãy xóa kết quả.</Notice>
+        <p className="text-xs text-zinc-600">Quét lúc {Number.isNaN(Date.parse(scan.scannedAt)) ? "không rõ" : new Date(scan.scannedAt).toLocaleString("vi-VN")}.</p>
+        <p className="mt-1 break-all text-xs text-zinc-600">Nguồn: {scan.source}</p>
+        <p className="mt-2 text-xs text-zinc-500">Lưu ý: khi quét phần bình luận, người được nhắc tên (@) trong bình luận cũng bị tính là đã tham gia. Hãy xem lại danh sách trước khi đánh dấu.</p>
+        <details className="mt-4 text-sm"><summary className="cursor-pointer rounded font-medium text-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">Quét thêm bài viết hoặc phần bình luận</summary><div className="mt-3"><BookmarkletGuide primary={false} /></div></details>
+      </Panel>
 
-      {dataLoading && <p role="status" className="text-sm text-zinc-500">Đang tải thành viên và việc…</p>}
+      {dataLoading && skeleton("Đang tải thành viên và việc")}
 
       {loaded && <>
-        <div className="rounded-xl border bg-white p-5">
-          <h2 className="font-semibold">Việc cần đánh dấu</h2>
-          {tasks.length ? <>
-            <label className="mt-3 block text-sm">Chọn việc đang mở<select value={taskId} onChange={(event) => { setTaskId(event.target.value); setNotice(""); setError(""); }} className={inputClass}><option value="">Chỉ xem, chưa chọn việc</option>{tasks.map((row) => <option key={row.id} value={row.id}>{kindLabel[row.kind]}: {row.title}</option>)}</select></label>
-            {task && <div className="mt-3 space-y-1 text-sm text-zinc-600">
+        <Panel title="Việc cần đánh dấu">
+          {tasks.length ? <div className="space-y-3">
+            <Field label="Chọn việc đang mở"><select value={taskId} onChange={(event) => { setTaskId(event.target.value); setNotice(""); setError(""); }} className={inputClass}><option value="">Chỉ xem, chưa chọn việc</option>{tasks.map((row) => <option key={row.id} value={row.id}>{kindLabel[row.kind]}: {row.title}</option>)}</select></Field>
+            {task && <div className="space-y-2 text-sm text-zinc-600">
               <p className="break-words"><span className="font-medium text-zinc-800">{kindLabel[task.kind]}</span>, hạn {new Date(task.due_at).toLocaleString("vi-VN")}, {task.task_assignees.filter((row) => row.status === "pending").length}/{task.task_assignees.length} người còn chờ.</p>
-              {task.kind === "engagement" && task.post_url?.startsWith("https://") && <p><a href={task.post_url} target="_blank" rel="noopener noreferrer" className="font-medium text-emerald-800 underline">Mở bài viết của việc này</a></p>}
+              {task.kind === "engagement" && task.post_url?.startsWith("https://") && <p><a href={task.post_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded font-medium text-emerald-800 underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">Mở bài viết của việc này<Icon name="external" size={14} /></a></p>}
               <p className="text-xs text-zinc-500">Chưa ai được tick sẵn. Hãy chọn từng người, hoặc dùng nút chọn nhanh ở mục “Khớp”.</p>
-              {task.kind === "avatar" && !task.frame_id && <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Việc này chưa gắn khung nên không tự nhận diện được avatar. Hãy tick tay những người bạn đã xác nhận.</p>}
+              {task.kind === "avatar" && !task.frame_id && <Notice tone="warning" className="mb-0!">Việc này chưa gắn khung nên không tự nhận diện được avatar. Hãy tick tay những người bạn đã xác nhận.</Notice>}
               {task.kind === "avatar" && task.frame_id && frameLoading && <p role="status" className="text-xs text-zinc-500">Đang đọc ảnh khung…</p>}
-              {task.kind === "avatar" && currentFrameSig?.status === "failed" && <p role="alert" className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Không đọc được ảnh khung nên không so sánh được. Hãy tick tay.</p>}
-              {task.kind === "avatar" && currentFrameSig?.status === "thin" && <p role="alert" className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Khung không có viền đủ dày để nhận diện, nên trang không đoán. Hãy xem avatar bằng mắt và tick tay.</p>}
-              {task.kind === "avatar" && frameUsable && <p className="text-xs text-zinc-500">Nhận diện chỉ là phỏng đoán theo màu viền avatar nhỏ, hãy xem lại bằng mắt trước khi xác nhận.</p>}
+              {task.kind === "avatar" && currentFrameSig?.status === "failed" && <Notice tone="warning" className="mb-0!">Không đọc được ảnh khung nên không so sánh được. Hãy tick tay.</Notice>}
+              {task.kind === "avatar" && currentFrameSig?.status === "thin" && <Notice tone="warning" className="mb-0!">Khung không có viền đủ dày để nhận diện, nên trang không đoán. Hãy xem avatar bằng mắt và tick tay.</Notice>}
+              {task.kind === "avatar" && frameUsable && <p className="text-xs text-zinc-500">Nhận diện avatar là thử nghiệm, chỉ là phỏng đoán theo màu viền avatar nhỏ. Hãy xem lại bằng mắt trước khi xác nhận.</p>}
             </div>}
-          </> : <p className="mt-3 text-sm text-zinc-500">CLB chưa có việc đang mở loại “Tương tác bài viết” hoặc “Thay avatar”. <Link href="/manage-clubs/tasks" className="font-medium text-emerald-800 underline">Tạo việc ở mục Giao việc</Link> rồi quay lại quét. Bạn vẫn có thể xem đối chiếu và gắn tài khoản Facebook ở dưới.</p>}
-        </div>
+          </div> : <p className="text-sm text-zinc-500">CLB chưa có việc đang mở loại “Tương tác bài viết” hoặc “Thay avatar”. <Link href="/manage-clubs/tasks" className="font-medium text-emerald-800 underline">Tạo việc ở mục Giao việc</Link> rồi quay lại quét. Bạn vẫn có thể xem đối chiếu và gắn tài khoản Facebook ở dưới.</p>}
+        </Panel>
 
-        <div className="overflow-hidden rounded-xl border bg-white">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b p-4"><h2 className="font-semibold">Khớp ({matched.length})</h2>{task && eligibleCount > 0 && <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => selectRows(() => true)} className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Chọn hết người khớp</button>
-            {frameUsable && <button type="button" onClick={() => selectRows((row) => row.verdict === "changed")} className="rounded-lg border border-emerald-700 px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">Chọn người có vẻ đã thay khung</button>}
-            <button type="button" onClick={() => selectRows(() => false)} className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Bỏ chọn hết</button></div>}</div>
+        <Panel title={`Khớp (${matched.length})`} padded={false} actions={task && eligibleCount > 0 && <>
+          <Button variant="secondary" size="sm" onClick={() => selectRows(() => true)}>Chọn hết người khớp</Button>
+          {frameUsable && <Button variant="secondary" size="sm" onClick={() => selectRows((row) => row.verdict === "changed")}>Chọn người có vẻ đã thay khung</Button>}
+          <Button variant="ghost" size="sm" onClick={() => selectRows(() => false)}>Bỏ chọn hết</Button></>}>
           {rows.length ? <ul className="divide-y divide-zinc-100">{rows.map((row) => <li key={row.member.id}>
-            <label className={`flex items-start gap-3 p-4 ${row.eligible ? "cursor-pointer hover:bg-zinc-50" : "opacity-70"}`}>
-              <input type="checkbox" disabled={!task || !row.eligible} checked={row.checked} onChange={(event) => setChecked(row.member.id, event.target.checked)} className="mt-1 size-4 shrink-0" />
-              <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="break-words font-medium">{row.member.full_name}</span>{row.verdict !== "na" && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${verdictClass[row.verdict]}`}>{verdictLabel[row.verdict]}</span>}</span>
+            <label className={`flex items-start gap-3 ${rowPad} ${row.eligible ? "cursor-pointer hover:bg-zinc-50" : "opacity-70"}`}>
+              <input type="checkbox" disabled={!task || !row.eligible} checked={row.checked} onChange={(event) => setChecked(row.member.id, event.target.checked)} className="mt-1 size-4 shrink-0 accent-emerald-700" />
+              <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="break-words text-sm font-medium">{row.member.full_name}</span>{row.verdict !== "na" && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${verdictClass[row.verdict]}`}>{verdictLabel[row.verdict]}</span>}</span>
                 <span className="mt-0.5 block break-words text-xs text-zinc-500">Trên Facebook: {row.item.name || row.item.key}{task && (row.assignee ? ` · ${assigneeLabel[row.assignee.status]}` : " · Không được giao việc này")}</span></span>
             </label>
-          </li>)}</ul> : <p className="p-6 text-sm text-zinc-500">Chưa có người nào trong kết quả quét khớp với thành viên CLB. Hãy gắn tài khoản ở mục “Không khớp” bên dưới.</p>}
-          {task && postMismatch && <div role="alert" className="border-t border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-            <p className="font-semibold">Trang vừa quét có vẻ không phải bài viết của việc này.</p>
-            <p className="mt-1 break-all text-xs">Bài của việc: {task.post_url}</p>
-            <p className="mt-1 break-all text-xs">Trang đã quét: {scan?.source}</p>
-            <label className="mt-3 flex cursor-pointer items-start gap-2"><input type="checkbox" checked={mismatchAcked} onChange={(event) => setAckMismatchTaskId(event.target.checked ? task.id : "")} className="mt-0.5 size-4 shrink-0" /><span>Tôi đã kiểm tra: danh sách này đúng là của bài viết của việc, vẫn đánh dấu xong.</span></label>
+          </li>)}</ul> : <p className={emptyNote}>Chưa có người nào trong kết quả quét khớp với thành viên CLB. Hãy gắn tài khoản ở mục “Không khớp” bên dưới.</p>}
+          {task && postMismatch && <div className="border-t border-zinc-100 p-4 sm:p-5">
+            <Notice tone="warning" className="mb-0!">
+              <p className="font-semibold">Trang vừa quét có vẻ không phải bài viết của việc này.</p>
+              <p className="mt-1 break-all text-xs">Bài của việc: {task.post_url}</p>
+              <p className="mt-1 break-all text-xs">Trang đã quét: {scan?.source}</p>
+              <label className="mt-3 flex cursor-pointer items-start gap-2"><input type="checkbox" checked={mismatchAcked} onChange={(event) => setAckMismatchTaskId(event.target.checked ? task.id : "")} className="mt-0.5 size-4 shrink-0 accent-emerald-700" /><span>Tôi đã kiểm tra: danh sách này đúng là của bài viết của việc, vẫn đánh dấu xong.</span></label>
+            </Notice>
           </div>}
-          {task && <div className="flex flex-wrap items-center gap-3 border-t p-4"><button type="button" disabled={busy === "apply" || !selectedIds.length || (postMismatch && !mismatchAcked)} onClick={() => void apply()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "apply" ? "Đang lưu…" : `Đánh dấu xong cho ${selectedIds.length} người`}</button><p className="text-xs text-zinc-500">Chỉ đổi người đang “Chờ”, không đụng người đã xong hoặc đã bị đánh dấu chưa hoàn thành.</p></div>}
-        </div>
+          {task && <div className="sticky bottom-0 flex flex-wrap items-center gap-3 rounded-b-xl border-t border-zinc-100 bg-white px-4 py-3 sm:px-5"><Button variant="primary" icon="check" loading={busy === "apply"} disabled={!selectedIds.length || (postMismatch && !mismatchAcked)} onClick={() => void apply()}>{busy === "apply" ? "Đang lưu…" : `Đánh dấu xong cho ${selectedIds.length} người`}</Button><p className="min-w-0 flex-1 text-xs text-zinc-500">Chỉ đổi người đang “Chờ”, không đụng người đã xong hoặc đã bị đánh dấu chưa hoàn thành.</p></div>}
+        </Panel>
 
-        <div className="overflow-hidden rounded-xl border bg-white">
-          <div className="border-b p-4"><h2 className="font-semibold">Không khớp ({unmatched.length})</h2><p className="mt-1 text-xs text-zinc-500">Người trong kết quả quét chưa nhận ra là thành viên nào, thường là người ngoài CLB hoặc thành viên chưa điền link Facebook. Gắn tài khoản để lần sau tự khớp.</p></div>
-          {unmatched.length > 0 && <div className="border-b p-4"><label className="block text-xs font-medium text-zinc-600">Tìm trong danh sách<input type="search" value={unmatchedQuery} onChange={(event) => { setUnmatchedQuery(event.target.value); setUnmatchedLimit(PAGE); }} className={inputClass} placeholder="Gõ tên để lọc" /></label></div>}
-          {filteredUnmatched.length ? <ul className="divide-y divide-zinc-100">{filteredUnmatched.slice(0, unmatchedLimit).map((item) => <li key={item.key} className="p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="break-words text-sm font-medium">{item.name || "(Không có tên)"}</p><p className="break-all text-xs text-zinc-500">{item.key}</p></div>
-              {attachKey !== item.key && <button type="button" onClick={() => { setAttachKey(item.key); setAttachMember(""); }} className="shrink-0 rounded-lg border border-emerald-700 px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">Gắn với thành viên</button>}</div>
-            {attachKey === item.key && <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg bg-zinc-50 p-3"><label className="min-w-52 flex-1 text-xs font-medium text-zinc-600">Thành viên<select value={attachMember} onChange={(event) => setAttachMember(event.target.value)} className={inputClass}><option value="">Chọn thành viên</option>{members.map((member) => <option key={member.id} value={member.id}>{member.full_name}</option>)}</select></label>
-              <button type="button" disabled={!attachMember || busy === `attach:${item.key}`} onClick={() => void attach(item)} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === `attach:${item.key}` ? "Đang gắn…" : "Gắn"}</button>
-              <button type="button" disabled={busy === `attach:${item.key}`} onClick={() => setAttachKey("")} className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-white disabled:opacity-50">Hủy</button></div>}
-          </li>)}</ul> : <p className="p-6 text-sm text-zinc-500">{unmatched.length ? "Không có người phù hợp với từ khóa." : "Mọi người trong kết quả quét đều đã khớp."}</p>}
-          {filteredUnmatched.length > unmatchedLimit && <div className="border-t p-4"><button type="button" onClick={() => setUnmatchedLimit((limit) => limit + PAGE)} className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Hiện thêm ({filteredUnmatched.length - unmatchedLimit} người)</button></div>}
-        </div>
+        <Panel title={`Không khớp (${unmatched.length})`} padded={false}>
+          <p className={`${rowPad} text-xs text-zinc-500`}>Người trong kết quả quét chưa nhận ra là thành viên nào, thường là người ngoài CLB hoặc thành viên chưa điền link Facebook. Gắn tài khoản để lần sau tự khớp.</p>
+          {unmatched.length > 0 && <div className="px-4 pb-3 sm:px-5"><input type="search" aria-label="Tìm trong danh sách không khớp" value={unmatchedQuery} onChange={(event) => { setUnmatchedQuery(event.target.value); setUnmatchedLimit(PAGE); }} className={inputClass} placeholder="Tìm trong danh sách: gõ tên để lọc" /></div>}
+          {filteredUnmatched.length ? <ul className="divide-y divide-zinc-100 border-t border-zinc-100">{filteredUnmatched.slice(0, unmatchedLimit).map((item) => <li key={item.key} className={rowPad}>
+            <div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="break-words text-sm font-medium">{item.name || "(Không có tên)"}</p><p className="break-all text-xs text-zinc-500">{item.key}</p></div>
+              {attachKey !== item.key && <Button variant="secondary" size="sm" onClick={() => { setAttachKey(item.key); setAttachMember(""); }}>Gắn với thành viên</Button>}</div>
+            {attachKey === item.key && <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg bg-zinc-50 p-3"><Field label="Thành viên" className="min-w-52 flex-1"><select value={attachMember} onChange={(event) => setAttachMember(event.target.value)} className={inputClass} data-autofocus><option value="">Chọn thành viên</option>{members.map((member) => <option key={member.id} value={member.id}>{member.full_name}</option>)}</select></Field>
+              <Button variant="secondary" loading={busy === `attach:${item.key}`} disabled={!attachMember} onClick={() => void attach(item)}>{busy === `attach:${item.key}` ? "Đang gắn…" : "Gắn"}</Button>
+              <Button variant="ghost" disabled={busy === `attach:${item.key}`} onClick={() => setAttachKey("")}>Hủy</Button></div>}
+          </li>)}</ul> : <p className={`${emptyNote} border-t border-zinc-100`}>{unmatched.length ? "Không có người phù hợp với từ khóa." : "Mọi người trong kết quả quét đều đã khớp."}</p>}
+          {filteredUnmatched.length > unmatchedLimit && <div className="border-t border-zinc-100 px-4 py-3 sm:px-5"><Button variant="secondary" size="sm" onClick={() => setUnmatchedLimit((limit) => limit + PAGE)}>Hiện thêm ({filteredUnmatched.length - unmatchedLimit} người)</Button></div>}
+        </Panel>
 
-        <div className="overflow-hidden rounded-xl border bg-white">
-          <div className="border-b p-4"><h2 className="font-semibold">Thành viên chưa thấy ({missing.length})</h2><p className="mt-1 text-xs text-zinc-500">Thành viên đang hoạt động không có trong kết quả quét. Có thể họ chưa làm, hoặc chưa cuộn hết danh sách, hoặc tài khoản Facebook chưa được gắn.</p></div>
-          {missing.length ? <ul className="divide-y divide-zinc-100">{missing.map((member) => { const status = missingStatus(member); return <li key={member.id} className="flex flex-wrap items-start justify-between gap-2 p-4 text-sm"><span className="min-w-0 break-words font-medium">{member.full_name}{!member.facebook_url && <span className="ml-2 text-xs font-normal text-amber-800">Chưa có link Facebook</span>}</span>{task && <span className="text-xs text-zinc-500">{status ? assigneeLabel[status] : "Không được giao việc này"}</span>}</li>; })}</ul> : <p className="p-6 text-sm text-zinc-500">Mọi thành viên đang hoạt động đều có trong kết quả quét.</p>}
-        </div>
+        <Panel title={`Thành viên chưa thấy (${missing.length})`} padded={false}>
+          <p className={`${rowPad} text-xs text-zinc-500`}>Thành viên đang hoạt động không có trong kết quả quét. Có thể họ chưa làm, hoặc chưa cuộn hết danh sách, hoặc tài khoản Facebook chưa được gắn.</p>
+          {missing.length ? <ul className="divide-y divide-zinc-100 border-t border-zinc-100">{missing.map((member) => { const status = missingStatus(member); return <li key={member.id} className={`flex flex-wrap items-start justify-between gap-2 text-sm ${rowPad}`}><span className="min-w-0 break-words font-medium">{member.full_name}{!member.facebook_url && <span className="ml-2 text-xs font-normal text-amber-800">Chưa có link Facebook</span>}</span>{task && <span className="text-xs text-zinc-500">{status ? assigneeLabel[status] : "Không được giao việc này"}</span>}</li>; })}</ul> : <p className={`${emptyNote} border-t border-zinc-100`}>Mọi thành viên đang hoạt động đều có trong kết quả quét.</p>}
+        </Panel>
 
         {aliasSection}
       </>}

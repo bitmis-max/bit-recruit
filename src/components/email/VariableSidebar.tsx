@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { Button } from "../admin/ui/Button";
+import { inputClass } from "../admin/ui/Field";
 
 type VariableSidebarProps = {
   variables: string[];
@@ -10,6 +12,9 @@ type VariableSidebarProps = {
   onInsert: (variable: string) => void;
 };
 
+const cellInputClass = `${inputClass} py-1! text-xs! read-only:cursor-default read-only:bg-zinc-50 read-only:text-zinc-500`;
+
+/** Cột biến động trong bước soạn thư. Không có khung riêng: MailMergeApp đặt nó cạnh trình soạn bằng đường kẻ. */
 export function VariableSidebar({ variables, dataValues, values, onValuesChange, onInsert }: VariableSidebarProps) {
   const [customVariables, setCustomVariables] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
@@ -40,25 +45,25 @@ export function VariableSidebar({ variables, dataValues, values, onValuesChange,
     setCustomVariables((current) => current.filter((item) => item !== variable));
   }, []);
 
-  return <aside className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+  return <aside aria-label="Biến động" className="flex flex-col gap-3">
     <div>
-      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Biến động</h3>
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">Nhập giá trị để thay thế biến tương ứng trong tiêu đề và nội dung email.</p>
+      <h3 className="text-sm font-semibold text-zinc-900">Biến động</h3>
+      <p className="mt-0.5 text-xs text-zinc-500">Bấm tên biến để chèn vào thư. Nhập giá trị để thay biến trong tiêu đề và nội dung email.</p>
     </div>
     <form onSubmit={handleAdd} className="flex gap-2">
-      <input type="text" value={newVarName} onChange={(event) => setNewVarName(event.target.value)} placeholder="Tên biến mới..." className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-1.5 text-xs text-zinc-800 outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200" />
-      <button type="submit" className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white">Thêm biến</button>
+      <input type="text" value={newVarName} onChange={(event) => setNewVarName(event.target.value)} placeholder="Tên biến mới..." aria-label="Tên biến mới" className={`${inputClass} min-w-0 flex-1`} />
+      <Button type="submit" variant="secondary" icon="plus">Thêm biến</Button>
     </form>
-    <div className="max-h-72 overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+    <div className="max-h-72 overflow-auto border-t border-zinc-100">
       <table className="w-full table-fixed text-left text-sm">
-        <thead className="bg-zinc-50 text-xs font-semibold text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"><tr><th className="w-2/5 px-3 py-2">Biến</th><th className="px-3 py-2">Giá trị</th><th className="w-10 px-2 py-2"><span className="sr-only">Xóa</span></th></tr></thead>
-        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        <thead className="text-xs font-semibold text-zinc-600"><tr><th className="w-2/5 py-2 pr-2">Biến</th><th className="py-2">Giá trị</th><th className="w-9 py-2"><span className="sr-only">Xóa</span></th></tr></thead>
+        <tbody className="divide-y divide-zinc-100">
           {variablesList.map((variable) => <tr key={variable}>
-            <td className="truncate px-3 py-2"><button type="button" onClick={() => onInsert(variable)} title="Chèn biến vào email" className="font-mono text-xs text-indigo-700 hover:underline dark:text-indigo-300">{`{{${variable}}}`}</button></td>
-            <td className="px-2 py-1.5"><input type="text" aria-label={`Giá trị cho ${variable}`} value={variables.includes(variable) ? dataValues[variable] ?? dataValues[variable.toLowerCase()] ?? "" : values[variable] ?? ""} readOnly={variables.includes(variable)} onChange={(event) => onValuesChange({ ...values, [variable]: event.target.value })} placeholder={variables.includes(variable) ? "Lấy từ dữ liệu" : `Giá trị cho ${variable}`} className={`w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs outline-none dark:border-zinc-700 ${variables.includes(variable) ? "cursor-not-allowed bg-zinc-100 text-zinc-500 dark:bg-zinc-800" : "bg-white focus:border-indigo-500 dark:bg-zinc-900"}`} /></td>
-            <td className="px-2 py-1.5">{customVariables.includes(variable) && <button type="button" onClick={() => handleDelete(variable)} aria-label={`Xóa biến ${variable}`} className="rounded px-2 py-1 text-zinc-400 hover:bg-rose-50 hover:text-rose-600">×</button>}</td>
+            <td className="truncate py-1.5 pr-2"><button type="button" onClick={() => onInsert(variable)} title="Chèn biến vào email" className="rounded font-mono text-xs text-emerald-800 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{`{{${variable}}}`}</button></td>
+            <td className="py-1.5"><input type="text" aria-label={`Giá trị cho ${variable}`} value={variables.includes(variable) ? dataValues[variable] ?? dataValues[variable.toLowerCase()] ?? "" : values[variable] ?? ""} readOnly={variables.includes(variable)} onChange={(event) => onValuesChange({ ...values, [variable]: event.target.value })} placeholder={variables.includes(variable) ? "Lấy từ dữ liệu" : "Nhập giá trị"} className={cellInputClass} /></td>
+            <td className="py-1.5 pl-1">{customVariables.includes(variable) && <Button variant="ghost" size="sm" icon="close" onClick={() => handleDelete(variable)} aria-label={`Xóa biến ${variable}`} />}</td>
           </tr>)}
-          {!variablesList.length && <tr><td colSpan={3} className="px-3 py-4 text-center text-xs text-zinc-400">Chưa có biến nào.</td></tr>}
+          {!variablesList.length && <tr><td colSpan={3} className="py-4 text-center text-xs text-zinc-500">Chưa có biến nào.</td></tr>}
         </tbody>
       </table>
     </div>

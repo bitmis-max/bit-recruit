@@ -1,11 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { getNearestCampaignId } from "../../../lib/recruitment/campaign-selection";
 import { normalizeSearchText } from "../../../lib/recruitment/search";
 import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
+import { Button } from "../ui/Button";
+import { EmptyState } from "../ui/EmptyState";
+import { inputClass } from "../ui/Field";
+import { Icon } from "../ui/Icon";
+import { Notice } from "../ui/Notice";
+import { PageHeader } from "../ui/PageHeader";
+import { Panel } from "../ui/Panel";
 import { ApplicantAnswersModal } from "./ApplicantAnswersModal";
 import { ApplicantImportDialog } from "./ApplicantImportDialog";
 import { fetchAllPages, loadApplicationAnswers } from "./loadAnswers";
@@ -16,12 +23,14 @@ type Position = { id: string; name: string; team_id: string | null };
 type Application = { id: string; campaign_id: string; position_id: string; full_name: string | null; email: string | null; phone: string | null; student_code: string | null; class_name: string | null; facebook_url: string | null; admitted_member_id: string | null; status: string; submitted_at: string };
 type Answer = { application_id: string; question_id: string; question_text: string; answer_text: string | null; answer_json: unknown };
 const statusLabel: Record<string, string> = { submitted: "Mới nộp", screening: "Đang xét", interview: "Phỏng vấn", passed: "Đạt", failed: "Không đạt", withdrawn: "Đã rút" };
+const checkboxClass = "size-4 accent-emerald-700 disabled:opacity-40";
 
 export function ApplicationsManager() {
   const supabase = getSupabaseClient();
   const { id: clubId, role } = useCurrentAdminClub();
   const canWrite = role === "owner" || role === "admin";
   const [selected, setSelected] = useState<string[]>([]);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -112,21 +121,81 @@ export function ApplicationsManager() {
     return grouped;
   }, [answers]);
 
+  const columnCount = (canWrite ? 1 : 0) + 5;
+
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-emerald-700">Hồ sơ tuyển thành viên</p><h1 className="mt-1 text-3xl font-bold">Quản lý đơn ứng tuyển</h1><p className="mt-2 text-sm text-zinc-600">Lọc hồ sơ theo đợt tuyển và ban tuyển.</p></div><div className="flex flex-wrap gap-2">{canWrite && <ApplicantImportDialog campaignId={campaignFilter} campaignName={campaignById.get(campaignFilter) ?? ""} disabled={busy || loading} onError={setError} onImported={async (message) => { setError(""); setNotice(message); await load(); }} />}<button type="button" onClick={() => void load()} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Làm mới</button></div></header>
-    {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-    {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border bg-white p-4"><label htmlFor="application-campaign-filter" className="text-sm font-semibold">Đợt tuyển<select id="application-campaign-filter" value={campaignFilter} onChange={(event) => setCampaignFilter(event.target.value)} className="mt-1 block min-w-52 rounded-lg border bg-white px-3 py-2 text-sm">{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}</select></label><label className="text-sm font-semibold">Tìm ứng viên<input type="search" value={applicantSearch} onChange={(event) => setApplicantSearch(event.target.value)} placeholder="Họ tên, mã sinh viên hoặc lớp" className="mt-1 block min-w-64 rounded-lg border bg-white px-3 py-2 text-sm" /></label><label htmlFor="application-team-filter" className="text-sm font-semibold">Ban tuyển<select id="application-team-filter" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)} className="mt-1 block min-w-52 rounded-lg border bg-white px-3 py-2 text-sm"><option value="all">Tất cả các ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label><span className="pb-2 text-sm text-zinc-500">{filtered.length} đơn</span>{canWrite && <div className="ml-auto flex flex-wrap items-center gap-2"><span className="text-sm text-zinc-500">{selectedAdmittable.length} đơn được chọn</span><button type="button" disabled={busy || !selectedAdmittable.length} onClick={() => void admit()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang xử lý…" : "Kết nạp"}</button></div>}</div>
-    {loading ? <p className="rounded-xl border bg-white p-8 text-sm text-zinc-500">Đang tải đơn ứng tuyển…</p> : filtered.length ? <div className="overflow-x-auto rounded-xl border bg-white shadow-sm"><table className="w-full min-w-[1250px] text-left text-sm"><thead className="bg-zinc-50 text-xs uppercase text-zinc-500"><tr>{canWrite && <th className="w-10 px-3 py-3"><input type="checkbox" aria-label="Chọn tất cả đơn đã đạt, chưa kết nạp" disabled={!admittable.length} checked={admittable.length > 0 && selectedAdmittable.length === admittable.length} onChange={(event) => setSelected(event.target.checked ? admittable.map((application) => application.id) : [])} /></th>}<th className="px-4 py-3">Ứng viên</th><th className="px-4 py-3">Đợt tuyển / ban / vị trí</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Thời gian tham gia phỏng vấn</th><th className="px-4 py-3">Câu trả lời trong form</th></tr></thead><tbody className="divide-y">{filtered.map((application) => {
-      const position = positionById.get(application.position_id);
-      const teamId = teamByPosition.get(application.position_id);
-      const status = statusLabel[application.status] ?? application.status;
-      const applicationAnswers = answersByApplication.get(application.id) ?? [];
-      const availabilityAnswer = applicationAnswers.find((answer) => answer.question_text.trim().toLocaleLowerCase("vi") === "thời gian có thể tham gia phỏng vấn".toLocaleLowerCase("vi"));
-      const availabilityValue = availabilityAnswer?.answer_text ?? (availabilityAnswer?.answer_json == null ? null : typeof availabilityAnswer.answer_json === "string" ? availabilityAnswer.answer_json : JSON.stringify(availabilityAnswer.answer_json));
-      const canAdmit = application.status === "passed" && !application.admitted_member_id;
-      const facebookHref = application.facebook_url && /^https:\/\//i.test(application.facebook_url) ? application.facebook_url : null;
-      return <tr key={application.id} className="align-top">{canWrite && <td className="px-3 py-2"><input type="checkbox" aria-label={`Chọn ${application.full_name || "ứng viên"} để kết nạp`} disabled={!canAdmit} checked={selected.includes(application.id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, application.id] : current.filter((id) => id !== application.id))} /></td>}<td className="px-3 py-2"><p className="font-semibold">{application.full_name || "Chưa cung cấp họ tên"}</p><p className="mt-1 text-xs text-zinc-600">{application.email || "Chưa cung cấp email"}</p><p className="mt-1 text-xs text-zinc-600">{application.phone || "Chưa có số điện thoại"}</p><p className="mt-1 text-xs text-zinc-500">MSSV: {application.student_code || "—"} · Lớp: {application.class_name || "—"}</p>{facebookHref && <p className="mt-1 text-xs"><a href={facebookHref} target="_blank" rel="noopener noreferrer" className="font-medium text-emerald-800 underline">Facebook</a></p>}</td><td className="px-3 py-2"><p className="font-medium">{campaignById.get(application.campaign_id) ?? "Đợt tuyển"}</p><p className="mt-1 text-sm text-zinc-600">{teamId ? teamById.get(teamId) : "Chưa gán ban"}</p><p className="mt-1 text-sm text-zinc-700">{position?.name ?? "Vị trí đã xóa"}</p></td><td className="px-3 py-2">{canWrite ? <label className="block text-xs font-semibold text-zinc-500">Trạng thái<select disabled={busy || !!application.admitted_member_id} title={application.admitted_member_id ? "Đơn đã kết nạp thành thành viên nên không đổi trạng thái được." : undefined} value={application.status} onChange={(event) => void changeStatus(application, event.target.value)} className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-normal text-zinc-900 disabled:opacity-60">{Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{status}</span>}{application.admitted_member_id && <p className="mt-2"><span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">Đã kết nạp</span><span className="mt-1 block text-xs text-zinc-500">Không đổi trạng thái được nữa.</span></p>}<p className="mt-2 text-xs text-zinc-500">Nộp lúc {new Date(application.submitted_at).toLocaleString("vi-VN")}</p></td><td className="max-w-xs px-3 py-2"><p title={availabilityValue ?? "Chưa có thông tin thời gian"} className="line-clamp-2 min-w-[180px] whitespace-pre-wrap break-words text-xs leading-4 text-zinc-700">{availabilityValue || <span className="text-zinc-500">Chưa có thông tin thời gian</span>}</p></td><td className="px-3 py-2"><ApplicantAnswersModal applicantName={application.full_name || "Ứng viên"} answers={applicationAnswers} /></td></tr>;
-    })}</tbody></table></div> : <div className="rounded-xl border border-dashed bg-white p-8 text-center text-sm text-zinc-500">Chưa có đơn ứng tuyển phù hợp.</div>}
+    <PageHeader title="Đơn ứng tuyển" description="Lọc hồ sơ theo đợt tuyển và ban tuyển." actions={<>
+      {canWrite && <ApplicantImportDialog campaignId={campaignFilter} campaignName={campaignById.get(campaignFilter) ?? ""} disabled={busy || loading} onError={setError} onImported={async (message) => { setError(""); setNotice(message); await load(); }} />}
+      <Button icon="refresh" onClick={() => void load()}>Làm mới</Button>
+    </>} />
+    {error && <Notice tone="error">{error}</Notice>}
+    {notice && <Notice tone="success">{notice}</Notice>}
+    <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(0,18rem)_minmax(0,12rem)_minmax(0,1fr)]">
+      <select id="application-campaign-filter" aria-label="Đợt tuyển" value={campaignFilter} onChange={(event) => setCampaignFilter(event.target.value)} className={inputClass}>{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}</select>
+      <select id="application-team-filter" aria-label="Ban tuyển" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)} className={inputClass}><option value="all">Tất cả các ban</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select>
+      <input type="search" aria-label="Tìm ứng viên" value={applicantSearch} onChange={(event) => setApplicantSearch(event.target.value)} placeholder="Tìm theo họ tên, mã sinh viên hoặc lớp" className={inputClass} />
+    </div>
+    {loading ? <div role="status" aria-label="Đang tải đơn ứng tuyển" className="h-72 animate-pulse rounded-xl bg-zinc-100" /> : <Panel
+      title={`${filtered.length} đơn`}
+      padded={false}
+      actions={canWrite && selectedAdmittable.length > 0 && <>
+        <span className="text-sm text-zinc-600">{selectedAdmittable.length} đơn được chọn</span>
+        <Button variant="ghost" size="sm" onClick={() => setSelected([])} disabled={busy}>Bỏ chọn</Button>
+        <Button variant="primary" size="sm" icon="check" loading={busy} onClick={() => void admit()}>{busy ? "Đang xử lý…" : "Kết nạp"}</Button>
+      </>}>
+      {filtered.length ? <div className="overflow-x-auto rounded-b-xl"><table className="w-full text-left text-sm">
+        <thead className="bg-zinc-50 text-xs text-zinc-500"><tr>
+          {canWrite && <th className="w-8 py-2.5 pl-3 pr-0 sm:w-10 sm:pl-4 sm:pr-1"><input type="checkbox" className={checkboxClass} aria-label="Chọn tất cả đơn đã đạt, chưa kết nạp" disabled={!admittable.length} checked={admittable.length > 0 && selectedAdmittable.length === admittable.length} onChange={(event) => setSelected(event.target.checked ? admittable.map((application) => application.id) : [])} /></th>}
+          <th className="px-2 py-2.5 font-medium sm:px-3">Ứng viên</th>
+          <th className="hidden px-3 py-2.5 font-medium sm:table-cell">Vị trí</th>
+          <th className="px-2 py-2.5 font-medium sm:px-3">Trạng thái</th>
+          <th className="hidden px-3 py-2.5 font-medium md:table-cell">Nộp lúc</th>
+          <th className="py-2.5 pl-1 pr-4 text-right font-medium"><span className="sr-only">Chi tiết</span></th>
+        </tr></thead>
+        <tbody className="divide-y divide-zinc-100">{filtered.map((application) => {
+          const position = positionById.get(application.position_id);
+          const teamId = teamByPosition.get(application.position_id);
+          const teamName = teamId ? teamById.get(teamId) : null;
+          const status = statusLabel[application.status] ?? application.status;
+          const applicationAnswers = answersByApplication.get(application.id) ?? [];
+          const availabilityAnswer = applicationAnswers.find((answer) => answer.question_text.trim().toLocaleLowerCase("vi") === "thời gian có thể tham gia phỏng vấn".toLocaleLowerCase("vi"));
+          const availabilityValue = availabilityAnswer?.answer_text ?? (availabilityAnswer?.answer_json == null ? null : typeof availabilityAnswer.answer_json === "string" ? availabilityAnswer.answer_json : JSON.stringify(availabilityAnswer.answer_json));
+          const canAdmit = application.status === "passed" && !application.admitted_member_id;
+          const facebookHref = application.facebook_url && /^https:\/\//i.test(application.facebook_url) ? application.facebook_url : null;
+          const applicantLabel = application.full_name || "ứng viên";
+          const isOpen = openId === application.id;
+          const detailId = `application-detail-${application.id}`;
+          const submittedAt = new Date(application.submitted_at).toLocaleString("vi-VN");
+          return <Fragment key={application.id}>
+            <tr className={selected.includes(application.id) ? "bg-emerald-50/50" : isOpen ? "bg-zinc-50" : ""}>
+              {canWrite && <td className="py-2 pl-3 pr-0 sm:pl-4 sm:pr-1"><input type="checkbox" className={checkboxClass} aria-label={`Chọn ${applicantLabel} để kết nạp`} title={canAdmit ? undefined : "Chỉ chọn được đơn đã đạt và chưa kết nạp."} disabled={!canAdmit} checked={selected.includes(application.id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, application.id] : current.filter((id) => id !== application.id))} /></td>}
+              <td className="min-w-32 px-2 py-2 sm:px-3"><p className="break-words font-medium text-zinc-900">{application.full_name || "Chưa cung cấp họ tên"}</p><p className="break-all text-xs text-zinc-600">{application.email || "Chưa cung cấp email"}</p><p className="text-xs text-zinc-500 sm:hidden">{position?.name ?? "Vị trí đã xóa"}</p></td>
+              <td className="hidden px-3 py-2 sm:table-cell"><p className="text-zinc-900">{position?.name ?? "Vị trí đã xóa"}</p><p className="text-xs text-zinc-500">{teamName ?? "Chưa gán ban"}</p></td>
+              <td className="px-2 py-2 sm:px-3">{canWrite
+                ? <select aria-label={`Trạng thái đơn của ${applicantLabel}`} disabled={busy || !!application.admitted_member_id} title={application.admitted_member_id ? "Đơn đã kết nạp thành thành viên nên không đổi trạng thái được." : undefined} value={application.status} onChange={(event) => void changeStatus(application, event.target.value)} className={`${inputClass} min-w-[6.75rem]`}>{Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+                : <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">{status}</span>}
+                {application.admitted_member_id && <span className="mt-1 block text-xs font-medium text-sky-800">Đã kết nạp</span>}
+              </td>
+              <td className="hidden whitespace-nowrap px-3 py-2 text-xs text-zinc-600 md:table-cell">{submittedAt}</td>
+              <td className="py-2 pl-0 pr-2 text-right sm:pl-1 sm:pr-4"><Button variant="ghost" size="sm" aria-expanded={isOpen} aria-controls={detailId} aria-label={`${isOpen ? "Ẩn" : "Xem"} chi tiết đơn của ${applicantLabel}`} onClick={() => setOpenId(isOpen ? null : application.id)}><span className="hidden sm:inline">Xem</span><Icon name="chevron-down" size={14} className={isOpen ? "rotate-180" : ""} /></Button></td>
+            </tr>
+            {isOpen && <tr id={detailId} className="bg-zinc-50"><td colSpan={columnCount} className="px-4 py-4 sm:px-5">
+              <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <div><dt className="text-xs text-zinc-500">Email</dt><dd className="break-all text-zinc-900">{application.email || "Chưa cung cấp email"}</dd></div>
+                <div><dt className="text-xs text-zinc-500">Số điện thoại</dt><dd className="text-zinc-900">{application.phone || "Chưa có số điện thoại"}</dd></div>
+                <div><dt className="text-xs text-zinc-500">MSSV · Lớp</dt><dd className="text-zinc-900">{application.student_code || "—"} · {application.class_name || "—"}</dd></div>
+                <div><dt className="text-xs text-zinc-500">Đợt tuyển</dt><dd className="text-zinc-900">{campaignById.get(application.campaign_id) ?? "Đợt tuyển"}</dd></div>
+                <div><dt className="text-xs text-zinc-500">Ban · Vị trí</dt><dd className="text-zinc-900">{teamName ?? "Chưa gán ban"} · {position?.name ?? "Vị trí đã xóa"}</dd></div>
+                <div><dt className="text-xs text-zinc-500">Nộp lúc</dt><dd className="text-zinc-900">{submittedAt}</dd></div>
+                {facebookHref && <div><dt className="text-xs text-zinc-500">Facebook</dt><dd><a href={facebookHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-emerald-800 underline underline-offset-2">Facebook<Icon name="external" size={14} /></a></dd></div>}
+                <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-zinc-500">Thời gian có thể tham gia phỏng vấn</dt><dd className="whitespace-pre-wrap break-words text-zinc-900">{availabilityValue || <span className="text-zinc-500">Chưa có thông tin thời gian</span>}</dd></div>
+              </dl>
+              {application.admitted_member_id && <p className="mt-3 text-sm text-sky-800">Đơn đã kết nạp thành thành viên. Không đổi trạng thái được nữa.</p>}
+              <div className="mt-4"><ApplicantAnswersModal applicantName={application.full_name || "Ứng viên"} answers={applicationAnswers} /></div>
+            </td></tr>}
+          </Fragment>;
+        })}</tbody>
+      </table></div> : <EmptyState title="Chưa có đơn ứng tuyển phù hợp" description="Thử đổi đợt tuyển, ban hoặc từ khóa tìm kiếm." />}
+    </Panel>}
   </section>;
 }

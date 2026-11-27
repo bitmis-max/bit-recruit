@@ -6,7 +6,7 @@ import { getSupabaseClient } from "../lib/supabase/client";
 import type { FormQuestion } from "../lib/recruitment/types";
 import { friendlyError } from "../lib/ui/friendly-error";
 import { formatInterviewRange } from "../lib/recruitment/interview-time";
-import { OTHER_OPTION } from "./admin/recruitment/QuestionFields";
+import { OTHER_OPTION } from "./admin/recruitment/otherOption";
 
 type InterviewSession = { id: string; start_time: string; end_time: string };
 type Props = { position: { id: string; name: string }; questions: FormQuestion[]; interviewSessions: InterviewSession[] };

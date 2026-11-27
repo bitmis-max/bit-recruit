@@ -6,13 +6,14 @@ import { getNearestCampaignId } from "../../lib/recruitment/campaign-selection";
 import { friendlyError } from "../../lib/ui/friendly-error";
 import type { ParsedData } from "../../lib/files/parse";
 import { fetchAllPages } from "../admin/recruitment/loadAnswers";
+import { Button } from "../admin/ui/Button";
+import { Field, inputClass } from "../admin/ui/Field";
+import { Notice } from "../admin/ui/Notice";
 import { APPLICATION_COLUMNS, buildApplicantRows, type ApplicationRecord } from "./applicationRows";
 
 type Campaign = { id: string; name: string; status: string; start_date: string | null; end_date: string | null; created_at: string };
 type Position = { id: string; campaign_id: string; name: string };
 type Preview = { rows: Record<string, string>[]; noEmail: number; duplicates: number };
-
-const selectClass = "mt-1 w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100";
 
 export function ApplicationImport({ clubId, onImport, onClose }: { clubId: string; onImport: (data: ParsedData) => void; onClose: () => void }) {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
@@ -79,43 +80,42 @@ export function ApplicationImport({ clubId, onImport, onClose }: { clubId: strin
     void loadPreview(campaigns ?? [], campaignId, value, positions);
   }
 
+  // Khối nền nhạt (không viền) để không lồng khung trong Panel.
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+    <div className="mt-4 flex flex-col gap-3 rounded-lg bg-zinc-50 p-4">
       {campaigns && !campaigns.length ? (
-        <p className="text-xs text-zinc-600 dark:text-zinc-300">CLB chưa có đợt tuyển nào.</p>
+        <p className="text-sm text-zinc-600">CLB chưa có đợt tuyển nào.</p>
       ) : (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-            Đợt tuyển
-            <select className={selectClass} value={campaignId} disabled={loading || !campaigns} onChange={(event) => changeCampaign(event.target.value)}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Đợt tuyển">
+            <select className={inputClass} value={campaignId} disabled={loading || !campaigns} onChange={(event) => changeCampaign(event.target.value)}>
               {(campaigns ?? []).map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}
             </select>
-          </label>
-          <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-            Vị trí (không bắt buộc)
-            <select className={selectClass} value={positionId} disabled={loading || !campaigns} onChange={(event) => changePosition(event.target.value)}>
+          </Field>
+          <Field label="Vị trí (không bắt buộc)">
+            <select className={inputClass} value={positionId} disabled={loading || !campaigns} onChange={(event) => changePosition(event.target.value)}>
               <option value="">Tất cả vị trí</option>
               {campaignPositions.map((position) => <option key={position.id} value={position.id}>{position.name}</option>)}
             </select>
-          </label>
+          </Field>
         </div>
       )}
-      <p role="status" className="text-xs text-zinc-600 dark:text-zinc-300">
+      <p role="status" className="text-sm text-zinc-600">
         {loading ? "Đang đếm đơn ứng tuyển…" : preview
           ? `${preview.rows.length} người có email${preview.duplicates ? `, đã loại ${preview.duplicates} email trùng` : ""}${preview.noEmail ? `, bỏ ${preview.noEmail} đơn không có email` : ""}.`
           : ""}
       </p>
-      {error ? <p role="alert" className="text-xs text-rose-600">{error}</p> : null}
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={onClose} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">Đóng</button>
-        <button
-          type="button"
+      {error ? <Notice tone="error" className="mb-0!">{error}</Notice> : null}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>Đóng</Button>
+        <Button
+          variant="secondary"
+          icon="check"
           disabled={loading || !preview?.rows.length}
           onClick={() => { if (preview) { onImport({ columns: APPLICATION_COLUMNS, rows: preview.rows }); onClose(); } }}
-          className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {preview?.rows.length ? `Nạp ${preview.rows.length} người` : "Nạp vào danh sách"}
-        </button>
+        </Button>
       </div>
     </div>
   );
