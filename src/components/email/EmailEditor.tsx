@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { EditorContent, type Editor, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -45,6 +45,35 @@ const VariableHighlight = Extension.create({
   },
 });
 
+type Tool = { label: string; stroke?: number; icon: ReactNode; active: (editor: Editor) => boolean; run: (editor: Editor) => void };
+const line = (x1: number, y1: number, x2: number, y2: number) => <line key={`${x1}-${y1}-${x2}-${y2}`} x1={x1} y1={y1} x2={x2} y2={y2} />;
+const alignTool = (label: string, align: "left" | "center" | "right", rows: [number, number, number][]): Tool => ({
+  label,
+  icon: <>{rows.map(([x1, x2, y]) => line(x1, y, x2, y))}</>,
+  active: (editor) => editor.isActive({ textAlign: align }),
+  run: (editor) => editor.chain().focus().setTextAlign(align).run(),
+});
+const toolGroups: { name: string; tools: Tool[] }[] = [
+  {
+    name: "format",
+    tools: [
+      { label: "In đậm", stroke: 2.5, icon: <path d="M6 12h9a4 4 0 004-4 4 4 0 00-4-4H7v16h9a4 4 0 004-4 4 4 0 00-4-4H6z" />, active: (e) => e.isActive("bold"), run: (e) => e.chain().focus().toggleBold().run() },
+      { label: "In nghiêng", stroke: 2.5, icon: <>{line(19, 4, 10, 4)}{line(14, 20, 5, 20)}{line(15, 4, 9, 20)}</>, active: (e) => e.isActive("italic"), run: (e) => e.chain().focus().toggleItalic().run() },
+      { label: "Gạch chân", stroke: 2.5, icon: <path d="M6 4v6a6 6 0 0012 0V4M4 20h16" />, active: (e) => e.isActive("underline"), run: (e) => e.chain().focus().toggleUnderline().run() },
+      { label: "Tiêu đề (H2)", stroke: 2.5, icon: <path d="M4 12h16M4 4v16M20 4v16" />, active: (e) => e.isActive("heading", { level: 2 }), run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run() },
+      { label: "Danh sách dấu đầu dòng", stroke: 2.5, icon: <>{line(8, 6, 21, 6)}{line(8, 12, 21, 12)}{line(8, 18, 21, 18)}{line(3, 6, 3.01, 6)}{line(3, 12, 3.01, 12)}{line(3, 18, 3.01, 18)}</>, active: (e) => e.isActive("bulletList"), run: (e) => e.chain().focus().toggleBulletList().run() },
+    ],
+  },
+  {
+    name: "align",
+    tools: [
+      alignTool("Căn lề trái", "left", [[3, 17, 10], [3, 21, 6], [3, 21, 14], [3, 17, 18]]),
+      alignTool("Căn lề giữa", "center", [[6, 18, 10], [3, 21, 6], [3, 21, 14], [6, 18, 18]]),
+      alignTool("Căn lề phải", "right", [[7, 21, 10], [3, 21, 6], [3, 21, 14], [7, 21, 18]]),
+    ],
+  },
+];
+
 export type EmailEditorProps = {
   value: string;
   onChange: (html: string) => void;
@@ -73,7 +102,10 @@ export function EmailEditor({
     editorProps: {
       attributes: {
         class:
-          "editor-content min-h-[280px] rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-900 shadow-sm outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100",
+          "editor-content min-h-[280px] rounded-lg border border-zinc-300 bg-white p-4 text-sm text-zinc-900 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20",
+        role: "textbox",
+        "aria-multiline": "true",
+        "aria-label": "Nội dung thư",
       },
     },
     onUpdate({ editor: current }: { editor: Editor }) {
@@ -97,128 +129,37 @@ export function EmailEditor({
     }
   }, [editor, value]);
 
-  const getButtonClass = (isActive: boolean) =>
-    `rounded-lg border p-2 transition disabled:cursor-not-allowed disabled:opacity-50 ${isActive
-      ? "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/40 dark:bg-indigo-500/20 dark:text-indigo-200"
-      : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 hover:text-indigo-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-indigo-400"
-    }`;
-
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-1">
-        <button
-          type="button"
-          className={getButtonClass(editor?.isActive("bold") ?? false)}
-          onClick={() => editor?.chain().focus().toggleBold().run()}
-          disabled={!canUpdate}
-          title="In đậm"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12h9a4 4 0 004-4 4 4 0 00-4-4H7v16h9a4 4 0 004-4 4 4 0 00-4-4H6z" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className={getButtonClass(editor?.isActive("italic") ?? false)}
-          onClick={() => editor?.chain().focus().toggleItalic().run()}
-          disabled={!canUpdate}
-          title="In nghiêng"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <line x1="19" y1="4" x2="10" y2="4" strokeLinecap="round" />
-            <line x1="14" y1="20" x2="5" y2="20" strokeLinecap="round" />
-            <line x1="15" y1="4" x2="9" y2="20" strokeLinecap="round" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className={getButtonClass(editor?.isActive("underline") ?? false)}
-          onClick={() => editor?.chain().focus().toggleUnderline().run()}
-          disabled={!canUpdate}
-          title="Gạch chân"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 4v6a6 6 0 0012 0V4M4 20h16" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className={getButtonClass(editor?.isActive("heading", { level: 2 }) ?? false)}
-          onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
-          disabled={!canUpdate}
-          title="Tiêu đề (H2)"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 12h16M4 4v16M20 4v16" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className={getButtonClass(editor?.isActive("bulletList") ?? false)}
-          onClick={() => editor?.chain().focus().toggleBulletList().run()}
-          disabled={!canUpdate}
-          title="Danh sách dấu đầu dòng"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <line x1="8" y1="6" x2="21" y2="6" strokeLinecap="round" />
-            <line x1="8" y1="12" x2="21" y2="12" strokeLinecap="round" />
-            <line x1="8" y1="18" x2="21" y2="18" strokeLinecap="round" />
-            <line x1="3" y1="6" x2="3.01" y2="6" strokeLinecap="round" />
-            <line x1="3" y1="12" x2="3.01" y2="12" strokeLinecap="round" />
-            <line x1="3" y1="18" x2="3.01" y2="18" strokeLinecap="round" />
-          </svg>
-        </button>
-
-        <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
-
-        <button
-          type="button"
-          className={getButtonClass(editor?.isActive({ textAlign: "left" }) ?? false)}
-          onClick={() => editor?.chain().focus().setTextAlign("left").run()}
-          disabled={!canUpdate}
-          title="Căn lề trái"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <line x1="17" y1="10" x2="3" y2="10" strokeLinecap="round" />
-            <line x1="21" y1="6" x2="3" y2="6" strokeLinecap="round" />
-            <line x1="21" y1="14" x2="3" y2="14" strokeLinecap="round" />
-            <line x1="17" y1="18" x2="3" y2="18" strokeLinecap="round" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className={getButtonClass(editor?.isActive({ textAlign: "center" }) ?? false)}
-          onClick={() => editor?.chain().focus().setTextAlign("center").run()}
-          disabled={!canUpdate}
-          title="Căn lề giữa"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <line x1="18" y1="10" x2="6" y2="10" strokeLinecap="round" />
-            <line x1="21" y1="6" x2="3" y2="6" strokeLinecap="round" />
-            <line x1="21" y1="14" x2="3" y2="14" strokeLinecap="round" />
-            <line x1="18" y1="18" x2="6" y2="18" strokeLinecap="round" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className={getButtonClass(editor?.isActive({ textAlign: "right" }) ?? false)}
-          onClick={() => editor?.chain().focus().setTextAlign("right").run()}
-          disabled={!canUpdate}
-          title="Căn lề phải"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <line x1="21" y1="10" x2="7" y2="10" strokeLinecap="round" />
-            <line x1="21" y1="6" x2="3" y2="6" strokeLinecap="round" />
-            <line x1="21" y1="14" x2="3" y2="14" strokeLinecap="round" />
-            <line x1="21" y1="18" x2="7" y2="18" strokeLinecap="round" />
-          </svg>
-        </button>
+      <div role="toolbar" aria-label="Định dạng thư" className="flex flex-wrap items-center gap-1">
+        {toolGroups.map((group, index) => (
+          <div key={group.name} className="flex flex-wrap items-center gap-1">
+            {index > 0 && <div className="mx-1 h-6 w-px bg-zinc-200" aria-hidden="true" />}
+            {group.tools.map((tool) => {
+              const active = editor ? tool.active(editor) : false;
+              return (
+                <button
+                  key={tool.label}
+                  type="button"
+                  aria-label={tool.label}
+                  aria-pressed={active}
+                  title={tool.label}
+                  disabled={!canUpdate}
+                  onClick={() => editor && tool.run(editor)}
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 ${active
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                  }`}
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={tool.stroke ?? 2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{tool.icon}</svg>
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
       <EditorContent editor={editor} />
-      <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-        <span>Kích thước:</span>
-        <span className="font-mono">{value.length} ký tự</span>
-      </div>
+      <p className="text-xs text-zinc-500">Kích thước: <span className="tabular-nums">{value.length} ký tự</span></p>
     </section>
   );
 }

@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { friendlyError } from "../../../lib/ui/friendly-error";
+import { Button } from "../ui/Button";
+import { Field, inputClass } from "../ui/Field";
+import { Notice } from "../ui/Notice";
+import { useDialogFocus } from "./useDialogFocus";
 import { getSupabaseClient } from "../../../lib/supabase/client";
 import { buildImportPayload, importResultMessage, mappingOptions, readApplicantFile, type ImportData, type ImportPayload, type ImportResult } from "./applicantImport";
-
-const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
 
 type Props = {
   campaignId: string;
@@ -19,7 +22,6 @@ type Props = {
 export function ApplicantImportDialog({ campaignId, campaignName, disabled = false, onError, onImported }: Props) {
   const supabase = getSupabaseClient();
   const fileInput = useRef<HTMLInputElement>(null);
-  const openButton = useRef<HTMLButtonElement>(null);
   const [reading, setReading] = useState(false);
   const [running, setRunning] = useState(false);
   const [data, setData] = useState<ImportData | null>(null);
@@ -36,17 +38,9 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
   const close = useCallback(() => {
     if (running) return;
     setData(null); setImportError("");
-    openButton.current?.focus();
   }, [running]);
 
-  useEffect(() => {
-    if (!data) return;
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") close();
-    }
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [data, close]);
+  const dialogRef = useDialogFocus<HTMLElement>(!!data, close);
 
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const input = event.target;
@@ -59,7 +53,7 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
       setImportError("");
       setData(parsed);
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Không đọc được file.");
+      onError(friendlyError(e, "Không đọc được file."));
     } finally {
       setReading(false);
       input.value = "";
@@ -77,9 +71,8 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
       p_rows: payload.value.rows,
     });
     setRunning(false);
-    if (error) { setImportError(error.message); return; }
+    if (error) { setImportError(friendlyError(error, "Không import được. Hãy kiểm tra file rồi thử lại.")); return; }
     setData(null); setFormMeta({ name: "", description: "" });
-    openButton.current?.focus();
     await onImported(importResultMessage((result ?? {}) as ImportResult));
   }
 
@@ -87,22 +80,22 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
 
   return <>
     <input ref={fileInput} type="file" accept=".xlsx,.xls,.csv" aria-label="Chọn file Excel hoặc CSV để import" tabIndex={-1} className="hidden" onChange={(event) => void chooseFile(event)} />
-    <button ref={openButton} type="button" disabled={disabled || reading || !supabase || !campaignId} title={campaignId ? undefined : "Chọn đợt tuyển trước khi import"} onClick={() => fileInput.current?.click()} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">{reading ? "Đang đọc file…" : "Import Excel"}</button>
+    <Button variant="secondary" icon="upload" disabled={disabled || reading || !supabase || !campaignId} title={campaignId ? undefined : "Chọn đợt tuyển trước khi import"} onClick={() => fileInput.current?.click()}>{reading ? "Đang đọc file…" : "Import Excel"}</Button>
     {data && <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-4">
-      <section role="dialog" aria-modal="true" aria-labelledby="applicant-import-title" className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-        <header className="flex items-start justify-between gap-4 border-b bg-zinc-50 px-5 py-4">
-          <div>
-            <h2 id="applicant-import-title" className="font-semibold">Ghép cột dữ liệu từ file</h2>
-            <p className="mt-1 text-sm text-zinc-600">{data.rows.length} dòng, {data.headers.length} cột · Đợt tuyển: {campaignName}</p>
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="applicant-import-title" className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl outline-none">
+        <header className="flex items-start justify-between gap-4 border-b border-zinc-100 px-5 py-4">
+          <div className="min-w-0">
+            <h2 id="applicant-import-title" className="text-base font-semibold text-zinc-900">Ghép cột dữ liệu từ file</h2>
+            <p className="mt-0.5 text-sm text-zinc-600">{data.rows.length} dòng, {data.headers.length} cột · Đợt tuyển: {campaignName}</p>
           </div>
-          <button type="button" onClick={close} disabled={running} aria-label="Đóng cửa sổ" className="rounded-md px-2 py-1 text-xl leading-none text-zinc-500 hover:bg-zinc-200 disabled:opacity-50">×</button>
+          <Button variant="ghost" size="sm" icon="close" onClick={close} disabled={running} aria-label="Đóng cửa sổ" />
         </header>
         <div className="flex-1 space-y-5 overflow-y-auto p-5">
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-medium">Tên biểu mẫu (không bắt buộc)<input autoFocus type="text" className={inputClass} value={formMeta.name} onChange={(event) => setFormMeta({ ...formMeta, name: event.target.value })} placeholder="Ví dụ: Đơn nhập từ Excel Gen 17" /></label>
-            <label className="text-sm font-medium">Mô tả biểu mẫu (không bắt buộc)<input type="text" className={inputClass} value={formMeta.description} onChange={(event) => setFormMeta({ ...formMeta, description: event.target.value })} placeholder="Mô tả ngắn gọn" /></label>
+            <Field label="Tên biểu mẫu (không bắt buộc)"><input autoFocus type="text" className={inputClass} value={formMeta.name} onChange={(event) => setFormMeta({ ...formMeta, name: event.target.value })} placeholder="Ví dụ: Đơn nhập từ Excel Gen 17" /></Field>
+            <Field label="Mô tả biểu mẫu (không bắt buộc)"><input type="text" className={inputClass} value={formMeta.description} onChange={(event) => setFormMeta({ ...formMeta, description: event.target.value })} placeholder="Mô tả ngắn gọn" /></Field>
           </div>
-          {data.sheetCount > 1 && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ đọc sheet &ldquo;{data.sheetName}&rdquo;. {data.sheetCount - 1} sheet còn lại bị bỏ qua.</p>}
+          {data.sheetCount > 1 && <Notice tone="warning" className="mb-0!">Chỉ đọc sheet &ldquo;{data.sheetName}&rdquo;. {data.sheetCount - 1} sheet còn lại bị bỏ qua.</Notice>}
           <div className="space-y-1 text-sm text-zinc-600">
             <p>Biểu mẫu chỉ được tạo cho vị trí chưa có biểu mẫu. Vị trí, ca phỏng vấn chưa tồn tại sẽ được tạo mới. Số dòng được tính không kể dòng tiêu đề.</p>
             <ul className="list-disc space-y-1 pl-5">
@@ -112,22 +105,22 @@ export function ApplicantImportDialog({ campaignId, campaignName, disabled = fal
             </ul>
           </div>
           <div>
-            <p className="text-sm font-semibold text-zinc-700">Ánh xạ cột dữ liệu</p>
-            <div className="mt-2 grid grid-cols-2 gap-3 text-xs font-bold uppercase text-zinc-500"><span>Cột trong file</span><span>Ghép với</span></div>
-            {data.headers.map((header) => <div key={header} className="mt-3 grid grid-cols-2 items-center gap-3 border-t pt-3">
+            <h3 className="text-sm font-semibold text-zinc-900">Ánh xạ cột dữ liệu</h3>
+            <div className="mt-2 grid grid-cols-2 gap-3 text-xs font-medium text-zinc-500"><span>Cột trong file</span><span>Ghép với</span></div>
+            {data.headers.map((header) => <div key={header} className="mt-2 grid grid-cols-2 items-center gap-3 border-t border-zinc-100 pt-2">
               <span className="break-words text-sm" title={header}>{header}</span>
-              <select aria-label={`Ghép cột ${header}`} value={mapping[header] ?? ""} onChange={(event) => setMapping({ ...mapping, [header]: event.target.value })} className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm">
+              <select aria-label={`Ghép cột ${header}`} value={mapping[header] ?? ""} onChange={(event) => setMapping({ ...mapping, [header]: event.target.value })} className={inputClass}>
                 <option value="">Bỏ qua</option>
                 {mappingOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </div>)}
           </div>
-          {payload.error ? <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{payload.error}</p> : customCount > 0 && <p className="text-sm text-zinc-600">{customCount} cột sẽ trở thành câu hỏi riêng.</p>}
-          {importError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{importError}</p>}
+          {payload.error ? <Notice tone="warning" className="mb-0!">{payload.error}</Notice> : customCount > 0 && <p className="text-sm text-zinc-600">{customCount} cột sẽ trở thành câu hỏi riêng.</p>}
+          {importError && <Notice tone="error" className="mb-0!">{importError}</Notice>}
         </div>
-        <footer className="flex justify-end gap-3 border-t px-5 py-4">
-          <button type="button" onClick={close} disabled={running} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50">Hủy</button>
-          <button type="button" disabled={running || !payload.value} onClick={() => void runImport()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{running ? "Đang import…" : "Xác nhận import"}</button>
+        <footer className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-4">
+          <Button onClick={close} disabled={running}>Hủy</Button>
+          <Button variant="primary" disabled={!payload.value} loading={running} onClick={() => void runImport()}>{running ? "Đang import…" : "Xác nhận import"}</Button>
         </footer>
       </section>
     </div>}

@@ -10,6 +10,7 @@ type RecruitmentItem = {
   description: string | null;
   campaign_id: string;
   team_id: string | null;
+  application_forms?: { id: string }[] | { id: string } | null;
   teams: { id: string; name: string; description: string | null }[] | { id: string; name: string; description: string | null } | null;
 };
 type RecruitmentCampaign = { id: string; name: string; description: string | null };
@@ -23,7 +24,7 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
   const { data: club, error: clubError } = await supabase.from("clubs")
     .select("id,name,description").eq("id", clubId).maybeSingle();
   if (clubError) {
-    return <PageShell><div className="recruitment-content"><Alert>Không tải được CLB này. Hãy kiểm tra policy RLS cho phép đọc công khai các CLB.</Alert></div></PageShell>;
+    return <PageShell><div className="recruitment-content"><Alert>Không tải được thông tin CLB này. Bạn thử tải lại trang sau ít phút nhé.</Alert></div></PageShell>;
   }
   if (!club) notFound();
 
@@ -37,16 +38,16 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
 
   let items: RecruitmentItem[] = [];
   let errorMessage: string | null = campaignError
-    ? "Không tải được đợt tuyển. Hãy kiểm tra policy RLS cho campaign."
+    ? "Không tải được đợt tuyển. Bạn thử tải lại trang sau ít phút nhé."
     : null;
 
   if (campaigns?.length) {
     const { data, error } = await supabase.from("recruitment_positions")
-      .select("id,name,description,campaign_id,team_id,teams(id,name,description)")
+      .select("id,name,description,campaign_id,team_id,application_forms(id),teams(id,name,description)")
       .in("campaign_id", campaigns.map((campaign) => campaign.id))
       .order("name");
     items = (data ?? []) as RecruitmentItem[];
-    if (error) errorMessage = "Không tải được danh sách ban đang tuyển. Hãy kiểm tra policy RLS cho teams và recruitment_positions.";
+    if (error) errorMessage = "Không tải được danh sách ban đang tuyển. Bạn thử tải lại trang sau ít phút nhé.";
   }
 
   const grouped = new Map<string, { campaign: RecruitmentCampaign; teams: Map<string, { teamName: string; teamDescription: string | null; openings: RecruitmentItem[] }> }>();
@@ -101,9 +102,13 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
                       <h3>{opening.name}</h3>
                       {opening.description && <p>{opening.description}</p>}
                     </div>
-                    <Link href={`/positions/${opening.id}/apply`} className="recruitment-apply-link">
-                      Ứng tuyển <span aria-hidden="true">→</span>
-                    </Link>
+                    {hasForm(opening) ? (
+                      <Link href={`/positions/${opening.id}/apply`} className="recruitment-apply-link">
+                        Ứng tuyển <span aria-hidden="true">→</span>
+                      </Link>
+                    ) : (
+                      <span className="text-sm text-zinc-500">Chưa nhận đơn</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -117,6 +122,12 @@ export async function ClubRecruitmentPage({ clubId, showHero = true }: { clubId:
       </div>
     </PageShell>
   );
+}
+
+// Chưa có biểu mẫu thì ẩn nút Ứng tuyển. Thiếu dữ liệu embed (undefined) thì vẫn cho bấm.
+function hasForm(item: RecruitmentItem) {
+  if (item.application_forms === undefined) return true;
+  return Array.isArray(item.application_forms) ? item.application_forms.length > 0 : item.application_forms !== null;
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {

@@ -2,6 +2,7 @@ import Image from "next/image";
 import { Suspense } from "react";
 import { createSupabaseServerClient } from "../../lib/supabase/server";
 import { FlipClockCountdown } from "../../components/home/FlipClockCountdown";
+import { pickOpenCampaign, type OpenCampaignState } from "../../components/home/openCampaign";
 import { EventsHeroSlider } from "../../components/events/EventsHeroSlider";
 
 type ClubEvent = {
@@ -22,7 +23,7 @@ async function EventsLoadedSections() {
   const supabase = await createSupabaseServerClient();
   let events: ClubEvent[] = [];
   let loadError = !supabase;
-  let deadline: string | null = null;
+  let campaign: OpenCampaignState = { open: false, deadline: null };
 
   if (supabase) {
     const { data: club, error: clubError } = await supabase.from("clubs")
@@ -42,12 +43,12 @@ async function EventsLoadedSections() {
           .order("sort_order", { ascending: true })
           .order("created_at", { ascending: false }),
         supabase.from("recruitment_campaigns").select("end_date").eq("club_id", club.id).eq("status", "open")
-          .or(`start_date.is.null,start_date.lte.${now}`).gte("end_date", now).not("end_date", "is", null)
-          .order("start_date", { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
+          .or(`start_date.is.null,start_date.lte.${now}`)
+          .order("start_date", { ascending: false, nullsFirst: false }).limit(20),
       ]);
       events = (eventResult.data ?? []) as ClubEvent[];
       loadError = Boolean(eventResult.error);
-      deadline = campaignResult.data?.end_date ?? null;
+      campaign = pickOpenCampaign(campaignResult.data, new Date(now));
     }
   }
 
@@ -81,7 +82,7 @@ async function EventsLoadedSections() {
 
       <section className="about-cta events-cta">
         <div className="about-cta-heading"><h2><span className="about-cta-lead">Bạn đã sẵn sàng?</span> Hẹn gặp bạn tại BIT.</h2></div>
-        <FlipClockCountdown deadline={deadline} />
+        <FlipClockCountdown campaign={campaign} />
       </section>
     </>
   );

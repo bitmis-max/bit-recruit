@@ -1,55 +1,80 @@
-# Hợp đồng Đợt 6: một thành viên thuộc nhiều ban
+# Hợp đồng Đợt 8: trang Giới thiệu "bản đồ cơ cấu" (2026-11-26)
 
-Hợp đồng cũ vẫn có hiệu lực: `docs/CONTRACT-1.md` … `docs/CONTRACT-5.md`.
+Hợp đồng cũ vẫn có hiệu lực: `docs/CONTRACT-1.md` … `docs/CONTRACT-7.md`. Nhánh: `feat/about-page`.
 
-Mục đích: một người có thể đậu (và hoạt động ở) nhiều ban cùng lúc, ví dụ vừa Ban Tổ chức vừa Ban Truyền thông. Hiện `club_members.team_id` chỉ chứa một ban.
+## DB (lead đã làm) — `supabase/migrations/20261120000000_team_profile.sql`
+- `teams.duties text[] not null default '{}'`: việc chính của ban, tối đa 6 phần tử, tổng ≤ 1200 ký tự (check `23514`).
+- `teams.fit_for text` (null được): câu "Hợp với bạn nếu…", ≤ 300 ký tự.
+- Quyền: theo policy sẵn có của `teams` (anon/authenticated đọc; admin có quyền `members` ghi). Không có RPC/API mới.
+- Migration điền nội dung nháp cho 4 ban BIT (khớp theo tên) nếu chưa có nội dung.
+- **Thứ tự lên production:** người dùng `db push` migration TRƯỚC, rồi mới merge code (code chọn cột mới; DB chưa có cột thì trang lỗi).
 
-## Quyết định đã chốt
-- Thêm bảng `club_member_teams` = tập ban của một thành viên. **`club_members.team_id` giữ nguyên, nghĩa là "ban chính"** và luôn nằm trong tập (hoặc null khi tập rỗng).
-- **Phân quyền Ban chủ chốt không đổi:** ban mà admin quản lý vẫn là ban chính (`my_club_team` không đổi). Chỉ thay các chỗ hỏi "thành viên M có thuộc ban X không" sang đọc tập ban.
-- **Import (`import_members`) = THÊM ban:** thành viên đã có (cùng MSSV/email) + cột Ban khác → giữ ban cũ, thêm ban mới vào tập; ban chính chỉ đặt khi đang null. Dòng owner/admin vẫn giữ quy tắc cũ (không đổi ban, đếm `staff_team_skipped`).
-- Gỡ ban: làm tay trên web (chọn nhiều ban trong form sửa thành viên).
+## FE (frontend-agent)
+Skill chính: `impeccable` (giao diện đã có). Phạm vi file:
+`src/components/recruitment/ClubsPage.tsx`, `src/components/recruitment/ClubStructureTabs.tsx` (được đổi tên/tách file trong `src/components/recruitment/`), `src/components/home/FlipClockCountdown.tsx`, `src/components/admin/recruitment/TeamsManager.tsx`, phần CSS `.clubs-*`, `.club-team-*`, `.countdown-*` trong `src/app/globals.css`.
 
-## DB (db-agent) — migration `supabase/migrations/20261118000000_member_teams.sql`
-1. Bảng:
-   ```sql
-   create table public.club_member_teams (
-     member_id uuid not null references public.club_members(id) on delete cascade,
-     team_id   uuid not null references public.teams(id) on delete cascade,
-     created_at timestamptz not null default now(),
-     primary key (member_id, team_id)
-   );
-   create index club_member_teams_team_idx on public.club_member_teams (team_id);
-   ```
-   - Trigger chặn ghép thành viên với ban của CLB khác (giống `enforce_task_assignee_club`).
-   - Backfill: `insert ... select id, team_id from club_members where team_id is not null`.
-2. Đồng bộ ban chính → tập: trigger `after insert or update of team_id on club_members`: nếu `new.team_id` không null thì thêm `(new.id, new.team_id)` vào tập (`on conflict do nothing`). Trigger KHÔNG xóa ban cũ (nhờ vậy `admit_applications`, `activate_term`, API cũ vẫn đúng mà không phải sửa).
-3. Khi xóa một dòng tập đúng bằng ban chính: trigger `after delete on club_member_teams` đặt `club_members.team_id` = một ban còn lại trong tập (cũ nhất theo `created_at`) hoặc null. Khi `teams` bị xóa, FK `on delete set null` sẵn có ở `club_members.team_id` + `cascade` ở tập vẫn đúng.
-4. RPC `set_member_teams(p_member_id uuid, p_team_ids uuid[]) returns void`, `security definer`, **chỉ grant `service_role`** (API gọi bằng service-role sau khi đã kiểm tra quyền). Nguyên tử:
-   - Bỏ trùng, giữ thứ tự; mọi ban phải thuộc CLB của thành viên, sai thì `raise exception` tiếng Việt.
-   - Ban chính = phần tử đầu (null nếu mảng rỗng); thay toàn bộ tập bằng mảng.
-5. RLS bảng `club_member_teams`: bật RLS. `select` cho authenticated khi `is_club_admin(club của member)` hoặc member đó là chính mình (`m.user_id = auth.uid()`). Không có policy ghi (chỉ service-role và hàm security definer). Grant: `select` cho authenticated; không grant gì cho anon.
-6. Sửa các hàm đọc "thuộc ban" (chép thân hàm mới nhất ở `20261115000000_permissions.sql`, chỉ đổi phần ban):
-   - `can_assign_task_member`: `m.team_id = my_club_team(...)` → `exists (select 1 from club_member_teams mt where mt.member_id = m.id and mt.team_id = my_club_team(t.club_id))`.
-   - `create_task`: kiểm tra người được chọn thuộc ban của admin, và lấy "cả ban" (`p_team_id`) → đọc tập.
-   - `club_contribution`: lọc của admin theo tập; **thêm cột trả về `team_ids uuid[]`** (tất cả ban, ban chính đứng đầu), giữ cột `team_id` (ban chính). Đổi kiểu trả về thì `drop function` rồi tạo lại, giữ nguyên grant.
-   - `import_members`: hành vi THÊM ban như mục "Quyết định". Kết quả trả về giữ các khóa cũ.
-7. Test pgTAP `supabase/tests/member_teams.test.sql`: backfill, trigger đồng bộ, `set_member_teams` (đổi ban chính, rỗng, ban CLB khác bị chặn, authenticated không gọi được), RLS đọc, admin ban B giao việc được cho người thuộc cả A và B, `club_contribution.team_ids`, import thêm ban. Các test cũ phải vẫn xanh (sửa test cũ nếu hành vi đổi có chủ đích, ghi rõ trong báo cáo).
-8. Cập nhật `docs/database.md`.
+1. **Trang `/clubs`**
+   - Hero: tiêu đề tiếng Việt (gợi ý: nhãn "Cơ cấu CLB", tiêu đề "Bốn ban, một bản giao hưởng" — lấy từ ẩn dụ "bản giao hưởng BIT - BAV" CLB đang dùng). Câu giới thiệu "Được thành lập vào năm 2010…" đưa vào hero. Chữ không đè lên mặt người (đặt góc dưới, nền tối dần). Bỏ hộp giới thiệu + nút "Tìm hiểu thêm".
+   - Các ban: hiện **tất cả** ban cùng lúc dạng thẻ (desktop 2 cột, mobile 1 cột; số ban bất kỳ). Thẻ: ảnh (`image_url`, thiếu thì ảnh dự phòng như hiện tại), tên ban, danh sách `duties` (ẩn nếu rỗng), dòng "Hợp với bạn nếu…" + `fit_for` (ẩn nếu null), và cách xem `description` đầy đủ (mở rộng tại chỗ hoặc hộp thoại; phải dùng được bằng bàn phím, có focus rõ). Ban chưa có `duties`/`fit_for` thì thẻ hiện đoạn đầu `description`.
+   - Giữ thông báo khi lỗi tải / không có ban như hiện tại.
+2. **Khối đếm ngược dùng chung (`FlipClockCountdown`)**: khi KHÔNG có đợt tuyển đang mở (không có hạn hoặc đã hết hạn) thì không hiện nút "Đăng ký ngay"; thay bằng nút phụ "Theo dõi BIT trên Facebook" → `https://www.facebook.com/BIT.BAV` (mở tab mới, `rel="noopener noreferrer"`). Có đợt mở thì giữ nguyên. Áp dụng cho cả trang chủ, `/events`, `/clubs`.
+3. **Quản lí ban (`TeamsManager`)**: thêm 2 ô dưới "Mô tả":
+   - "Việc chính" — textarea, gợi ý "Mỗi dòng một việc, tối đa 6". Lưu: tách dòng, trim, bỏ dòng rỗng → `duties`. Hơn 6 dòng hoặc một dòng > 200 ký tự thì báo lỗi tiếng Việt, không lưu.
+   - "Hợp với bạn nếu…" — input/textarea ngắn, `maxLength` 300, rỗng → `null`.
+   - Đọc/ghi cùng câu `select`/`update`/`insert` hiện có (thêm `duties,fit_for`).
+4. Không thêm thư viện. Nội dung giao diện tiếng Việt. Giữ Tailwind v4 + CSS hiện có.
 
-## API (api-agent) — `src/app/api/admin/club-members/route.ts`
-- `GET`: mỗi member có thêm `team_ids: string[]` (ban chính đứng đầu, rồi theo `created_at`). Giữ `team_id`.
-- `POST` / `PATCH`: nhận `team_ids?: string[]` (mảng UUID; rỗng = không ban). Nếu có `team_ids` thì bỏ qua `team_id`. Mỗi ban phải thuộc CLB (lỗi tiếng Việt 400). Ghi bằng `context.admin.rpc("set_member_teams", ...)` sau khi insert/update các trường khác.
-  - Quy tắc quyền giữ như đổi `team_id` hiện nay: đổi tập ban của dòng owner/admin, hoặc của chính mình, chỉ Chủ nhiệm làm được (`requireHeadForStaffRow(..., includeSelf = true)`). Coi là "đổi" khi tập mới khác tập cũ (không tính thứ tự) hoặc ban chính khác.
-  - Vẫn nhận `team_id` (cũ) khi không có `team_ids`, hành vi như trước.
-- Không sửa file khác ngoài `src/app/api/` và `src/lib/` trừ khi cần kiểu dùng chung.
+## Admin A + B (frontend-agent, agent mới) — `src/components/admin/AdminShell.tsx`, file mới `src/components/admin/AdminOverview.tsx`, `src/app/manage-clubs/recruitment/layout.tsx`, `src/components/admin/recruitment/RecruitmentTabs.tsx`
+Skill chính: `impeccable` (màn đã có). Giữ phong cách admin hiện tại (Tailwind, zinc + emerald). Không sửa `globals.css`, không sửa các màn quản lý khác, không thêm thư viện, không đổi quyền.
 
-## Giao diện (frontend-agent, skill chính `impeccable` — sửa giao diện đã có)
-- `ClubMembersManager.tsx`: form thêm/sửa chọn **nhiều ban** (checkbox; ban đầu tiên được chọn = ban chính, có ghi chú nhỏ "Ban chính" hoặc cho chọn ban chính). Danh sách hiện tất cả tên ban. Gửi `team_ids`. Không cho chọn khi API sẽ chặn (dòng BCN/BCC hoặc chính mình khi không phải Chủ nhiệm) — đọc `isHead` từ `useCurrentAdminClub()`.
-- `TasksManager.tsx`: danh sách người chọn được theo ban đọc thêm `club_member_teams` (`select member_id, team_id`) thay vì chỉ `team_id`.
-- `ContributionBoard.tsx`: lọc của admin dùng `team_ids` từ RPC; dòng hiện tất cả tên ban.
-- `MemberProfile.tsx` (`/me`): hiện tất cả ban (đọc `club_member_teams` của chính mình).
-- Nội dung tiếng Việt, Tailwind v4, giữ cấu trúc component. Không thêm thư viện.
+**A. Menu theo nhóm** (giữ nguyên `allowed` của từng mục; nhóm không còn mục nào thì ẩn cả nhóm):
+- (đầu) Tổng quan `/manage-clubs`
+- **Thành viên:** Thành viên `/members` · Tài khoản `/accounts` · Ban `/teams` · Nhiệm kỳ `/terms`
+- **Tuyển thành viên:** Đợt tuyển `/recruitment` · Đơn ứng tuyển `/recruitment/applications` · Phỏng vấn `/recruitment/interviews` · Biểu mẫu `/form-templates`
+- **Hoạt động:** Giao việc `/tasks` · Đóng góp `/contribution` · Sự kiện `/events`
+- **Truyền thông:** Gửi mail `/mail` · Đối chiếu Facebook `/scan` · Khung avatar `/frames`
+- Mục đang mở được đánh dấu (`aria-current="page"`); "Đợt tuyển" chỉ sáng ở đúng `/manage-clubs/recruitment`.
+- Đơn ứng tuyển / Phỏng vấn đã có trong menu nên bỏ thanh tab trên cùng (`RecruitmentTabs`) khỏi 3 màn tuyển (xóa component nếu không còn ai dùng).
+- Mobile (375px): menu vẫn dùng được, không tràn.
 
-## Thứ tự
-db-agent (xong, test xanh) → api-agent ‖ frontend-agent → reviewer → lead kiểm chứng (test, build, ảnh chụp). Người dùng merge rồi `npx supabase db push --remote`.
+**B. Tổng quan** (`AdminOverview`, thay nội dung trống của `/manage-clubs`): các ô số liệu, mỗi ô bấm được tới màn tương ứng; chỉ hiện ô người dùng có quyền (dùng `useAdminClub()` + `hasPermission` như AdminShell). Đọc bằng supabase client, RLS lo phạm vi; dùng `count: "exact", head: true` khi chỉ cần số.
+- Quyền `recruitment`: **Đơn mới chờ xử lý** = `applications.status = 'submitted'` thuộc các đợt tuyển của CLB đang chọn → `/recruitment/applications`. **Đợt tuyển đang mở** = `recruitment_campaigns.status = 'open'` của CLB: tên + còn bao nhiêu ngày đến `end_date` (không có thì "Chưa có đợt mở") → `/recruitment`.
+- Owner/admin (`isStaff`): **Việc quá hạn** = `tasks.status = 'open'` và `due_at < now`; **Việc sắp đến hạn** = `open` và `due_at` trong 72 giờ tới → `/tasks`.
+- Quyền `members`: **Thành viên đang hoạt động** (`club_members.is_active`) và **Chưa có tài khoản** (`is_active`, `email` khác null, `user_id` null) → `/members`.
+- Mỗi ô tự xử lý: đang tải (khung chờ), lỗi (hiện "—" + câu ngắn, không làm hỏng ô khác), số 0 (trạng thái bình thường, không báo động). Số cần chú ý (đơn chờ, việc quá hạn > 0) được nhấn mạnh nhẹ.
+
+## Admin C — dọn gọn toàn bộ màn quản trị (2026-11-26)
+Skill chính: `impeccable`, chế độ **Operate**, lệnh `distill` (+ `craft-floor`). Đây là REFINE trên giao diện đã có: giữ màu (zinc nền, emerald nhấn, rose = nguy hiểm, amber = cảnh báo), font, Tailwind; giữ nguyên mọi chức năng, quyền, câu chữ nghiệp vụ, luồng dữ liệu (supabase/API). Không thêm thư viện (icon tự vẽ SVG). Chỉ đổi cách trình bày và mức ẩn/hiện.
+
+### Nguyên tắc chung (mọi màn)
+1. **Đầu trang = `PageHeader`**: tiêu đề (h1) + 1 câu mô tả ngắn (nếu cần) + vùng hành động bên phải. **Bỏ nhãn nhỏ phía trên tiêu đề** ("Quản trị CLB", "Không gian CLB", "Hồ sơ tuyển thành viên"…) — skill cấm.
+2. **Một hành động chính mỗi màn** (nút `primary`, emerald đặc). Hành động khác là `secondary` (viền) hoặc `ghost`. Không có 2 nút đặc cạnh nhau.
+3. **Danh sách trước, form sau**: form "tạo mới" KHÔNG mở sẵn. Nút "+ Thêm …" (primary, ở PageHeader) mở form tạo trong `CreatePanel` (khung mở tại chỗ phía trên danh sách, có "Hủy", Esc đóng, focus vào ô đầu). Danh sách dùng hết bề ngang.
+4. **Nút xóa không nằm trên mỗi dòng**: "Xóa" chuyển vào bên trong form sửa/chi tiết của mục đó (nút `danger` dạng ghost, cuối form, có xác nhận như hiện tại). Trên dòng chỉ còn 1 hành động (vd. "Sửa" hoặc bấm cả dòng).
+5. **Không lồng khung trong khung**: một cấp viền. Nhóm bên trong dùng khoảng cách/đường kẻ mảnh, không thêm `border rounded` lồng nhau.
+6. **Thông báo dùng `Notice`** (error = rose, role="alert"; success = emerald, role="status"; warning = amber). Không tự viết class thông báo riêng.
+7. **Icon = `Icon`** (SVG tự vẽ, một nét). Không dùng ký tự ☰ ↑ ↓ ⠿ ✕ + làm icon.
+8. Trạng thái đủ: hover, focus-visible (vòng emerald), disabled, đang tải (khung chờ, không spinner giữa nội dung), rỗng (câu hướng dẫn + nút làm việc đầu tiên), lỗi.
+9. Mobile 375px: không tràn ngang; bảng rộng thì cuộn ngang trong khung riêng hoặc chuyển thành danh sách.
+
+### Bộ dùng chung — `src/components/admin/ui/` (agent KIT làm trước, agent khác chỉ DÙNG, không sửa)
+- `Button.tsx`: `<Button variant="primary|secondary|ghost|danger" size="sm|md" loading? icon?>`; `ButtonLink` (cùng kiểu, dùng `next/link`). Chiều cao md 36px, sm 30px, bo `rounded-lg`.
+- `PageHeader.tsx`: `<PageHeader title description? actions? />` (h1 `text-2xl font-semibold`, mô tả `text-sm text-zinc-600`, max-w hợp lý; actions xuống dòng trên mobile).
+- `Panel.tsx`: `<Panel title? actions? padded?>` — khung trắng viền zinc-200 bo xl; `title` là h2 `text-base font-semibold`.
+- `CreatePanel.tsx`: `<CreatePanel open title onClose>{form}</CreatePanel>` — hiện tại chỗ, Esc/nút Hủy gọi onClose, focus phần tử `data-autofocus`.
+- `Notice.tsx`: `<Notice tone="error|success|warning|info">`.
+- `EmptyState.tsx`: `<EmptyState title description? action? />`.
+- `Field.tsx`: `inputClass`, `<Field label hint? error?>{control}</Field>` (thống nhất ô nhập).
+- `Icon.tsx`: `<Icon name="plus|edit|trash|chevron-down|chevron-right|arrow-up|arrow-down|grip|close|search|upload|refresh|external|menu|check|mail|calendar|users" />` (16px mặc định, `aria-hidden`).
+- `docs/ADMIN-UI.md`: 1 trang quy tắc trên + ví dụ dùng.
+- Agent KIT cũng áp bộ này cho: `AdminShell.tsx` (bỏ ký tự ▲/☰ nếu có), `AdminOverview.tsx` (bỏ nhãn nhỏ), `recruitment/TeamsManager.tsx` (màn mẫu: danh sách ban + form sửa; nút Xóa ban vào cuối form).
+
+### Phân việc màn (sau khi KIT xong, chạy song song, không trùng file)
+- **M — Thành viên:** `ClubMembersManager.tsx`, `ClubAccountsManager.tsx`, `MemberImportDialog.tsx`, `TermsManager.tsx`. Thành viên: bảng/danh sách full width; "+ Thêm thành viên" (primary) mở CreatePanel; "Import Excel" secondary; khối "Tạo tài khoản…" thành `Notice` warning chỉ hiện khi số > 0, kèm nút secondary; Sửa mở form (CreatePanel chế độ sửa hoặc mở rộng dòng), Xóa trong form.
+- **R1 — Đợt tuyển & biểu mẫu:** `recruitment/RecruitmentManager.tsx`, `FormBuilder.tsx`, `QuestionFields.tsx`, `FormTemplatesManager.tsx`. Giữ chia 2 cột (danh sách đợt | chi tiết đợt). Form "Tạo đợt tuyển" ẩn sau nút "+ Đợt tuyển mới". Vị trí tuyển = danh sách dòng gọn (tên, ban, số câu hỏi, "Sửa"). **Trình sửa biểu mẫu KHÔNG nằm sẵn trong trang**: bấm "Sửa biểu mẫu (N câu)" trên vị trí → chi tiết đợt được thay bằng màn sửa biểu mẫu có nút "← Quay lại đợt tuyển". Câu hỏi = dòng thu gọn (số thứ tự, nội dung, loại, bắt buộc) bấm để mở sửa; trong dòng mở mới có Xóa; đổi thứ tự bằng nút icon lên/xuống (`ghost` sm, có `aria-label`).
+- **R2 — Đơn & phỏng vấn:** `recruitment/ApplicationsManager.tsx`, `ApplicantAnswersModal.tsx`, `ApplicantImportDialog.tsx`, `InterviewsManager.tsx`. Đơn: thanh lọc gọn 1 hàng; bảng không tràn (cột: chọn, Ứng viên, Vị trí, Trạng thái, Nộp lúc, "Xem"); thời gian phỏng vấn + câu trả lời vào khung chi tiết (giữ modal câu trả lời hiện có nhưng áp kit); nút "Kết nạp" chỉ hiện ở thanh hành động khi đã chọn ≥1 đơn. Phỏng vấn: cùng nguyên tắc 1–5.
+- **A1 — Hoạt động:** `tasks/TasksManager.tsx`, `tasks/ContributionBoard.tsx`, `EventsManager.tsx`. Giao việc: danh sách việc full width; "+ Giao việc" mở CreatePanel; khối "Gmail gửi nhắc việc" thu thành 1 dòng trạng thái nhỏ dưới PageHeader (nút secondary). Sự kiện: "+ Thêm sự kiện" mở CreatePanel.
+- **A2 — Truyền thông:** `scan/ScanImport.tsx`, `frames/FramesManager.tsx`, `src/components/MailMergeApp.tsx` (+ chỉ phần trình bày trong `src/components/campaign/*`, `src/components/data/*`, `src/components/email/*` nếu chúng chỉ dùng cho trang Gửi mail — kiểm tra bằng grep trước khi sửa). Áp nguyên tắc 1–9.
+
+### Kiểm chứng (mỗi agent)
+`npx tsc --noEmit`; `npx eslint <file của mình>` (không thêm lỗi mới); dev server ĐANG CHẠY ở http://localhost:3000 với Supabase LOCAL — đăng nhập `chunhiem@local.test` / `localtest123`, chọn CLB "CLB Thử Local"; chụp 1440px + 375px từng màn của mình, đi thử luồng chính (mở/đóng CreatePanel, sửa, lọc); KHÔNG bấm Xóa thật hay Gửi mail thật; `impeccable detect --json <file>` một lần cuối. Không khởi động/tắt dev server, không commit.

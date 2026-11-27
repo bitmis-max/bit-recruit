@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "../../../lib/supabase/server";
 import { getGmailAccessToken, GmailError, sendGmail } from "../../../lib/email/gmail";
 import { fetchPublicFile } from "../../../lib/security/safe-fetch";
 import { hasPermission } from "../../../lib/admin/permissions";
+import { buildFromHeader, checkEmailLimits, parseSingleRecipient } from "../../../lib/email/validators";
 
 export const runtime = "nodejs";
 
@@ -42,7 +43,10 @@ function getFileNameFromUrl(url: string) {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as SendRequest;
+    const body = (await request.json().catch(() => null)) as SendRequest | null;
+    if (!body || typeof body !== "object") {
+      return Response.json({ ok: false, error: "Dữ liệu gửi lên không hợp lệ." }, { status: 400 });
+    }
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
     if (!supabase || !user || !body.clubId) return Response.json({ ok: false, error: "Cần đăng nhập và chọn CLB." }, { status: 401 });
@@ -54,26 +58,28 @@ export async function POST(request: Request) {
       return Response.json({ ok: false, error: "Máy chủ chưa cấu hình kết nối Gmail." }, { status: 503 });
     }
     const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    const providerToken = await getGmailAccessToken(admin, user.id);
-    const to = body.to?.trim();
-    const from = body.from?.trim();
-    const subject = body.subject?.trim();
-    const html = body.html ?? "";
-    const driveId = body.driveId?.trim();
-    const attachmentName = body.attachmentName?.trim();
+    const to = parseSingleRecipient(body.to);
+    const subject = typeof body.subject === "string" ? body.subject.trim() : "";
+    const html = typeof body.html === "string" ? body.html : "";
+    const driveId = typeof body.driveId === "string" ? body.driveId.trim() : "";
+    const attachmentName = typeof body.attachmentName === "string" ? body.attachmentName.trim() : "";
 
     const rawAttachmentUrl = typeof body.attachmentUrl === "string" ? body.attachmentUrl.trim() : "";
     const attachmentUrl =
       rawAttachmentUrl ||
       (driveId ? `https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveId)}` : "");
 
-    if (!to || !from || !subject || !html) {
-      debugLog("Invalid payload", { to, from, subject });
-      return Response.json(
-        { ok: false, error: "Thiếu người nhận, người gửi, tiêu đề hoặc nội dung." },
-        { status: 400 }
-      );
+    if (!to) return Response.json({ ok: false, error: "Địa chỉ người nhận không hợp lệ." }, { status: 400 });
+    if (!subject || !html) {
+      debugLog("Invalid payload");
+      return Response.json({ ok: false, error: "Thiếu tiêu đề hoặc nội dung." }, { status: 400 });
     }
+    const limitError = checkEmailLimits({ subject, html, imageAttachment: body.imageAttachment });
+    if (limitError) return Response.json({ ok: false, error: limitError }, { status: 400 });
+    // Địa chỉ From luôn là tài khoản Google của người gọi; từ client chỉ nhận tên hiển thị.
+    if (!user.email) return Response.json({ ok: false, error: "Tài khoản đăng nhập không có địa chỉ email." }, { status: 400 });
+    const from = buildFromHeader(body.from, user.email);
+    const providerToken = await getGmailAccessToken(admin, user.id);
 
     const attachments:
       Array<{ filename: string; content: Buffer | string; contentType?: string; encoding?: BufferEncoding }>
@@ -102,11 +108,11 @@ export async function POST(request: Request) {
         filename: imageAttachment.filename,
         content: imageAttachment.content,
         contentType: imageAttachment.contentType,
-        encoding: imageAttachment.encoding,
+        encoding: imageAttachment.encoding === "utf8" ? "utf8" : "base64",
       });
     }
 
-    debugLog("Sending via Gmail REST API for: " + from);
+    debugLog("Sending via Gmail REST API");
     const { id } = await sendGmail(providerToken, { from, to, subject, html, attachments });
     debugLog("Gmail API ok", { messageId: id });
     return Response.json({ ok: true, data: { messageId: id } });

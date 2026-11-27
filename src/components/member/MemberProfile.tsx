@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { friendlyError } from "../../lib/ui/friendly-error";
 import { facebookUrlPattern, roleLabel } from "../admin/roles";
 import { MyTasks } from "./MyTasks";
 
@@ -29,7 +30,7 @@ function ProfileCard({ profile, onSaved }: { profile: Profile; onSaved: (clubId:
     setBusy(true);
     const { error: rpcError } = await supabase.rpc("update_my_member_profile", { p_club_id: profile.club_id, p_phone: phone.trim(), p_facebook_url: facebookUrl });
     setBusy(false);
-    if (rpcError) { setError(rpcError.message); return; }
+    if (rpcError) { setError(friendlyError(rpcError, "Không lưu được hồ sơ. Vui lòng thử lại.")); return; }
     onSaved(profile.club_id, phone.trim() || null, facebookUrl || null);
     setNotice("Đã lưu hồ sơ của bạn.");
   }

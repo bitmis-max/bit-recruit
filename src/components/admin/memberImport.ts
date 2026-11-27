@@ -79,5 +79,5 @@ export function buildMemberPayload(data: ImportData, mapping: ColumnMapping): Me
 export function memberImportMessage(result: MemberImportResult) {
   const text = `Đã thêm ${result.inserted ?? 0}, cập nhật ${result.updated ?? 0}, không đổi ${result.unchanged ?? 0}.`;
   const skipped = result.staff_team_skipped ?? 0;
-  return skipped > 0 ? `${text} Giữ nguyên ban của ${skipped} người thuộc Ban chủ nhiệm/Ban chủ chốt.` : text;
+  return skipped > 0 ? `${text} Bỏ qua ${skipped} người thuộc Ban chủ nhiệm/Ban chủ chốt (chỉ Chủ nhiệm cập nhật được).` : text;
 }

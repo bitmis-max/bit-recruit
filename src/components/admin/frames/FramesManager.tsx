@@ -1,13 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { friendlyError } from "../../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "../AdminClubContext";
+import { useDialog } from "../useDialog";
+import { Button, ButtonLink } from "../ui/Button";
+import { CreatePanel } from "../ui/CreatePanel";
+import { EmptyState } from "../ui/EmptyState";
+import { Field, inputClass } from "../ui/Field";
+import { Notice } from "../ui/Notice";
+import { PageHeader } from "../ui/PageHeader";
+import { Panel } from "../ui/Panel";
 import { frameImageUrl, type AvatarFrame } from "../../frames/frameUrl";
 
 type Frame = AvatarFrame & { created_at: string };
 
-const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100";
 const checkerClass = "bg-[repeating-conic-gradient(#e4e4e7_0_25%,#fafafa_0_50%)] bg-[length:20px_20px]";
 const maxBytes = 2 * 1024 * 1024;
 
@@ -17,6 +25,7 @@ export function FramesManager() {
   const canWrite = role === "owner" || role === "admin";
   const [loaded, setLoaded] = useState<{ key: string; rows: Frame[]; error: string } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [fileKey, setFileKey] = useState(0);
@@ -25,14 +34,14 @@ export function FramesManager() {
   const [copiedId, setCopiedId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useDialog<HTMLDivElement>(() => { if (busy !== "delete") setConfirmFrame(null); }, !!confirmFrame);
 
   useEffect(() => {
     if (!supabase || !clubId) return;
     let active = true;
     (async () => {
       const { data, error: loadError } = await supabase.from("avatar_frames").select("id,name,image_path,created_at").eq("club_id", clubId).order("created_at", { ascending: false });
-      if (active) setLoaded({ key: `${clubId}|${reloadKey}`, rows: (data ?? []) as Frame[], error: loadError?.message ?? "" });
+      if (active) setLoaded({ key: `${clubId}|${reloadKey}`, rows: (data ?? []) as Frame[], error: loadError ? friendlyError(loadError, "Không tải được danh sách khung. Vui lòng thử lại.") : "" });
     })();
     return () => { active = false; };
   }, [supabase, clubId, reloadKey]);
@@ -41,7 +50,6 @@ export function FramesManager() {
   const frames = loaded?.rows ?? [];
   const loading = !!supabase && !current;
   const load = () => setReloadKey((key) => key + 1);
-  useEffect(() => { if (confirmFrame) cancelRef.current?.focus(); }, [confirmFrame]);
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,7 +67,7 @@ export function FramesManager() {
       const response = await fetch(`/api/admin/frames?clubId=${encodeURIComponent(clubId)}`, { method: "POST", body: form });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || result.error) { setError(result.error ?? "Không tải được khung lên."); return; }
-      setName(""); setFile(null); setFileKey((key) => key + 1);
+      closeForm();
       setNotice("Đã thêm khung. Gửi link công khai bên dưới cho thành viên.");
       load();
     } catch {
@@ -97,43 +105,50 @@ export function FramesManager() {
     }
   }
 
-  return <section className="mx-auto max-w-6xl p-5 sm:p-8">
-    <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Không gian CLB</p><h1 className="mt-1 text-3xl font-bold">Khung avatar</h1><p className="mt-2 text-sm text-zinc-600">Tải lên khung PNG nền trong suốt cho sự kiện. Thành viên mở link công khai, chọn ảnh của mình và tải avatar có khung về. Ảnh của họ được ghép ngay trên máy, không tải lên đâu.</p></header>
-    {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-    {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    {!supabase && <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Thiếu cấu hình Supabase.</p>}
-    {current?.error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{current.error}</p>}
-    {!canWrite && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Chỉ Ban chủ nhiệm và Ban chủ chốt được quản lý khung avatar.</p>}
+  function closeForm() {
+    setCreating(false); setName(""); setFile(null); setFileKey((key) => key + 1);
+  }
 
-    <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
-      {canWrite && <form onSubmit={(event) => void upload(event)} className="space-y-4 rounded-xl border bg-white p-5">
-        <div><h2 className="font-semibold">Thêm khung mới</h2><p className="mt-1 text-xs text-zinc-500">PNG vuông, từ 400 đến 2048 px mỗi cạnh, tối đa 2 MB. Phần giữa khung nên trong suốt để thấy ảnh của thành viên.</p></div>
-        <label className="block text-sm">Tên khung<input required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} disabled={busy === "upload"} className={inputClass} placeholder="Ví dụ: Khung Gen 17" /></label>
-        <label className="block text-sm">Ảnh khung (PNG)<input key={fileKey} required type="file" accept="image/png" disabled={busy === "upload"} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="mt-1 block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-zinc-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium" /></label>
-        {file && <p className="break-all text-xs text-zinc-500">Đã chọn: {file.name} ({(file.size / 1024).toFixed(0)} KB)</p>}
-        <button disabled={busy === "upload" || !supabase} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "upload" ? "Đang tải lên…" : "Tải khung lên"}</button>
-      </form>}
-
-      <div className="min-w-0 overflow-hidden rounded-xl border bg-white">
-        <div className="flex items-center justify-between gap-2 border-b p-4"><h2 className="font-semibold">Các khung ({frames.length})</h2><button type="button" disabled={loading} onClick={load} className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">Làm mới</button></div>
-        {loading ? <p role="status" className="p-6 text-sm text-zinc-500">Đang tải khung…</p> : frames.length ? <ul className="grid gap-4 p-4 sm:grid-cols-2">{frames.map((frame) => <li key={frame.id} className="min-w-0 rounded-lg border p-3">
-          <div className={`aspect-square w-full overflow-hidden rounded-lg border ${checkerClass}`}><img src={frameImageUrl(frame.image_path)} alt={`Khung ${frame.name}`} loading="lazy" className="h-full w-full object-contain" /></div>
-          <p className="mt-3 break-words font-semibold">{frame.name}</p>
-          <p className="mt-1 break-all text-xs text-zinc-500">/frames/{frame.id}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => void copyLink(frame)} className="rounded-lg border border-emerald-700 px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">{copiedId === frame.id ? "Đã sao chép" : "Sao chép link"}</button>
-            <a href={`/frames/${frame.id}`} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Mở thử</a>
-            {canWrite && <button type="button" disabled={busy === "delete"} onClick={() => setConfirmFrame(frame)} className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-800 disabled:opacity-50">Xóa</button>}
-          </div>
-        </li>)}</ul> : <p className="p-6 text-sm text-zinc-500">CLB chưa có khung avatar nào. Hãy tải khung đầu tiên ở khung bên trái.</p>}
-      </div>
+  const uploadForm = <form onSubmit={(event) => void upload(event)} className="space-y-4">
+    <p className="text-sm text-zinc-600">PNG vuông, từ 400 đến 2048 px mỗi cạnh, tối đa 2 MB. Phần giữa khung nên trong suốt để thấy ảnh của thành viên.</p>
+    <Field label="Tên khung"><input required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} disabled={busy === "upload"} className={inputClass} placeholder="Ví dụ: Khung Gen 17" data-autofocus /></Field>
+    <Field label="Ảnh khung (PNG)" hint={file ? `Đã chọn: ${file.name} (${(file.size / 1024).toFixed(0)} KB)` : undefined}><input key={fileKey} required type="file" accept="image/png" disabled={busy === "upload"} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1 file:text-sm file:font-medium file:text-zinc-800`} /></Field>
+    <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
+      <Button type="submit" variant="primary" icon="upload" loading={busy === "upload"} disabled={!supabase}>{busy === "upload" ? "Đang tải lên…" : "Tải khung lên"}</Button>
+      <Button variant="secondary" onClick={closeForm} disabled={busy === "upload"}>Hủy</Button>
     </div>
+  </form>;
 
-    {confirmFrame && <div role="presentation" onKeyDown={(event) => { if (event.key === "Escape" && busy !== "delete") setConfirmFrame(null); }} className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="delete-frame-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <h2 id="delete-frame-title" className="break-words text-lg font-bold">Xóa khung “{confirmFrame.name}”?</h2>
+  return <section className="mx-auto max-w-6xl p-5 sm:p-8">
+    <PageHeader title="Khung avatar" description="Tải lên khung PNG nền trong suốt cho sự kiện. Thành viên mở link công khai, chọn ảnh của mình và tải avatar có khung về. Ảnh của họ được ghép ngay trên máy, không tải lên đâu." actions={canWrite && <Button variant="primary" icon="plus" onClick={() => setCreating(true)} aria-expanded={creating}>Thêm khung</Button>} />
+    {error && <Notice tone="error">{error}</Notice>}
+    {notice && <Notice tone="success">{notice}</Notice>}
+    {!supabase && <Notice tone="warning">Thiếu cấu hình Supabase.</Notice>}
+    {current?.error && <Notice tone="error">{current.error}</Notice>}
+    {!canWrite && <Notice tone="warning">Chỉ Ban chủ nhiệm và Ban chủ chốt được quản lý khung avatar.</Notice>}
+
+    {canWrite && <CreatePanel open={creating} title="Thêm khung mới" onClose={closeForm}>{uploadForm}</CreatePanel>}
+
+    <Panel title={`Các khung (${frames.length})`} padded={!!frames.length || loading} actions={<Button variant="secondary" size="sm" icon="refresh" disabled={loading} onClick={load}>Làm mới</Button>}>
+      {loading ? <div role="status" aria-label="Đang tải khung" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[0, 1, 2].map((key) => <div key={key} className="aspect-square animate-pulse rounded-lg bg-zinc-100" />)}</div>
+        : frames.length ? <ul className="grid gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">{frames.map((frame) => <li key={frame.id} className="min-w-0">
+          <div className={`aspect-square w-full overflow-hidden rounded-lg border border-zinc-200 ${checkerClass}`}><img src={frameImageUrl(frame.image_path)} alt={`Khung ${frame.name}`} loading="lazy" className="h-full w-full object-contain" /></div>
+          <p className="mt-3 break-words text-sm font-semibold text-zinc-900">{frame.name}</p>
+          <p className="mt-0.5 break-all text-xs text-zinc-500">/frames/{frame.id}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" icon={copiedId === frame.id ? "check" : undefined} onClick={() => void copyLink(frame)}>{copiedId === frame.id ? "Đã sao chép" : "Sao chép link"}</Button>
+            <ButtonLink variant="ghost" size="sm" icon="external" href={`/frames/${frame.id}`} target="_blank" rel="noopener noreferrer">Mở thử</ButtonLink>
+            {canWrite && <Button variant="danger" size="sm" icon="trash" className="ml-auto" aria-label={`Xóa khung ${frame.name}`} disabled={busy === "delete"} onClick={() => setConfirmFrame(frame)} />}
+          </div>
+        </li>)}</ul>
+        : <EmptyState title="CLB chưa có khung avatar nào" description="Tải khung đầu tiên lên để lấy link công khai cho thành viên." action={canWrite && !creating && <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>Thêm khung</Button>} />}
+    </Panel>
+
+    {confirmFrame && <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="delete-frame-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl outline-none">
+        <h2 id="delete-frame-title" className="break-words text-lg font-semibold">Xóa khung “{confirmFrame.name}”?</h2>
         <p className="mt-3 text-sm text-zinc-700">Link công khai của khung sẽ không dùng được nữa. Các việc “Thay avatar” đang dùng khung này vẫn còn nhưng không còn gắn khung.</p>
-        <div className="mt-5 flex justify-end gap-2"><button ref={cancelRef} type="button" disabled={busy === "delete"} onClick={() => setConfirmFrame(null)} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50">Hủy</button><button type="button" disabled={busy === "delete"} onClick={() => void remove()} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "delete" ? "Đang xóa…" : "Xóa khung"}</button></div>
+        <div className="mt-5 flex justify-end gap-2"><Button data-autofocus variant="secondary" disabled={busy === "delete"} onClick={() => setConfirmFrame(null)}>Hủy</Button><Button variant="danger" icon="trash" loading={busy === "delete"} onClick={() => void remove()}>{busy === "delete" ? "Đang xóa…" : "Xóa khung"}</Button></div>
       </div>
     </div>}
   </section>;

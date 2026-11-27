@@ -2,12 +2,19 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { getSupabaseClient } from "../../lib/supabase/client";
+import { friendlyError } from "../../lib/ui/friendly-error";
 import { useCurrentAdminClub } from "./AdminClubContext";
-import { QuestionFields, type EditableQuestion } from "./recruitment/QuestionFields";
+import { Button } from "./ui/Button";
+import { CreatePanel } from "./ui/CreatePanel";
+import { EmptyState } from "./ui/EmptyState";
+import { Field, inputClass } from "./ui/Field";
+import { Notice } from "./ui/Notice";
+import { PageHeader } from "./ui/PageHeader";
+import { Panel } from "./ui/Panel";
+import { QuestionList, type EditableQuestion } from "./recruitment/QuestionFields";
 
 type Template = { id: string; name: string; description: string | null; is_default: boolean };
 type TemplateQuestion = EditableQuestion & { template_id: string };
-const input = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
 
 export function FormTemplatesManager() {
   const supabase = getSupabaseClient();
@@ -16,7 +23,8 @@ export function FormTemplatesManager() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [questions, setQuestions] = useState<TemplateQuestion[]>([]);
-  const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -28,7 +36,7 @@ export function FormTemplatesManager() {
     if (!supabase) { setLoading(false); return; }
     setLoading(true);
     const { data, error: queryError } = await supabase.from("form_templates").select("id,name,description,is_default").order("is_default", { ascending: false }).order("name");
-    if (queryError) { message(queryError.message, true); setLoading(false); return; }
+    if (queryError) { message(friendlyError(queryError, "Không tải được mẫu biểu mẫu."), true); setLoading(false); return; }
     const rows = (data ?? []) as Template[];
     setTemplates(rows);
     setSelectedId((current) => rows.some((item) => item.id === current) ? current : rows.find((item) => item.is_default)?.id ?? rows[0]?.id ?? "");
@@ -45,7 +53,7 @@ export function FormTemplatesManager() {
       if (!supabase || !selectedId) { setQuestions([]); return; }
       const { data, error: queryError } = await supabase.from("form_template_questions").select("id,template_id,question_text,question_type,field_key,options,is_required,order_index").eq("template_id", selectedId).order("order_index");
       if (cancelled) return;
-      if (queryError) message(queryError.message, true); else setQuestions((data ?? []) as TemplateQuestion[]);
+      if (queryError) message(friendlyError(queryError, "Không tải được câu hỏi của mẫu."), true); else setQuestions((data ?? []) as TemplateQuestion[]);
     }
     void loadQuestions();
     return () => { cancelled = true; };
@@ -53,13 +61,12 @@ export function FormTemplatesManager() {
 
   async function createTemplate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase || !canWrite) return;
-    const formElement = event.currentTarget;
-    const values = new FormData(formElement); const name = String(values.get("name") ?? "").trim();
+    const values = new FormData(event.currentTarget); const name = String(values.get("name") ?? "").trim();
     if (!name) return;
     setBusy(true);
     const { data, error: insertError } = await supabase.from("form_templates").insert({ name, is_default: templates.length === 0 }).select("id,name,description,is_default").single();
     setBusy(false);
-    if (insertError) message(insertError.message, true); else { setTemplates((rows) => [...rows, data as Template]); setSelectedId(data.id); formElement.reset(); message("Đã tạo mẫu biểu mẫu."); }
+    if (insertError) message(friendlyError(insertError, "Không tạo được mẫu biểu mẫu."), true); else { setTemplates((rows) => [...rows, data as Template]); setSelectedId(data.id); setCreating(false); message("Đã tạo mẫu biểu mẫu."); }
   }
 
   async function saveTemplate(event: FormEvent<HTMLFormElement>) {
@@ -67,7 +74,7 @@ export function FormTemplatesManager() {
     const values = new FormData(event.currentTarget); const payload = { name: String(values.get("name") ?? "").trim(), description: String(values.get("description") ?? "").trim() || null };
     if (!payload.name) return;
     setBusy(true); const { error: updateError } = await supabase.from("form_templates").update(payload).eq("id", selected.id); setBusy(false);
-    if (updateError) message(updateError.message, true); else { setTemplates((rows) => rows.map((item) => item.id === selected.id ? { ...item, ...payload } : item)); message("Đã lưu thông tin mẫu."); }
+    if (updateError) message(friendlyError(updateError, "Không lưu được thông tin mẫu."), true); else { setTemplates((rows) => rows.map((item) => item.id === selected.id ? { ...item, ...payload } : item)); message("Đã lưu thông tin mẫu."); }
   }
 
   async function setDefault() {
@@ -76,14 +83,14 @@ export function FormTemplatesManager() {
     const clear = await supabase.from("form_templates").update({ is_default: false }).eq("is_default", true);
     const set = clear.error ? null : await supabase.from("form_templates").update({ is_default: true }).eq("id", selected.id);
     setBusy(false);
-    if (clear.error || set?.error) message((clear.error ?? set?.error)?.message ?? "Không đổi được mẫu mặc định.", true);
+    if (clear.error || set?.error) message(friendlyError(clear.error ?? set?.error, "Không đổi được mẫu mặc định."), true);
     else { setTemplates((rows) => rows.map((item) => ({ ...item, is_default: item.id === selected.id }))); message("Đã đặt làm mẫu mặc định."); }
   }
 
   async function addQuestion() {
     if (!supabase || !selected || !canWrite) return;
     const { data, error: insertError } = await supabase.from("form_template_questions").insert({ template_id: selected.id, question_text: "Câu hỏi mới", question_type: "text", field_key: null, is_required: false, order_index: questions.length }).select("id,template_id,question_text,question_type,field_key,options,is_required,order_index").single();
-    if (insertError) message(insertError.message, true); else setQuestions((rows) => [...rows, data as TemplateQuestion]);
+    if (insertError) message(friendlyError(insertError, "Không thêm được câu hỏi."), true); else { setQuestions((rows) => [...rows, data as TemplateQuestion]); setOpenId(data.id); }
   }
 
   async function saveQuestions() {
@@ -109,7 +116,7 @@ export function FormTemplatesManager() {
     }).eq("id", question.id)));
     const failed = results.find((result) => result.error)?.error;
     setBusy(false);
-    if (failed) message(failed.message, true);
+    if (failed) message(friendlyError(failed, "Không lưu được các câu hỏi."), true);
     else {
       setQuestions(payload.map(({ question, index, options }) => ({ ...question, question_text: question.question_text.trim(), options, order_index: index })));
       message("Đã lưu các câu hỏi và thứ tự.");
@@ -119,7 +126,7 @@ export function FormTemplatesManager() {
   async function deleteQuestion(question: TemplateQuestion) {
     if (!supabase || !canWrite || !confirm("Xóa câu hỏi khỏi mẫu? Các biểu mẫu đã tạo từ mẫu không bị ảnh hưởng.")) return;
     const { error: deleteError } = await supabase.from("form_template_questions").delete().eq("id", question.id);
-    if (deleteError) message(deleteError.message, true); else { setQuestions((rows) => rows.filter((item) => item.id !== question.id).map((item, index) => ({ ...item, order_index: index }))); message("Đã xóa câu hỏi khỏi mẫu."); }
+    if (deleteError) message(friendlyError(deleteError, "Không xóa được câu hỏi."), true); else { setQuestions((rows) => rows.filter((item) => item.id !== question.id).map((item, index) => ({ ...item, order_index: index }))); setOpenId(null); message("Đã xóa câu hỏi khỏi mẫu."); }
   }
 
   function patchQuestion(id: string, patch: Partial<TemplateQuestion>) { setQuestions((rows) => rows.map((item) => item.id === id ? { ...item, ...patch } : item)); }
@@ -135,26 +142,40 @@ export function FormTemplatesManager() {
     setQuestions(next);
   }
 
+  const sortedQuestions = [...questions].sort((a, b) => a.order_index - b.order_index);
+
   return <section className="mx-auto max-w-6xl p-5 sm:p-8">
-    <header className="mb-6"><p className="text-sm font-semibold text-emerald-700">Quản trị CLB</p><h1 className="mt-1 text-3xl font-bold">Quản lý biểu mẫu</h1><p className="mt-2 text-sm text-zinc-600">Chỉnh sửa câu hỏi mặc định. Mỗi form mới sẽ nhận bản sao của mẫu mặc định. Nếu mẫu thiếu họ tên hoặc email, hệ thống tự thêm hai trường bắt buộc này vào form.</p></header>
-    {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}{notice && <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    <div className="grid gap-5 lg:grid-cols-[270px_minmax(0,1fr)]">
-      <aside className="space-y-4 rounded-xl border bg-white p-4">
-        {canWrite && <form onSubmit={createTemplate}><label className="text-sm font-semibold">Tạo mẫu mới<input name="name" required placeholder="Tên mẫu" className={input} /></label><button disabled={busy} className="mt-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">+ Tạo mẫu</button></form>}
-        <div><h2 className="text-sm font-semibold">Các mẫu biểu mẫu</h2>{loading ? <p className="mt-3 text-sm text-zinc-500">Đang tải…</p> : templates.length ? <ul className="mt-2 space-y-1">{templates.map((item) => <li key={item.id}><button onClick={() => setSelectedId(item.id)} className={`w-full rounded-lg px-3 py-2 text-left text-sm ${selectedId === item.id ? "bg-emerald-50 text-emerald-900" : "hover:bg-zinc-50"}`}><span className="block font-medium">{item.name}</span>{item.is_default && <span className="text-xs text-emerald-700">Mặc định</span>}</button></li>)}</ul> : <p className="mt-2 text-sm text-zinc-500">Chưa có mẫu biểu mẫu.</p>}</div>
-      </aside>
-      <div className="space-y-5">
-        {selected ? <>
-          <form key={selected.id} onSubmit={saveTemplate} className="rounded-xl border bg-white p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium">Tên mẫu<input name="name" required defaultValue={selected.name} disabled={!canWrite} className={input} /></label><label className="text-sm font-medium">Mô tả<input name="description" defaultValue={selected.description ?? ""} disabled={!canWrite} className={input} /></label></div><div className="mt-3 flex flex-wrap gap-2">{canWrite && <button disabled={busy} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-800">Lưu thông tin</button>}{canWrite && !selected.is_default && <button type="button" disabled={busy} onClick={() => void setDefault()} className="rounded-lg border px-3 py-2 text-sm">Đặt làm mặc định</button>}</div></form>
-          <section className="rounded-xl border bg-white p-4"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">Câu hỏi mặc định ({questions.length})</h2><p className="mt-1 text-xs text-zinc-500">Thay đổi tại đây chỉ áp dụng cho các form tạo về sau.</p></div>{canWrite && <button type="button" onClick={() => void addQuestion()} className="rounded-lg border px-3 py-2 text-sm font-semibold">+ Thêm câu hỏi</button>}</div>
-            {!questions.length ? <p className="rounded-lg border border-dashed p-4 text-sm text-zinc-500">Mẫu chưa có câu hỏi.</p> : <ol className="space-y-3">{[...questions].sort((a, b) => a.order_index - b.order_index).map((question, index) => <li key={question.id} draggable={canWrite} onDragStart={() => setDraggedQuestionId(question.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (draggedQuestionId) void moveQuestion(draggedQuestionId, question.id); setDraggedQuestionId(null); }} className="rounded-xl border bg-zinc-50 p-3">
-              <div className="mb-2 flex items-center gap-2"><button type="button" title="Kéo để sắp xếp" aria-label={`Kéo để sắp xếp câu ${index + 1}`} className="cursor-grab text-zinc-400" disabled={!canWrite}>⠿</button><span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Sắp xếp câu {index + 1}</span><div className="ml-auto flex gap-1"><button type="button" disabled={!canWrite || index === 0} onClick={() => void moveQuestion(question.id, questions[index - 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển lên">↑</button><button type="button" disabled={!canWrite || index === questions.length - 1} onClick={() => void moveQuestion(question.id, questions[index + 1]?.id)} className="rounded border px-2 py-1 text-xs disabled:opacity-40" aria-label="Chuyển xuống">↓</button></div></div>
-              <QuestionFields question={question} index={index} canWrite={canWrite} onChange={(updated) => patchQuestion(question.id, updated)} onDelete={() => void deleteQuestion(question)} />
-            </li>)}</ol>}
-            {canWrite && <div className="mt-4 flex justify-end"><button type="button" disabled={busy} onClick={() => void saveQuestions()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang lưu câu hỏi…" : "Lưu các câu hỏi"}</button></div>}
-          </section>
-        </> : <div className="rounded-xl border border-dashed bg-white p-8 text-center text-sm text-zinc-500">Tạo hoặc chọn một mẫu để chỉnh sửa.</div>}
-      </div>
-    </div>
+    <PageHeader title="Biểu mẫu" description="Chỉnh sửa câu hỏi mặc định. Mỗi form mới sẽ nhận bản sao của mẫu mặc định. Nếu mẫu thiếu họ tên hoặc email, hệ thống tự thêm hai trường bắt buộc này vào form." actions={canWrite && <Button variant="primary" icon="plus" onClick={() => setCreating(true)} aria-expanded={creating}>Mẫu mới</Button>} />
+    {error && <Notice tone="error">{error}</Notice>}
+    {notice && <Notice tone="success">{notice}</Notice>}
+    <CreatePanel open={creating} title="Tạo mẫu mới" onClose={() => setCreating(false)}>
+      <form onSubmit={createTemplate} className="space-y-4">
+        <Field label="Tên mẫu"><input name="name" required placeholder="Tên mẫu" className={inputClass} data-autofocus /></Field>
+        <div className="flex gap-2"><Button type="submit" variant="primary" loading={busy}>{busy ? "Đang tạo…" : "Tạo mẫu"}</Button><Button onClick={() => setCreating(false)}>Hủy</Button></div>
+      </form>
+    </CreatePanel>
+    {loading ? <div role="status" aria-label="Đang tải mẫu biểu mẫu" className="grid gap-5 lg:grid-cols-[270px_minmax(0,1fr)]"><div className="h-48 animate-pulse rounded-xl bg-zinc-100" /><div className="h-72 animate-pulse rounded-xl bg-zinc-100" /></div>
+    : !templates.length ? <Panel padded={false}><EmptyState title="Chưa có mẫu biểu mẫu" description={canWrite ? "Tạo mẫu đầu tiên để dùng cho các vị trí tuyển." : undefined} action={canWrite && !creating && <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>Mẫu mới</Button>} /></Panel>
+    : <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[270px_minmax(0,1fr)]">
+      <Panel title="Các mẫu biểu mẫu" padded={false}>
+        <ul className="space-y-0.5 p-2">{templates.map((item) => <li key={item.id}><button type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => { setSelectedId(item.id); setOpenId(null); }} className={`w-full rounded-lg px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600 ${selectedId === item.id ? "bg-emerald-50 text-emerald-900" : "text-zinc-700 hover:bg-zinc-100"}`}><span className="block font-medium">{item.name}</span>{item.is_default && <span className="text-xs text-emerald-700">Mặc định</span>}</button></li>)}</ul>
+      </Panel>
+      {selected ? <div className="space-y-5">
+        <Panel title="Thông tin mẫu">
+          <form key={selected.id} onSubmit={saveTemplate} className="grid gap-4 sm:grid-cols-2">
+            <Field label="Tên mẫu"><input name="name" required defaultValue={selected.name} disabled={!canWrite} className={inputClass} /></Field>
+            <Field label="Mô tả"><input name="description" defaultValue={selected.description ?? ""} disabled={!canWrite} className={inputClass} /></Field>
+            {canWrite && <div className="flex flex-wrap gap-2 sm:col-span-2"><Button type="submit" variant="primary" loading={busy}>Lưu thông tin</Button>{!selected.is_default && <Button disabled={busy} onClick={() => void setDefault()}>Đặt làm mặc định</Button>}</div>}
+          </form>
+        </Panel>
+        <Panel title={`Câu hỏi mặc định (${questions.length})`} padded={false} actions={canWrite && <Button size="sm" icon="plus" onClick={() => void addQuestion()}>Thêm câu hỏi</Button>}>
+          <p className="border-b border-zinc-100 px-4 py-2.5 text-xs text-zinc-500 sm:px-5">Thay đổi tại đây chỉ áp dụng cho các form tạo về sau. Bấm một câu để sửa.</p>
+          {!questions.length
+            ? <p className="px-4 py-8 text-center text-sm text-zinc-500">Mẫu chưa có câu hỏi.{canWrite ? " Bấm “Thêm câu hỏi” để bắt đầu." : ""}</p>
+            : <QuestionList questions={sortedQuestions} canWrite={canWrite} openId={openId} onOpenChange={setOpenId} onPatch={patchQuestion} onDelete={(id) => { const target = questions.find((item) => item.id === id); if (target) void deleteQuestion(target); }} onMove={(source, target) => void moveQuestion(source, target)} />}
+          {canWrite && <div className="flex justify-end border-t border-zinc-100 px-4 py-3 sm:px-5"><Button variant="primary" loading={busy} onClick={() => void saveQuestions()}>{busy ? "Đang lưu câu hỏi…" : "Lưu các câu hỏi"}</Button></div>}
+        </Panel>
+      </div> : <Panel padded={false}><EmptyState title="Chọn một mẫu để chỉnh sửa" /></Panel>}
+    </div>}
   </section>;
 }

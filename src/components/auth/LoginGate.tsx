@@ -12,7 +12,7 @@ export function LoginGate({ onLogin, lastError }: { onLogin: (email: string, pas
     try { await onLogin(email, password); } finally { setSubmitting(false); }
   }
   return <main className="flex min-h-screen items-center justify-center bg-zinc-50 px-4"><form onSubmit={submit} className="w-full max-w-md space-y-5 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-    <div><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">BIT · Quản trị CLB</p><h1 className="mt-2 text-2xl font-bold">Đăng nhập</h1><p className="mt-1 text-sm text-zinc-500">Dùng tài khoản email/password do quản trị viên cấp.</p></div>
+    <div><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">BIT · Quản trị CLB</p><h1 className="mt-2 text-2xl font-bold">Đăng nhập</h1><p className="mt-1 text-sm text-zinc-500">Bấm “Tiếp tục với Google” và chọn đúng Gmail đã đăng ký với CLB. Chưa vào được thì nhờ Ban chủ chốt kiểm tra email trong hồ sơ thành viên của bạn.</p></div>
     <label className="block text-sm font-medium">Email<input required type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" /></label>
     <label className="block text-sm font-medium">Mật khẩu<input required type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" /></label>
     {lastError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{lastError}</p>}
