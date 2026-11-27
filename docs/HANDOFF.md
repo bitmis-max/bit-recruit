@@ -4,7 +4,7 @@ Cập nhật: 2026-11-11 (tối) — Đợt 0–6 + vá bảo mật đã lên pr
 
 ## Trạng thái
 - **Web:** https://bit-bav.vercel.app (Vercel project `bit-bav`, tài khoản `bitmis-3939`, Auto-assign tên miền production đã bật).
-- **Git:** `main` = `d75f9ce` (merge PR #4). Các PR đã merge: #1 Đợt 0–3 + import ứng viên, #2 Đợt 4 phân quyền, #4 vá bảo mật + Đợt 6 nhiều ban (gộp một PR), #3 Đợt 5 import thành viên + hướng dẫn. Không còn nhánh đang làm.
+- **Git:** `main` = `d5cb108` (đã gộp PR #5, #6 của KLinh/PLinh). Nhánh `feat/about-page` (local, chưa push): `174b908` Đợt 7 + `8f8b577` Đợt 8. Các PR đã merge: #1 Đợt 0–3 + import ứng viên, #2 Đợt 4 phân quyền, #4 vá bảo mật + Đợt 6 nhiều ban (gộp một PR), #3 Đợt 5 import thành viên + hướng dẫn. Không còn nhánh đang làm.
 - **DB thật** (`rftgnkgnyvtehnsjwuhp`): đã nâng cấp từ schema legacy, giữ dữ liệu (55 đơn, 2365 câu trả lời…). Migration local = remote: `20261023000000` (baseline, đánh dấu bằng `migration repair`) → `20261110` vai trò/nhiệm kỳ → `20261111` giao việc → `20261112` Facebook/khung avatar → `20261113` thu quyền anon → `20261114` import ứng viên → `20261115` phân quyền → `20261116` import thành viên. → `20261117` vá bảo mật → `20261118` nhiều ban (người dùng đã `db push` 2026-11-11; lead kiểm chứng chỉ đọc: bảng `club_member_teams` có RLS + 1 policy, `set_member_teams` chỉ service_role, anon không ghi được bảng nào, 2 bucket mẫu đã khóa).
 - **Dữ liệu quản trị hiện có:** 1 Chủ nhiệm (tài khoản BIT, owner `is_head`), 2 thành viên. Chưa ai khác có tài khoản / quyền.
 - **Test (local):** `npm test` 111/111, `npx supabase test db` 1041/1041 (9 file). tsc sạch, build sạch.
@@ -64,7 +64,7 @@ Cập nhật: 2026-11-11 (tối) — Đợt 0–6 + vá bảo mật đã lên pr
 - Kiểm chứng 2026-11-26: unit 140/140, tsc sạch. pgTAP CHƯA chạy lại trong phiên này (Docker tắt). Lint còn lỗi `set-state-in-effect` cũ (xem nợ kỹ thuật).
 - Đã gộp `origin/main` (d5cb108: trang chủ, navbar, trang sự kiện của KLinh/PLinh) vào nhánh.
 
-## Đợt 8 (đang làm, 2026-11-26): trang Giới thiệu + rà soát admin
+## Đợt 8 (2026-11-26 → 28): trang Giới thiệu + dọn admin — commit local `8f8b577` trên `feat/about-page`, CHƯA push, migration 20261119 + 20261120 CHƯA lên DB thật
 - Người dùng chọn: trang `/clubs` làm lại theo hướng "bản đồ cơ cấu" (4 ban dạng thẻ); thêm 2 trường cho ban ("Việc chính", "Hợp với bạn nếu…") vào DB, sửa được trong Quản lí ban; lead soạn nháp nội dung. Ảnh ban đã sửa được trong admin (không làm thêm). Nhánh `feat/about-page` tách từ `fix/audit-round`.
 - Admin: rà soát trước (chụp từng màn trên local), gửi người dùng duyệt rồi mới sửa.
 - Đã làm (chưa commit): migration `20261120000000_team_profile.sql` (+ nháp nội dung 4 ban) + test `team_profile.test.sql`; trang `/clubs` mới (`ClubTeamCards.tsx` thay `ClubStructureTabs.tsx`); `FlipClockCountdown` không còn nút "Đăng ký ngay" khi chưa có đợt mở (thay bằng nút Facebook); `TeamsManager` thêm ô "Việc chính" + "Hợp với bạn nếu…". Hợp đồng `docs/CONTRACT.md` (Đợt 8).
